@@ -1,9 +1,13 @@
 /target
-data/*.parquet
+data_normal/*.parquet
+data_more/*.parquet
+data_much/*.parquet
 *.db
 
-checkpoints/
 runs/
-runs
+figs/
 wandb/
 __pycache__/
+
+runs
+figs

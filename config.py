@@ -1,13 +1,7 @@
 import torch
 from torch import nn
-from torch.optim.adam import Adam
-from torch.optim.adamw import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from hyperbolic_lr import HyperbolicLR, ExpHyperbolicLR
 import survey
 import optuna
-
-from model import MLP
 
 from dataclasses import dataclass, asdict, field
 import yaml
@@ -42,7 +36,7 @@ class RunConfig:
         module_name, class_name = self.net.rsplit('.', 1)
         module = importlib.import_module(module_name)
         model_class = getattr(module, class_name)
-        return model_class(self.net_config, device=self.device)
+        return model_class(self.net_config)
 
     def create_optimizer(self, model):
         module_name, class_name = self.optimizer.rsplit('.', 1)

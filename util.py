@@ -12,29 +12,13 @@ from config import RunConfig, OptimizeConfig
 
 import random
 import os
-from math import pi
 
 
-def load_data(n=10000, split_ratio=0.8, seed=42):
-    # Fix Seed
-    torch.manual_seed(seed)
-
-    x = torch.linspace(0, 1, n) + torch.rand(n) * 0.01
-    y = torch.cos(x * (2 * pi)) + torch.rand(n) * 0.01
-
-    ics = torch.randperm(n)
-    ics_train = ics[:int(n * split_ratio)]
-    ics_val   = ics[int(n * split_ratio):]
-
-    x_train = x[ics_train].view(-1, 1)
-    y_train = y[ics_train].view(-1, 1)
-    x_val   = x[ics_val].view(-1, 1)
-    y_val   = y[ics_val].view(-1, 1)
-
-    train_ds    = TensorDataset(x_train, y_train)
-    val_ds      = TensorDataset(x_val, y_val)
-
-    return train_ds, val_ds
+def load_data(file_path: str):
+    df = pl.read_parquet(file_path)
+    tensors = [torch.tensor(df[col].to_numpy(
+    ).reshape(-1, 100), dtype=torch.float32) for col in df.columns]
+    return TensorDataset(*tensors)
 
 
 def set_seed(seed: int):
@@ -50,24 +34,53 @@ def set_seed(seed: int):
 
 
 class Trainer:
-    def __init__(self, model, optimizer, scheduler, criterion, device="cpu"):
+    def __init__(self, model, optimizer, scheduler, criterion, device="cpu", variational=False):
         self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.criterion = criterion
         self.device = device
+        self.variational = variational
 
-    def step(self, x):
-        return self.model(x)
+    def step(self, V, t):
+        return self.model(V, t)
+
+    def _obtain_loss(self, V, t, x, p):
+        x_pred, p_pred = self.step(V, t)
+        loss_x = self.criterion(x_pred, x.to(self.device))
+        loss_p = self.criterion(p_pred, p.to(self.device))
+        loss = 0.5 * (loss_x + loss_p)
+        return loss
+
+    def _obtain_vae_loss(self, V, t, x, p):
+        x_pred, p_pred, mu, logvar = self.step(V, t)
+
+        # Flatten
+        mu_vec = mu.view((mu.shape[0], -1))
+        logvar_vec = logvar.view((logvar.shape[0], -1))
+
+        # KL Divergence (mean over latent dimensions)
+        kl_loss = -0.5 * \
+            torch.mean(1 + logvar_vec - mu_vec.pow(2) - logvar_vec.exp(), dim=1)
+        beta = self.model.kl_weight
+        kl_loss = beta * torch.mean(kl_loss)
+
+        # Total loss
+        loss_x = self.criterion(x_pred, x.to(self.device))
+        loss_p = self.criterion(p_pred, p.to(self.device))
+        loss = 0.5 * (loss_x + loss_p) + kl_loss
+        return loss
 
     def train_epoch(self, dl_train):
         self.model.train()
         train_loss = 0
-        for x, y in dl_train:
-            x = x.to(self.device).requires_grad_(True)
-            y = y.to(self.device)
-            y_pred = self.step(x)
-            loss = self.criterion(y_pred, y)
+        for V, t, x, p in dl_train:
+            V = V.to(self.device)
+            t = t.to(self.device)
+            if not self.variational:
+                loss = self._obtain_loss(V, t, x, p)
+            else:
+                loss = self._obtain_vae_loss(V, t, x, p)
             train_loss += loss.item()
             self.optimizer.zero_grad()
             loss.backward()
@@ -78,11 +91,13 @@ class Trainer:
     def val_epoch(self, dl_val):
         self.model.eval()
         val_loss = 0
-        for x, y in dl_val:
-            x = x.to(self.device).requires_grad_(True)
-            y = y.to(self.device)
-            y_pred = self.step(x)
-            loss = self.criterion(y_pred, y)
+        for V, t, x, p in dl_val:
+            V = V.to(self.device)
+            t = t.to(self.device)
+            if not self.variational:
+                loss = self._obtain_loss(V, t, x, p)
+            else:
+                loss = self._obtain_vae_loss(V, t, x, p)
             val_loss += loss.item()
         val_loss /= len(dl_val)
         return val_loss

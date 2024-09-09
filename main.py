@@ -19,6 +19,7 @@ import copy
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_config", type=str, required=True, help="Path to the YAML config file")
+    parser.add_argument("--data", type=str, required=True, help="normal or more or much?")
     parser.add_argument("--optimize_config", type=str, help="Path to the optimization YAML config file")
     args = parser.parse_args()
 
@@ -28,7 +29,9 @@ def main():
     base_config = RunConfig.from_yaml(args.run_config)
 
     # Load data
-    ds_train, ds_val = load_data() # pyright: ignore
+    data_folder = f"data_{args.data}"
+    ds_train = load_data(f"{data_folder}/train.parquet")
+    ds_val = load_data(f"{data_folder}/val.parquet")
     dl_train = DataLoader(ds_train, batch_size=base_config.batch_size, shuffle=True)
     dl_val = DataLoader(ds_val, batch_size=base_config.batch_size)
 

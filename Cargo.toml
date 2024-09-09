@@ -1,0 +1,11 @@
+[package]
+name = "neural_hamilton"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dialoguer = "0.11.0"
+indicatif = { version = "0.17.8", features = ["rayon"] }
+peroxide = { version = "0.37.9", features = ["parquet"] }
+rayon = "1.10.0"
+rugfield = "0.2.2"
