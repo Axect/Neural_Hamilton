@@ -1,0 +1,9 @@
+/target
+data/*.parquet
+*.db
+
+checkpoints/
+runs/
+runs
+wandb/
+__pycache__/

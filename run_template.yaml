@@ -1,0 +1,17 @@
+project: PyTorch_Template
+device: cuda:0
+net: model.MLP
+optimizer: torch.optim.adamw.AdamW
+scheduler: hyperbolic_lr.HyperbolicLR
+epochs: 50
+batch_size: 256
+seeds: [89, 231, 928, 814, 269]
+net_config:
+  nodes: 64
+  layers: 4
+optimizer_config:
+  lr: 1.e-3 # Must contain dot for float
+scheduler_config:
+  upper_bound: 250
+  max_iter: 50
+  infimum_lr: 1.e-5
