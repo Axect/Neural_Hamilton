@@ -24,3 +24,19 @@ for i in range(10):
         fig.savefig(f"../figs/00_V_{i}.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
 
+        fig, ax = plt.subplots()
+        ax.plot(t_total[i], x_total[i])
+        ax.set_xlabel(r"$t$")
+        ax.set_ylabel(r"$q(t)$")
+        ax.autoscale(tight=True)
+        fig.savefig(f"../figs/00_q_{i}.png", dpi=600, bbox_inches="tight")
+        plt.close(fig)
+
+        fig, ax = plt.subplots()
+        ax.plot(t_total[i], p_total[i])
+        ax.set_xlabel(r"$t$")
+        ax.set_ylabel(r"$p(t)$")
+        ax.autoscale(tight=True)
+        fig.savefig(f"../figs/00_p_{i}.png", dpi=600, bbox_inches="tight")
+        plt.close(fig)
+
