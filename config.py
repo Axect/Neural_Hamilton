@@ -56,10 +56,10 @@ class RunConfig:
             name += f"_{k[0]}_{v}"
         name += f"_{abbreviate(self.optimizer.split('.')[-1])}"
         for k, v in self.optimizer_config.items():
-            if len(v) > 0:
-                continue
-            else:
+            if isinstance(v, float) or isinstance(v, int):
                 name += f"_{k[0]}_{v:.4e}" if isinstance(v, float) else f"_{k[0]}_{v}"
+            else:
+                continue
         name += f"_{abbreviate(self.scheduler.split('.')[-1])}"
         for k, v in self.scheduler_config.items():
             name += f"_{k[0]}_{v:.4e}" if isinstance(v, float) else f"_{k[0]}_{v}"
