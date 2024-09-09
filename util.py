@@ -139,7 +139,7 @@ def run(run_config: RunConfig, dl_train, dl_val, group_name=None):
         optimizer = run_config.create_optimizer(model)
         scheduler = run_config.create_scheduler(optimizer)
 
-        run_name = f"{seed}"
+        run_name = f"seed={seed}"
         wandb.init(
             project=project,
             name=run_name,
