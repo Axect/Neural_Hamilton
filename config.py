@@ -127,6 +127,8 @@ class OptimizeConfig:
         module = importlib.import_module(module_name)
         sampler_class = getattr(module, class_name)
         sampler_kwargs = self.sampler.get('kwargs', {})
+        if class_name == "GridSampler":
+            sampler_kwargs['search_space'] = self.grid_search_space()
         return sampler_class(**sampler_kwargs)
 
     def _create_pruner(self):
@@ -175,6 +177,16 @@ class OptimizeConfig:
                 elif param_config['type'] == 'categorical':
                     params[category][param] = trial.suggest_categorical(f"{category}_{param}", 
                                                                         param_config['choices'])
+        return params
+
+    def grid_search_space(self):
+        params = {}
+        for category, config in self.search_space.items():
+            for param, param_config in config.items():
+                if param_config['type'] == 'categorical':
+                    params[f"{category}_{param}"] = param_config['choices']
+                else:
+                    raise ValueError(f"Unsupported grid search space type: {param_config['type']}")
         return params
 
 
