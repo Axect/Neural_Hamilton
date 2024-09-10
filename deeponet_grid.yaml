@@ -1,5 +1,5 @@
 study_name: GridSearch
-trials: 20
+trials: 16
 seed: 42
 metric: val_loss
 direction: minimize
