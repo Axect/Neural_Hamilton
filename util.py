@@ -148,7 +148,8 @@ def run(run_config: RunConfig, dl_train, dl_val, group_name=None):
             config=run_config.gen_config(),
         )
 
-        if run_config.net == "VaRONet":
+        # Check run_config.net contains "VaRONet"
+        if "VaRONet" in run_config.net:
             variational = True
         else:
             variational = False
