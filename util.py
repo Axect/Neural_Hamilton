@@ -148,7 +148,11 @@ def run(run_config: RunConfig, dl_train, dl_val, group_name=None):
             config=run_config.gen_config(),
         )
 
-        trainer = Trainer(model, optimizer, scheduler, criterion=F.mse_loss, device=device)
+        if run_config.net == "VaRONet":
+            variational = True
+        else:
+            variational = False
+        trainer = Trainer(model, optimizer, scheduler, criterion=F.mse_loss, device=device, variational=variational)
         val_loss = trainer.train(dl_train, dl_val, epochs=run_config.epochs)
         total_loss += val_loss
 
