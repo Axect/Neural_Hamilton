@@ -7,9 +7,9 @@ epochs: 50
 batch_size: 100
 seeds: [89, 231, 928, 814, 269]
 net_config:
-  nodes: 1024
-  layers: 6
-  branches: 50
+  nodes: 256
+  layers: 4
+  branches: 40
 optimizer_config:
   lr: 1.e-3 # Must contain dot for float
   betas: [0.85, 0.98]
