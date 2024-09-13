@@ -3,7 +3,7 @@ device: cuda:0
 net: model.DeepONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
-epochs: 200
+epochs: 50
 batch_size: 100
 seeds: [89, 231, 928, 814, 269]
 net_config:
