@@ -1,0 +1,31 @@
+study_name: GridSearch
+trials: 81
+seed: 42
+metric: val_loss
+direction: minimize
+
+sampler:
+  name: optuna.samplers.GridSampler
+  #kwargs:
+  #  n_startup_trials: 10
+
+#pruner:
+#  name: optuna.pruners.HyperbandPruner
+#  kwargs:
+#    min_resource: 10
+#    max_resource: 100
+
+search_space:
+  net_config:
+    d_model:
+      type: categorical
+      choices: [32, 64, 128]
+    nhead:
+      type: categorical
+      choices: [2, 4, 8]
+    num_layers:
+      type: categorical
+      choices: [2, 3, 4]
+    dim_feedforward:
+      type: categorical
+      choices: [512, 1024, 2048]
