@@ -4,15 +4,17 @@ from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 import scienceplots
+import os
 
 from util import select_project, select_group, select_seed, select_device, load_model, load_data, load_study, load_best_model
 
 
 class TestResults:
-    def __init__(self, total_loss, total_loss_x, total_loss_p, x_preds, p_preds, x_targets, p_targets):
+    def __init__(self, total_loss, total_loss_x, total_loss_p, V_vec, x_preds, p_preds, x_targets, p_targets):
         self.total_loss = total_loss
         self.total_loss_x = total_loss_x
         self.total_loss_p = total_loss_p
+        self.V_vec = V_vec
         self.x_preds = x_preds
         self.p_preds = p_preds
         self.x_targets = x_targets
@@ -23,12 +25,62 @@ class TestResults:
         print(f"Total Loss x: {self.total_loss_x:.4e}")
         print(f"Total Loss p: {self.total_loss_p:.4e}")
 
+    def plot_V(self, name:str, index:int):
+        q = np.linspace(0, 1, 100)
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(q, self.V_vec[index])
+            ax.set_xlabel(r"$q$")
+            ax.set_ylabel(r"$V(q)$")
+            ax.autoscale(tight=True)
+            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+    def plot_q(self, name:str, index:int):
+        t = np.linspace(0, 1, len(self.x_preds[index]))
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(t, self.x_targets[index], color='gray', label=r"$q$", alpha=0.65, linewidth=1.75)
+            ax.plot(t, self.x_preds[index], ':', color='red', label=r"$\hat{q}$")
+            ax.set_xlabel(r"$t$")
+            ax.set_ylabel(r"$q(t)$")
+            ax.autoscale(tight=True)
+            ax.legend()
+            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+    def plot_p(self, name:str, index:int):
+        t = np.linspace(0, 1, len(self.p_preds[index]))
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(t, self.p_targets[index], color='gray', label=r"$p$", alpha=0.65, linewidth=1.75)
+            ax.plot(t, self.p_preds[index], ':', color='red', label=r"$\hat{p}$")
+            ax.set_xlabel(r"$t$")
+            ax.set_ylabel(r"$p(t)$")
+            ax.autoscale(tight=True)
+            ax.legend()
+            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+    def plot_phase(self, name:str, index:int):
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(self.x_targets[index], self.p_targets[index], color='gray', label=r"$(q,p)$", alpha=0.65, linewidth=1.75)
+            ax.plot(self.x_preds[index], self.p_preds[index], ':', color='red', label=r"$(\hat{q}, \hat{p})$")
+            ax.set_xlabel(r"$q$")
+            ax.set_ylabel(r"$p$")
+            ax.autoscale(tight=True)
+            ax.legend()
+            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
 
 def test_model(model, dl_val, device, variational=False):
     model.eval()
     total_loss = 0
     total_loss_x = 0
     total_loss_p = 0
+    V_vec = []
     x_preds = []
     p_preds = []
     x_targets = []
@@ -46,6 +98,7 @@ def test_model(model, dl_val, device, variational=False):
             total_loss += loss.item()
             total_loss_x += loss_x.item()
             total_loss_p += loss_p.item()
+            V_vec.extend(V.cpu().numpy())
             x_preds.extend(x_pred.cpu().numpy())
             p_preds.extend(p_pred.cpu().numpy())
             x_targets.extend(x.cpu().numpy())
@@ -55,7 +108,7 @@ def test_model(model, dl_val, device, variational=False):
     total_loss_x = total_loss_x / len(dl_val)
     total_loss_p = total_loss_p / len(dl_val)
 
-    test_results = TestResults(total_loss, total_loss_x, total_loss_p, x_preds, p_preds, x_targets, p_targets)
+    test_results = TestResults(total_loss, total_loss_x, total_loss_p, V_vec, x_preds, p_preds, x_targets, p_targets)
     return test_results
 
 
@@ -75,10 +128,23 @@ def main():
     #model = model.to(device)
 
     ds_val = load_data("./data_normal/val.parquet")
-    dl_val = DataLoader(ds_val, batch_size=config.batch_size)
+    dl_val = DataLoader(ds_val, batch_size=1)
 
-    test_results = test_model(model, dl_val, device)
+    variational = False
+    if "VaRONet" in config.net:
+        variational = True
+
+    test_results = test_model(model, dl_val, device, variational)
     test_results.print()
+
+    fig_dir = f"figs/{project}"
+    if not os.path.exists(fig_dir):
+        os.makedirs(fig_dir)
+    for index in range(10):
+        test_results.plot_V(f"{fig_dir}/{index:02}_0_V_plot", index)
+        test_results.plot_q(f"{fig_dir}/{index:02}_1_q_plot", index)
+        test_results.plot_p(f"{fig_dir}/{index:02}_2_p_plot", index)
+        test_results.plot_phase(f"{fig_dir}/{index:02}_3_phase_plot", index)
 
     # Additional custom analysis can be added here
     # ...
