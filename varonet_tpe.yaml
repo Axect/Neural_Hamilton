@@ -1,5 +1,5 @@
 study_name: TPESearch
-trials: 50
+trials: 100
 seed: 42
 metric: val_loss
 direction: minimize
@@ -16,27 +16,35 @@ sampler:
 #    max_resource: 100
 
 search_space:
-  #net_config:
-  #  nodes:
-  #    type: categorical
-  #    choices: [256, 512, 1024, 2048]
-  #  layers:
-  #    type: categorical
-  #    choices: [3, 4, 5, 6]
+  net_config:
+    #hidden_size:
+    #  type: categorical
+    #  choices: [128, 256, 512]
+    #num_layers:
+    #  type: categorical
+    #  choices: [2, 3, 4]
+    #latent_size:
+    #  type: categorical
+    #  choices: [10, 20, 30, 40]
+    kl_weight:
+      type: float
+      min: 1.e-3
+      max: 1.e+0
+      log: true
   optimizer_config:
     lr:
       type: float
-      min: 1.e-4
-      max: 1.e-2
+      min: 1.e-3
+      max: 1.e-1
       log: true
   scheduler_config:
     upper_bound:
       type: int
-      min: 200
+      min: 300
       max: 400
       step: 50
     infimum_lr:
       type: float
       min: 1.e-6
-      max: 1.e-4
+      max: 1.e-3
       log: true
