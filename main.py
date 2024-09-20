@@ -66,7 +66,7 @@ def main():
         print(f"  Path: runs/{base_config.project}_Opt/{trial.user_attrs['group_name']}")
         
     else:
-        run(base_config, dl_train, dl_val)
+        run(base_config, dl_train, dl_val, group_name=None, data=args.data)
 
 
 if __name__ == "__main__":
