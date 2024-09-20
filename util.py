@@ -118,12 +118,12 @@ class Trainer:
         return val_loss
 
 
-def run(run_config: RunConfig, dl_train, dl_val, group_name=None):
+def run(run_config: RunConfig, dl_train, dl_val, group_name=None, data=None):
     project = run_config.project
     device = run_config.device
     seeds = run_config.seeds
     if not group_name:
-        group_name = run_config.gen_group_name()
+        group_name = run_config.gen_group_name(data)
     tags = run_config.gen_tags()
 
     group_path = f"runs/{run_config.project}/{group_name}"
