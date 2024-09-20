@@ -171,6 +171,16 @@ def run(run_config: RunConfig, dl_train, dl_val, group_name=None):
 # ┌──────────────────────────────────────────────────────────┐
 #  For Analyze
 # └──────────────────────────────────────────────────────────┘
+def select_project():
+    runs_path = "runs/"
+    projects = [d for d in os.listdir(runs_path) if os.path.isdir(os.path.join(runs_path, d))]
+    if not projects:
+        raise ValueError(f"No projects found in {runs_path}")
+    
+    selected_index = survey.routines.select("Select a project:", options=projects)
+    return projects[selected_index] # pyright: ignore
+
+
 def select_group(project):
     runs_path = f"runs/{project}"
     groups = [d for d in os.listdir(runs_path) if os.path.isdir(os.path.join(runs_path, d))]
@@ -180,6 +190,7 @@ def select_group(project):
     selected_index = survey.routines.select("Select a run group:", options=groups)
     return groups[selected_index] # pyright: ignore
 
+
 def select_seed(project, group_name):
     group_path = f"runs/{project}/{group_name}"
     seeds = [d for d in os.listdir(group_path) if os.path.isdir(os.path.join(group_path, d))]
@@ -188,6 +199,7 @@ def select_seed(project, group_name):
     
     selected_index = survey.routines.select("Select a seed:", options=seeds)
     return seeds[selected_index] # pyright: ignore
+
 
 def select_device():
     devices = ['cpu'] + [f'cuda:{i}' for i in range(torch.cuda.device_count())]
