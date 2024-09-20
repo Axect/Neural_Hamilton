@@ -46,7 +46,7 @@ def main():
                 config[category].update(category_params)
             
             run_config = RunConfig(**config)
-            group_name = run_config.gen_group_name()
+            group_name = run_config.gen_group_name(args.data)
             group_name += f"[{trial.number}]"
 
             trial.set_user_attr("group_name", group_name)

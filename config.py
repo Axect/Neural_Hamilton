@@ -50,7 +50,7 @@ class RunConfig:
         scheduler_class = getattr(scheduler_module, scheduler_class)
         return scheduler_class(optimizer, **self.scheduler_config)
 
-    def gen_group_name(self):
+    def gen_group_name(self, data:str):
         name = f"{self.net.split('.')[-1]}"
         for k, v in self.net_config.items():
             name += f"_{k[0]}_{v}"
@@ -63,6 +63,8 @@ class RunConfig:
         name += f"_{abbreviate(self.scheduler.split('.')[-1])}"
         for k, v in self.scheduler_config.items():
             name += f"_{k[0]}_{v:.4e}" if isinstance(v, float) else f"_{k[0]}_{v}"
+        if data is not None:
+            name += f"_{data}"
         return name
 
     def gen_tags(self):
