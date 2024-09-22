@@ -19,9 +19,16 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     };
 
     println!("Generate dataset...");
-    let ds = Dataset::generate(n, 0.8)?;
-    ds.write_parquet(normal_or_more)?;
+    let ds = Dataset::generate(n, 0.8, 42)?;
+    ds.write_parquet(normal_or_more, false)?;
     println!("Generate dataset complete");
+    
+    if normal_or_more == 0 {
+        println!("Generate test dataset...");
+        let ds = Dataset::generate(12500, 0.2, 8407)?;
+        ds.write_parquet(normal_or_more, true)?;
+        println!("Generate test dataset complete");
+    }
 
     Ok(())
 }
@@ -44,7 +51,7 @@ pub struct Dataset {
 
 impl Dataset {
     #[allow(non_snake_case)]
-    pub fn generate(n: usize, f_train: f64) -> Result<Self> {
+    pub fn generate(n: usize, f_train: f64, seed: u64) -> Result<Self> {
         // For safety
         let n_cand = (n as f64 * 1.25).round() as usize;
 
@@ -57,7 +64,7 @@ impl Dataset {
         let u_b = Uniform(1, 7);
         let u_l = Uniform(0.01, 0.2);
         let u_n = Normal(0.0, 1.0);
-        let mut rng = stdrng_from_seed(42);
+        let mut rng = stdrng_from_seed(seed);
         let b = u_b
             .sample_with_rng(&mut rng, n_cand)
             .into_iter()
@@ -252,6 +259,7 @@ impl Dataset {
     pub fn write_parquet(
         &self,
         normal_or_more: usize,
+        test: bool
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let data_folder = match normal_or_more {
             0 => "data_normal",
@@ -271,8 +279,10 @@ impl Dataset {
         df.push("train_Gu_x", Series::new(train_Gu_x.data));
         df.push("train_Gu_p", Series::new(train_Gu_p.data));
 
-        let train_path = format!("{}/train.parquet", data_folder);
-        df.write_parquet(&train_path, CompressionOptions::Uncompressed)?;
+        if !test {
+            let train_path = format!("{}/train.parquet", data_folder);
+            df.write_parquet(&train_path, CompressionOptions::Uncompressed)?;
+        }
 
         let mut df = DataFrame::new(vec![]);
         df.push("val_u", Series::new(val_u.data));
@@ -280,7 +290,11 @@ impl Dataset {
         df.push("val_Gu_x", Series::new(val_Gu_x.data));
         df.push("val_Gu_p", Series::new(val_Gu_p.data));
 
-        let val_path = format!("{}/val.parquet", data_folder);
+        let val_path = if !test {
+            format!("{}/val.parquet", data_folder)
+        } else {
+            format!("{}/test.parquet", data_folder)
+        };
         df.write_parquet(&val_path, CompressionOptions::Uncompressed)?;
 
         Ok(())

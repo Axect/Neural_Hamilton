@@ -127,8 +127,8 @@ def main():
     #device = select_device()
     #model = model.to(device)
 
-    ds_val = load_data("./data_normal/val.parquet")
-    dl_val = DataLoader(ds_val, batch_size=1)
+    ds_val = load_data("./data_normal/test.parquet")
+    dl_val = DataLoader(ds_val, batch_size=100)
 
     variational = False
     if "VaRONet" in config.net:
@@ -140,7 +140,7 @@ def main():
     fig_dir = f"figs/{project}"
     if not os.path.exists(fig_dir):
         os.makedirs(fig_dir)
-    for index in range(10):
+    for index in [0, 5, 9, 10, 11, 26, 34, 44, 49, 64]:
         test_results.plot_V(f"{fig_dir}/{index:02}_0_V_plot", index)
         test_results.plot_q(f"{fig_dir}/{index:02}_1_q_plot", index)
         test_results.plot_p(f"{fig_dir}/{index:02}_2_p_plot", index)
