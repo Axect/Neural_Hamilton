@@ -1,5 +1,5 @@
-project: NeuralHamilton_v1.0_VaRONet
-device: cuda:1
+project: NeuralHamilton_v1.1_VaRONet
+device: cuda:0
 net: model.VaRONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
