@@ -2,6 +2,7 @@
 data_normal/*.parquet
 data_more/*.parquet
 data_much/*.parquet
+data_analyze/*.parquet
 *.db
 
 runs/
