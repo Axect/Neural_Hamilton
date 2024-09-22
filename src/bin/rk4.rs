@@ -1,25 +1,10 @@
 use peroxide::fuga::*;
-use dialoguer::{Select, theme::ColorfulTheme};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Choose data
-    let normal_or_more = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Choose one")
-        .default(0)
-        .items(&["Normal", "More"])
-        .interact()?;
-
-    let normal_or_more = match normal_or_more {
-        0 => "normal",
-        1 => "more",
-        _ => unreachable!(),
-    };
-
-    let data_folder = format!("data_{}", normal_or_more);
-    let test_data = format!("{}/test.parquet", data_folder);
+    let test_data = "data_normal/test.parquet";
 
     // Load validation data
-    let df = DataFrame::read_parquet(&test_data)?;
+    let df = DataFrame::read_parquet(test_data)?;
     df.print();
     let val_u: Vec<f64> = df["val_u"].to_vec();
 
@@ -51,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     dg.push("t", Series::new(t_total));
     dg.push("x", Series::new(x_total));
     dg.push("p", Series::new(p_total));
-    dg.write_parquet(&format!("{}/rk4.parquet", data_folder), CompressionOptions::Uncompressed)?;
+    dg.write_parquet("data_analyze/rk4.parquet", CompressionOptions::Uncompressed)?;
     dg.print();
 
     Ok(())
