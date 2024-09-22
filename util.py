@@ -12,6 +12,7 @@ from config import RunConfig, OptimizeConfig
 
 import random
 import os
+import math
 
 
 def load_data(file_path: str):
@@ -107,6 +108,13 @@ class Trainer:
         for epoch in range(epochs):
             train_loss = self.train_epoch(dl_train)
             val_loss = self.val_epoch(dl_val)
+            
+            # Early stopping if loss becomes NaN
+            if math.isnan(train_loss) or math.isnan(val_loss):
+                print("Early stopping due to NaN loss")
+                val_loss = math.inf
+                break
+
             self.scheduler.step()
             wandb.log({
                 "train_loss": train_loss,
