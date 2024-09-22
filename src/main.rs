@@ -19,13 +19,13 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     };
 
     println!("Generate dataset...");
-    let ds = Dataset::generate(n, 0.8, 42)?;
+    let ds = Dataset::generate(n, 0.8, 8407)?;
     ds.write_parquet(normal_or_more, false)?;
     println!("Generate dataset complete");
     
     if normal_or_more == 0 {
         println!("Generate test dataset...");
-        let ds = Dataset::generate(12500, 0.2, 8407)?;
+        let ds = Dataset::generate(12500, 0.2, 125)?;
         ds.write_parquet(normal_or_more, true)?;
         println!("Generate test dataset complete");
     }
