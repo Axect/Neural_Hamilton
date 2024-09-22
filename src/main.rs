@@ -25,7 +25,7 @@ fn main() -> std::result::Result<(), Box<dyn Error>> {
     
     if normal_or_more == 0 {
         println!("Generate test dataset...");
-        let ds = Dataset::generate(12500, 0.2, 125)?;
+        let ds = Dataset::generate(12500, 0.2, 42)?;
         ds.write_parquet(normal_or_more, true)?;
         println!("Generate test dataset complete");
     }
