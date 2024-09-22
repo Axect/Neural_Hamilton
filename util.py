@@ -173,6 +173,10 @@ def run(run_config: RunConfig, dl_train, dl_val, group_name=None, data=None):
 
         wandb.finish() # pyright: ignore
 
+        # Early stopping if loss becomes inf
+        if math.isinf(val_loss):
+            break
+
     return total_loss / len(seeds)
 
 
