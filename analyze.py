@@ -182,7 +182,7 @@ def main():
         os.makedirs(fig_dir)
 
     # Histogram for loss
-    test_results.hist_loss(f"{fig_dir}/000_loss_hist")
+    test_results.hist_loss(f"{fig_dir}/00_0_loss_hist")
 
     losses = test_results.total_loss_vec.mean(axis=1)
     worst_idx = np.argmax(losses)
