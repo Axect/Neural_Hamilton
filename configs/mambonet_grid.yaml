@@ -1,13 +1,13 @@
-study_name: GridSearch
-trials: 81
+study_name: ModelSearch
+trials: 100
 seed: 42
 metric: val_loss
 direction: minimize
 
 sampler:
-  name: optuna.samplers.GridSampler
-  #kwargs:
-  #  n_startup_trials: 10
+  name: optuna.samplers.TPESampler
+  kwargs:
+    n_startup_trials: 10
 
 #pruner:
 #  name: optuna.pruners.HyperbandPruner
@@ -21,11 +21,16 @@ search_space:
       type: categorical
       choices: [32, 64, 128]
     num_layers1:
+      type: int
+      min: 2
+      max: 4
+    n_head:
       type: categorical
-      choices: [2, 3, 4]
+      choices: [2, 4, 8]
     num_layers2:
-      type: categorical
-      choices: [2, 3, 4]
+      type: int
+      min: 2
+      max: 4
     d_ff:
       type: categorical
       choices: [256, 512, 1024]

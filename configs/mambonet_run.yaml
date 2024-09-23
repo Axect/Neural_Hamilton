@@ -1,5 +1,5 @@
-project: NeuralHamilton_v1.0_MambONet
-device: cuda:1
+project: NeuralHamilton_v1.1_MambONet
+device: cuda:0
 net: model.MambONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
