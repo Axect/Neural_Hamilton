@@ -1,20 +1,20 @@
-project: NeuralHamilton_v1.0_TraONet
-device: cuda:0
+project: NeuralHamilton_v1.1_TraONet
+device: cuda:1
 net: model.TraONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
-epochs: 250
+epochs: 50
 batch_size: 100
 seeds: [89, 231, 928, 814, 269]
 net_config:
   d_model: 64
-  nhead: 4
-  num_layers: 4
+  nhead: 8
+  num_layers: 3
   dim_feedforward: 512
   dropout: 0.0
 optimizer_config:
-  lr: 0.0008483959427287777
+  lr: 1.e-3
 scheduler_config:
   upper_bound: 300
-  max_iter: 250
-  infimum_lr: 4.958243978889227e-5
+  max_iter: 50
+  infimum_lr: 1.e-6
