@@ -1,5 +1,5 @@
 study_name: GridSearch
-trials: 36
+trials: 48
 seed: 42
 metric: val_loss
 direction: minimize
@@ -19,7 +19,7 @@ search_space:
   net_config:
     hidden_size:
       type: categorical
-      choices: [64, 128, 256]
+      choices: [64, 128, 256, 512]
     num_layers:
       type: categorical
       choices: [2, 3, 4]

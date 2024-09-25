@@ -3,18 +3,18 @@ device: cuda:0
 net: model.VaRONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
-epochs: 250
+epochs: 50
 batch_size: 100
 seeds: [89, 231, 928, 814, 269]
 net_config:
-  hidden_size: 256
+  hidden_size: 512
   num_layers: 4
-  latent_size: 20
+  latent_size: 30
   dropout: 0.0
-  kl_weight: 0.5101087554265682
+  kl_weight: 0.1
 optimizer_config:
-  lr: 0.002344924588604707
+  lr: 1.e-3 
 scheduler_config:
   upper_bound: 300
-  max_iter: 250
-  infimum_lr: 1.1122710400476329e-5
+  max_iter: 50
+  infimum_lr: 1.e-6
