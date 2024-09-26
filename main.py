@@ -18,8 +18,8 @@ import copy
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_config", type=str, required=True, help="Path to the YAML config file")
     parser.add_argument("--data", type=str, required=True, help="normal or more or much?")
+    parser.add_argument("--run_config", type=str, required=True, help="Path to the YAML config file")
     parser.add_argument("--optimize_config", type=str, help="Path to the optimization YAML config file")
     args = parser.parse_args()
 
