@@ -84,9 +84,11 @@ class TestResults:
 
     def hist_loss(self, name:str):
         losses = self.total_loss_vec
+        df_losses = pl.DataFrame({"loss":losses})
+        df_losses.write_parquet(f"{name}.parquet")
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            logbins = np.logspace(np.log10(losses.min()), np.log10(losses.max()), 100)
+            logbins = np.logspace(np.log10(losses.min()) * 1.01, np.log10(losses.max()) * 0.99, 100)
             ax.hist(losses, bins=logbins)
             ax.axvline(losses.mean(), color='red', linestyle='--')
             ax.set_xlabel("Total Loss")
@@ -100,7 +102,7 @@ class TestResults:
         losses = self.rk4_loss
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            logbins = np.logspace(np.log10(losses.min()), np.log10(losses.max()), 100)
+            logbins = np.logspace(np.log10(losses.min()) * 1.01, np.log10(losses.max()) * 0.99, 100)
             ax.hist(losses, bins=logbins)
             ax.axvline(losses.mean(), color='red', linestyle='--')
             ax.set_xlabel("Total Loss")
