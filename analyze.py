@@ -86,9 +86,19 @@ class TestResults:
         losses = self.total_loss_vec
         df_losses = pl.DataFrame({"loss":losses})
         df_losses.write_parquet(f"{name}.parquet")
+        loss_min_log = np.log10(losses.min())
+        loss_max_log = np.log10(losses.max())
+        if loss_min_log < 0:
+            loss_min_log *= 1.01
+        else:
+            loss_min_log *= 0.99
+        if loss_max_log < 0:
+            loss_max_log *= 0.99
+        else:
+            loss_max_log *= 1.01
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            logbins = np.logspace(np.log10(losses.min()) * 1.01, np.log10(losses.max()) * 0.99, 100)
+            logbins = np.logspace(loss_min_log, loss_max_log, 100)
             ax.hist(losses, bins=logbins)
             ax.axvline(losses.mean(), color='red', linestyle='--')
             ax.set_xlabel("Total Loss")
@@ -100,9 +110,19 @@ class TestResults:
 
     def hist_loss_rk4(self, name:str):
         losses = self.rk4_loss
+        loss_min_log = np.log10(losses.min())
+        loss_max_log = np.log10(losses.max())
+        if loss_min_log < 0:
+            loss_min_log *= 1.01
+        else:
+            loss_min_log *= 0.99
+        if loss_max_log < 0:
+            loss_max_log *= 0.99
+        else:
+            loss_max_log *= 1.01
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            logbins = np.logspace(np.log10(losses.min()) * 1.01, np.log10(losses.max()) * 0.99, 100)
+            logbins = np.logspace(loss_min_log, loss_max_log, 100)
             ax.hist(losses, bins=logbins)
             ax.axvline(losses.mean(), color='red', linestyle='--')
             ax.set_xlabel("Total Loss")
