@@ -17,5 +17,6 @@ optimizer_config:
 scheduler_config:
   upper_bound: 300
   max_iter: 250
-  infimum_lr: 3.711064639369724e-6
+  infimum_lr: 3.0496988357720129e-7
+  #infimum_lr: 3.711064639369724e-6
   #infimum_lr: 0.00004515855990776123
