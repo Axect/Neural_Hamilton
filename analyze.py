@@ -110,6 +110,8 @@ class TestResults:
 
     def hist_loss_rk4(self, name:str):
         losses = self.rk4_loss
+        df_losses = pl.DataFrame({"loss":losses})
+        df_losses.write_parquet(f"{name}.parquet")
         loss_min_log = np.log10(losses.min())
         loss_max_log = np.log10(losses.max())
         if loss_min_log < 0:
