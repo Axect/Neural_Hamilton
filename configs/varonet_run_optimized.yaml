@@ -1,0 +1,20 @@
+project: NeuralHamilton_v1.1_VaRONet
+device: cuda:0
+net: model.VaRONet
+optimizer: torch.optim.adamw.AdamW
+scheduler: hyperbolic_lr.ExpHyperbolicLR
+epochs: 250
+batch_size: 100
+seeds: [89, 231, 928, 814, 269]
+net_config:
+  hidden_size: 512
+  num_layers: 4
+  latent_size: 30
+  dropout: 0.0
+  kl_weight: 0.05496332315059242
+optimizer_config:
+  lr: 0.0008672091341953869
+scheduler_config:
+  upper_bound: 300
+  max_iter: 250
+  infimum_lr: 0.00000626506234520332 # original
