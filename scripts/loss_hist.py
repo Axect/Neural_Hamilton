@@ -55,7 +55,7 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
         for loss, legend in zip(losses, legends):
             ax.hist(loss, bins=bins, label=legend, histtype="step")
         ax.set_xscale("log")
-        ax.set_yscale("log")
+        #ax.set_yscale("log")
         ax.legend()
         fig.savefig("figs/loss_hist.png", dpi=600, bbox_inches="tight")
 
@@ -64,5 +64,5 @@ if __name__ == "__main__":
     console = Console()
     selected = choose_projects_to_plot()
     losses = losses_from_projects(selected)
-    legends = ["RK4", "TraONet", "MambONet"]
+    legends = ["RK4", "DeepONet", "TraONet", "VaRONet", "MambONet"]
     hist_losses(losses, legends)
