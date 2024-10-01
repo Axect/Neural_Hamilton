@@ -50,10 +50,13 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
     else:
         max *= 1.01
     bins = np.logspace(min, max, 100)
+    colors = ['gray', 'orange', 'darkgreen', 'maroon', 'darkblue']
     with plt.style.context(["science", "nature"]):
         fig, ax = plt.subplots()
-        for loss, legend in zip(losses, legends):
-            ax.hist(loss, bins=bins, label=legend, histtype="step")
+        for i, (loss, legend) in enumerate(zip(losses, legends)):
+            ax.hist(loss, bins=bins, label=legend, color=colors[i], histtype="step", alpha=0.65)
+        ax.set_xlabel("Total Loss")
+        ax.set_ylabel("Count")
         ax.set_xscale("log")
         #ax.set_yscale("log")
         ax.legend()
