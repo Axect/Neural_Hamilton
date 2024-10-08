@@ -6,6 +6,7 @@ from scipy.interpolate import PchipInterpolator
 import matplotlib.pyplot as plt
 import scienceplots
 import polars as pl
+import survey
 
 import os
 import time
@@ -308,49 +309,66 @@ def main():
     model, config = load_model(project, group_name, seed)
     model = model.to(device)
 
-    # Load the best model
-    #study_name = "Optimize_Template"
-    #model, config = load_best_model(project, study_name)
-    #device = select_device()
-    #model = model.to(device)
-
-    ds_val = load_data("./data_normal/test.parquet")
-    dl_val = DataLoader(ds_val, batch_size=1)
-
     variational = False
     if "VaRONet" in config.net:
         variational = True
 
-    test_results = TestResults(model, dl_val, device, variational)
-    test_results.print_results()
+    test_options = ["test", "physical"]
+    test_option = survey.routines.select("Select test option:", options=test_options)
+    if test_option == 0:
+        ds_val = load_data("./data_normal/test.parquet")
+        dl_val = DataLoader(ds_val, batch_size=1)
 
-    fig_dir = f"figs/{project}"
-    if not os.path.exists(fig_dir):
-        os.makedirs(fig_dir)
 
-    # Histogram for loss
-    test_results.hist_loss(f"{fig_dir}/00_0_Loss_hist")
-    test_results.hist_loss_rk4(f"{fig_dir}/00_0_Loss_rk4_hist")
+        test_results = TestResults(model, dl_val, device, variational)
+        test_results.print_results()
 
-    losses = test_results.total_loss_vec
-    worst_idx = int(np.argmax(losses))
+        fig_dir = f"figs/{project}"
+        if not os.path.exists(fig_dir):
+            os.makedirs(fig_dir)
 
-    # Plot the results
-    #for index in [0, 5, 9, 10, 11, 26, 34, 44, 49, 64]:
-    for index in range(10):
-        test_results.plot_V(f"{fig_dir}/{index:02}_0_V_plot", index)
-        test_results.plot_q(f"{fig_dir}/{index:02}_1_q_plot", index)
-        test_results.plot_p(f"{fig_dir}/{index:02}_2_p_plot", index)
-        test_results.plot_phase(f"{fig_dir}/{index:02}_3_phase_plot", index)
+        # Histogram for loss
+        test_results.hist_loss(f"{fig_dir}/00_0_Loss_hist")
+        test_results.hist_loss_rk4(f"{fig_dir}/00_0_Loss_rk4_hist")
 
-    # Plot the worst result
-    test_results.plot_V(f"{fig_dir}/{worst_idx:02}_0_V_plot", worst_idx)
-    test_results.plot_q(f"{fig_dir}/{worst_idx:02}_1_q_plot", worst_idx)
-    test_results.plot_p(f"{fig_dir}/{worst_idx:02}_2_p_plot", worst_idx)
-    test_results.plot_phase(f"{fig_dir}/{worst_idx:02}_3_phase_plot", worst_idx)
+        losses = test_results.total_loss_vec
+        worst_idx = int(np.argmax(losses))
 
-    # Additional custom analysis can be added here
-    # ...
+        # Plot the results
+        for index in range(10):
+            test_results.plot_V(f"{fig_dir}/{index:02}_0_V_plot", index)
+            test_results.plot_q(f"{fig_dir}/{index:02}_1_q_plot", index)
+            test_results.plot_p(f"{fig_dir}/{index:02}_2_p_plot", index)
+            test_results.plot_phase(f"{fig_dir}/{index:02}_3_phase_plot", index)
+
+        # Plot the worst result
+        test_results.plot_V(f"{fig_dir}/{worst_idx:02}_0_V_plot", worst_idx)
+        test_results.plot_q(f"{fig_dir}/{worst_idx:02}_1_q_plot", worst_idx)
+        test_results.plot_p(f"{fig_dir}/{worst_idx:02}_2_p_plot", worst_idx)
+        test_results.plot_phase(f"{fig_dir}/{worst_idx:02}_3_phase_plot", worst_idx)
+    else:
+        ds_test_sho = load_data("./data_analyze/sho.parquet")
+        ds_test_quartic = load_data("./data_analyze/quartic.parquet")
+        ds_test_morse = load_data("./data_analyze/morse.parquet")
+        ds_test_softabs = load_data("./data_analyze/softabs.parquet")
+
+        ds_tests = [ds_test_sho, ds_test_quartic, ds_test_morse, ds_test_softabs]
+        dl_tests = [DataLoader(ds_test, batch_size=1) for ds_test in ds_tests]
+        tests_name = ["SHO", "Quartic", "Morse", "MFF"]
+        for name, dl in zip(tests_name, dl_tests):
+            print(f"Test {name}:")
+            test_results = TestResults(model, dl, device, variational)
+            test_results.print_results()
+
+            fig_dir = f"figs/{project}"
+            if not os.path.exists(fig_dir):
+                os.makedirs(fig_dir)
+
+            test_results.plot_V(f"{fig_dir}/{name}_0_V_plot", 0)
+            test_results.plot_q(f"{fig_dir}/{name}_1_q_plot", 0)
+            test_results.plot_p(f"{fig_dir}/{name}_2_p_plot", 0)
+            test_results.plot_phase(f"{fig_dir}/{name}_3_phase_plot", 0)
+
 
 if __name__ == "__main__":
     main()
