@@ -1,5 +1,7 @@
 import polars as pl
+import pandas as pd
 import numpy as np
+from scipy import stats
 import matplotlib.pyplot as plt
 import scienceplots
 import os
@@ -53,7 +55,30 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
     colors = ['gray', 'orange', 'darkgreen', 'maroon', 'darkblue']
     with plt.style.context(["science", "nature"]):
         fig, ax = plt.subplots()
+        loss_means = []
+        loss_stds = []
+        loss_geo_means = []
+        loss_log_stds = []
+        loss_medians = []
+        loss_q1s = []
+        loss_q3s = []
+        loss_iqrs = []
         for i, (loss, legend) in enumerate(zip(losses, legends)):
+            loss_mean = np.mean(loss)
+            loss_std = np.std(loss)
+            loss_geo_mean = stats.gmean(loss)
+            loss_log_std = np.std(np.log10(loss))
+            loss_med = np.median(loss)
+            loss_q1, loss_q3 = np.percentile(loss, [25, 75])
+            iqr = loss_q3 - loss_q1
+            loss_means.append(loss_mean)
+            loss_stds.append(loss_std)
+            loss_geo_means.append(loss_geo_mean)
+            loss_log_stds.append(loss_log_std)
+            loss_medians.append(loss_med)
+            loss_q1s.append(loss_q1)
+            loss_q3s.append(loss_q3)
+            loss_iqrs.append(iqr)
             ax.hist(loss, bins=bins, label=legend, color=colors[i], histtype="step", alpha=0.65)
         ax.set_xlabel("Total Loss")
         ax.set_ylabel("Count")
@@ -61,6 +86,19 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
         #ax.set_yscale("log")
         ax.legend()
         fig.savefig("figs/loss_hist.png", dpi=600, bbox_inches="tight")
+        plt.close(fig)
+        df = pd.DataFrame({
+            "loss_mean": loss_means,
+            "loss_std": loss_stds,
+            "loss_geo_mean": loss_geo_means,
+            "loss_log_std": loss_log_stds,
+            "loss_med": loss_medians,
+            "loss_q1": loss_q1s,
+            "loss_q3": loss_q3s,
+            "loss_iqr": loss_iqrs
+        })
+        pd.set_option('display.float_format', lambda x: '%.4e' % x)
+        print(df)
 
 
 if __name__ == "__main__":
