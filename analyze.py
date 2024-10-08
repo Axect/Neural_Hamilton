@@ -2,13 +2,50 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import numpy as np
+from scipy.interpolate import PchipInterpolator
 import matplotlib.pyplot as plt
 import scienceplots
 import polars as pl
 
 import os
+import time
 
 from util import select_project, select_group, select_seed, select_device, load_model, load_data, load_study, load_best_model
+
+
+# ┌──────────────────────────────────────────────────────────┐
+#  RK4 Solver
+# └──────────────────────────────────────────────────────────┘
+def rk4_step(f, y, t, dt):
+    k1 = dt * f(y, t)
+    k2 = dt * f(y + k1 / 2, t + dt / 2)
+    k3 = dt * f(y + k2 / 2, t + dt / 2)
+    k4 = dt * f(y + k3, t + dt)
+    return y + (k1 + 2 * k2 + 2 * k3 + k4) / 6
+
+
+def solve_hamilton(V, x0, p0, t):
+    x = np.linspace(0, 1, 100)
+    V_interp = PchipInterpolator(x, V)
+    dVdx_interp = V_interp.derivative()
+
+    def hamilton_eqs(y, _t):
+        x, p = y
+        dxdt = p
+        dpdt = -dVdx_interp(x)
+        return np.array([dxdt, dpdt])
+
+    y0 = np.array([x0, p0])
+    dt = t[1] - t[0]
+
+    solution = np.zeros((len(t), 2))
+    solution[0] = y0
+
+    for i in range(1, len(t)):
+        solution[i] = rk4_step(hamilton_eqs, solution[i - 1], t[i - 1], dt)
+
+    return solution[:,0], solution[:,1]
+
 
 class TestResults:
     def __init__(self, model, dl_val, device, variational=False):
@@ -19,6 +56,7 @@ class TestResults:
         
         self.run_test()
         self.load_rk4()
+        self.measure_rk4()
 
     def run_test(self):
         self.model.eval()
@@ -32,15 +70,18 @@ class TestResults:
         total_loss_x_vec = []
         total_loss_p_vec = []
         total_loss_vec = []
+        total_time_vec = []
 
         with torch.no_grad():
             for V, t, x, p in self.dl_val:
                 V, t, x, p = V.to(self.device), t.to(self.device), x.to(self.device), p.to(self.device)
                 
+                t_start = time.time()
                 if not self.variational:
                     x_pred, p_pred = self.model(V, t)
                 else:
                     x_pred, p_pred, _, _ = self.model(V, t)
+                t_total = (time.time() - t_start) / V.shape[0]
                 
                 loss_x_vec = F.mse_loss(x_pred, x, reduction="none")
                 loss_p_vec = F.mse_loss(p_pred, p, reduction="none")
@@ -58,10 +99,12 @@ class TestResults:
                 total_loss_vec.extend(loss.cpu().numpy())
                 total_loss_x_vec.extend(loss_x.cpu().numpy())
                 total_loss_p_vec.extend(loss_p.cpu().numpy())
+                total_time_vec.extend([t_total] * V.shape[0])
 
         self.total_loss_vec = np.array(total_loss_vec)
         self.total_loss_x_vec = np.array(total_loss_x_vec)
         self.total_loss_p_vec = np.array(total_loss_p_vec)
+        self.total_time_vec = np.array(total_time_vec)
         self.V_vec = np.array(V_vec)
         self.x_preds = np.array(x_preds)
         self.p_preds = np.array(p_preds)
@@ -76,6 +119,17 @@ class TestResults:
         self.rk4_loss_p = df_rk4["loss_p"].to_numpy().reshape(-1, 100).mean(axis=1)
         self.rk4_loss = df_rk4["loss"].to_numpy().reshape(-1, 100).mean(axis=1)
 
+    def measure_rk4(self):
+        t_total_vec = []
+        for V, _, x, p in self.dl_val:
+            for i in range(V.shape[0]):
+                V_i = V[i].detach().cpu().numpy()
+                t = np.linspace(0, 2, 100)
+                t_start = time.time()
+                _, _ = solve_hamilton(V_i, 0, 0, t)
+                t_total_vec.append(time.time() - t_start)
+        self.t_total_time_vec_rk4 = np.array(t_total_vec)
+
     def print_results(self):
         print(self.total_loss_vec.shape)
         print(f"Total Loss: {self.total_loss_vec.mean():.4e}")
@@ -84,7 +138,8 @@ class TestResults:
 
     def hist_loss(self, name:str):
         losses = self.total_loss_vec
-        df_losses = pl.DataFrame({"loss":losses})
+        times = self.total_time_vec
+        df_losses = pl.DataFrame({"loss":losses, "time":times})
         df_losses.write_parquet(f"{name}.parquet")
         loss_min_log = np.log10(losses.min())
         loss_max_log = np.log10(losses.max())
@@ -110,7 +165,8 @@ class TestResults:
 
     def hist_loss_rk4(self, name:str):
         losses = self.rk4_loss
-        df_losses = pl.DataFrame({"loss":losses})
+        times = self.t_total_time_vec_rk4
+        df_losses = pl.DataFrame({"loss":losses, "time":times})
         df_losses.write_parquet(f"{name}.parquet")
         loss_min_log = np.log10(losses.min())
         loss_max_log = np.log10(losses.max())
@@ -259,7 +315,7 @@ def main():
     #model = model.to(device)
 
     ds_val = load_data("./data_normal/test.parquet")
-    dl_val = DataLoader(ds_val, batch_size=100)
+    dl_val = DataLoader(ds_val, batch_size=1)
 
     variational = False
     if "VaRONet" in config.net:
@@ -286,18 +342,12 @@ def main():
         test_results.plot_q(f"{fig_dir}/{index:02}_1_q_plot", index)
         test_results.plot_p(f"{fig_dir}/{index:02}_2_p_plot", index)
         test_results.plot_phase(f"{fig_dir}/{index:02}_3_phase_plot", index)
-        #test_results.plot_compare_q(f"{fig_dir}/{index:02}_4_compare_q_plot", index)
-        #test_results.plot_compare_p(f"{fig_dir}/{index:02}_5_compare_p_plot", index)
-        #test_results.plot_compare_phase(f"{fig_dir}/{index:02}_6_compare_phase_plot", index)
 
     # Plot the worst result
     test_results.plot_V(f"{fig_dir}/{worst_idx:02}_0_V_plot", worst_idx)
     test_results.plot_q(f"{fig_dir}/{worst_idx:02}_1_q_plot", worst_idx)
     test_results.plot_p(f"{fig_dir}/{worst_idx:02}_2_p_plot", worst_idx)
     test_results.plot_phase(f"{fig_dir}/{worst_idx:02}_3_phase_plot", worst_idx)
-    #test_results.plot_compare_q(f"{fig_dir}/{worst_idx:02}_4_compare_q_plot", worst_idx)
-    #test_results.plot_compare_p(f"{fig_dir}/{worst_idx:02}_5_compare_p_plot", worst_idx)
-    #test_results.plot_compare_phase(f"{fig_dir}/{worst_idx:02}_6_compare_phase_plot", worst_idx)
 
     # Additional custom analysis can be added here
     # ...
