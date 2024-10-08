@@ -352,10 +352,17 @@ def main():
         ds_test_morse = load_data("./data_analyze/morse.parquet")
         ds_test_softabs = load_data("./data_analyze/softabs.parquet")
 
+        ds_sho_rk4 = load_data("./data_analyze/sho_rk4.parquet")
+        ds_quartic_rk4 = load_data("./data_analyze/quartic_rk4.parquet")
+        ds_morse_rk4 = load_data("./data_analyze/morse_rk4.parquet")
+        ds_softabs_rk4 = load_data("./data_analyze/softabs_rk4.parquet")
+
         ds_tests = [ds_test_sho, ds_test_quartic, ds_test_morse, ds_test_softabs]
+        ds_rk4s = [ds_sho_rk4, ds_quartic_rk4, ds_morse_rk4, ds_softabs_rk4]
         dl_tests = [DataLoader(ds_test, batch_size=1) for ds_test in ds_tests]
+        dl_rk4s = [DataLoader(ds_rk4, batch_size=1) for ds_rk4 in ds_rk4s]
         tests_name = ["SHO", "Quartic", "Morse", "MFF"]
-        for name, dl in zip(tests_name, dl_tests):
+        for name, dl, dl_rk4 in zip(tests_name, dl_tests, dl_rk4s):
             print(f"Test {name}:")
             test_results = TestResults(model, dl, device, variational)
             test_results.print_results()
@@ -368,6 +375,52 @@ def main():
             test_results.plot_q(f"{fig_dir}/{name}_1_q_plot", 0)
             test_results.plot_p(f"{fig_dir}/{name}_2_p_plot", 0)
             test_results.plot_phase(f"{fig_dir}/{name}_3_phase_plot", 0)
+
+            # RK4
+            for (_, _, x, p), (_, _, x_hat, p_hat) in zip(dl, dl_rk4):
+                x = x.numpy().reshape(-1)
+                p = p.numpy().reshape(-1)
+                x_hat = x_hat.numpy().reshape(-1)
+                p_hat = p_hat.numpy().reshape(-1)
+                loss_x = np.mean(np.square(x - x_hat))
+                loss_p = np.mean(np.square(p - p_hat))
+                loss = 0.5 * (loss_x + loss_p)
+                print(f"RK4 Loss: {loss:.4e}")
+
+                t = np.linspace(0, 1, len(x))
+                with plt.style.context(["science", "nature"]):
+                    fig, ax = plt.subplots()
+                    ax.plot(t, x, color='gray', label=r"$q$", alpha=0.65, linewidth=1.75)
+                    ax.plot(t, x_hat, ':', color='red', label=r"$\hat{q}$")
+                    ax.set_xlabel(r"$t$")
+                    ax.set_ylabel(r"$q(t)$")
+                    ax.autoscale(tight=True)
+                    ax.text(0.05, 0.9, f"Loss: {loss_x:.4e}", transform=ax.transAxes, fontsize=5)
+                    ax.legend()
+                    fig.savefig(f"{fig_dir}/{name}_RK4_0_q_plot.png", dpi=600, bbox_inches="tight")
+                    plt.close(fig)
+
+                    fig, ax = plt.subplots()
+                    ax.plot(t, p, color='gray', label=r"$p$", alpha=0.65, linewidth=1.75)
+                    ax.plot(t, p_hat, ':', color='red', label=r"$\hat{p}$")
+                    ax.set_xlabel(r"$t$")
+                    ax.set_ylabel(r"$p(t)$")
+                    ax.autoscale(tight=True)
+                    ax.text(0.05, 0.1, f"Loss: {loss_p:.4e}", transform=ax.transAxes, fontsize=5)
+                    ax.legend()
+                    fig.savefig(f"{fig_dir}/{name}_RK4_1_p_plot.png", dpi=600, bbox_inches="tight")
+                    plt.close(fig)
+
+                    fig, ax = plt.subplots()
+                    ax.plot(x, p, color='gray', label=r"$p$", alpha=0.65, linewidth=1.75)
+                    ax.plot(x_hat, p_hat, ':', color='red', label=r"$\hat{p}$")
+                    ax.set_xlabel(r"$q$")
+                    ax.set_ylabel(r"$p$")
+                    ax.autoscale(tight=True)
+                    ax.text(0.05, 0.5, f"Loss: {loss:.4e}", transform=ax.transAxes, fontsize=5)
+                    ax.legend()
+                    fig.savefig(f"{fig_dir}/{name}_RK4_2_phase_plot.png", dpi=600, bbox_inches="tight")
+                    plt.close(fig)
 
 
 if __name__ == "__main__":

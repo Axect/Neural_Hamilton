@@ -85,7 +85,7 @@ impl ODEProblem for SHO {
 
     fn rhs(&self, _t: f64, y: &[f64], dy: &mut [f64]) -> anyhow::Result<()> {
         dy[0] = y[1];
-        dy[1] = dVdx(y[0]);
+        dy[1] = -dVdx(y[0]);
         Ok(())
     }
 }
