@@ -79,6 +79,7 @@ class TestResults:
                 
                 t_start = time.time()
                 if not self.variational:
+                    self.reparameterize=False
                     x_pred, p_pred = self.model(V, t)
                 else:
                     x_pred, p_pred, _, _ = self.model(V, t)
@@ -317,7 +318,7 @@ def main():
     test_option = survey.routines.select("Select test option:", options=test_options)
     if test_option == 0:
         ds_val = load_data("./data_normal/test.parquet")
-        dl_val = DataLoader(ds_val, batch_size=1)
+        dl_val = DataLoader(ds_val, batch_size=100)
 
 
         test_results = TestResults(model, dl_val, device, variational)
