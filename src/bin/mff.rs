@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if !std::path::Path::new(path).exists() {
         std::fs::create_dir("data_analyze")?;
     }
-    let path = format!("{}{}", path, "sho_rk4.parquet");
+    let path = format!("{}{}", path, "mff_rk4.parquet");
     df.write_parquet(&path, CompressionOptions::Uncompressed)?;
 
     Ok(())
