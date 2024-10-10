@@ -350,18 +350,20 @@ def main():
         ds_test_sho = load_data("./data_analyze/sho.parquet")
         ds_test_quartic = load_data("./data_analyze/quartic.parquet")
         ds_test_morse = load_data("./data_analyze/morse.parquet")
-        ds_test_softabs = load_data("./data_analyze/softabs.parquet")
+        ds_test_smff = load_data("./data_analyze/smff.parquet")
+        ds_test_mff = load_data("./data_analyze/mff.parquet")
 
         ds_sho_rk4 = load_data("./data_analyze/sho_rk4.parquet")
         ds_quartic_rk4 = load_data("./data_analyze/quartic_rk4.parquet")
         ds_morse_rk4 = load_data("./data_analyze/morse_rk4.parquet")
-        ds_softabs_rk4 = load_data("./data_analyze/softabs_rk4.parquet")
+        ds_smff_rk4 = load_data("./data_analyze/smff_rk4.parquet")
+        ds_mff_rk4 = load_data("./data_analyze/mff_rk4.parquet")
 
-        ds_tests = [ds_test_sho, ds_test_quartic, ds_test_morse, ds_test_softabs]
-        ds_rk4s = [ds_sho_rk4, ds_quartic_rk4, ds_morse_rk4, ds_softabs_rk4]
+        ds_tests = [ds_test_sho, ds_test_quartic, ds_test_morse, ds_test_smff, ds_test_mff]
+        ds_rk4s = [ds_sho_rk4, ds_quartic_rk4, ds_morse_rk4, ds_smff_rk4, ds_mff_rk4]
         dl_tests = [DataLoader(ds_test, batch_size=1) for ds_test in ds_tests]
         dl_rk4s = [DataLoader(ds_rk4, batch_size=1) for ds_rk4 in ds_rk4s]
-        tests_name = ["SHO", "Quartic", "Morse", "MFF"]
+        tests_name = ["SHO", "Quartic", "Morse", "SMFF", "MFF"]
         for name, dl, dl_rk4 in zip(tests_name, dl_tests, dl_rk4s):
             print(f"Test {name}:")
             test_results = TestResults(model, dl, device, variational)
