@@ -204,7 +204,7 @@ class TestResults:
             plt.close(fig)
 
     def plot_q(self, name:str, index:int):
-        t = np.linspace(0, 1, len(self.x_preds[index]))
+        t = np.linspace(0, 2, len(self.x_preds[index]))
         loss_x = self.total_loss_x_vec[index]
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
@@ -219,7 +219,7 @@ class TestResults:
             plt.close(fig)
 
     def plot_p(self, name:str, index:int):
-        t = np.linspace(0, 1, len(self.p_preds[index]))
+        t = np.linspace(0, 2, len(self.p_preds[index]))
         loss_p = self.total_loss_p_vec[index]
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
@@ -248,7 +248,7 @@ class TestResults:
             plt.close(fig)
 
     def plot_compare_q(self, name:str, index:int):
-        t = np.linspace(0, 1, len(self.x_preds[index]))
+        t = np.linspace(0, 2, len(self.x_preds[index]))
         loss_nn = self.total_loss_x_vec[index]
         loss_rk4 = self.rk4_loss_x[index]
         with plt.style.context(["science", "nature"]):
@@ -266,7 +266,7 @@ class TestResults:
             plt.close(fig)
 
     def plot_compare_p(self, name:str, index:int):
-        t = np.linspace(0, 1, len(self.p_preds[index]))
+        t = np.linspace(0, 2, len(self.p_preds[index]))
         loss_nn = self.total_loss_p_vec[index]
         loss_rk4 = self.rk4_loss_p[index]
         with plt.style.context(["science", "nature"]):
@@ -353,18 +353,20 @@ def main():
         ds_test_morse = load_data("./data_analyze/morse.parquet")
         ds_test_smff = load_data("./data_analyze/smff.parquet")
         ds_test_mff = load_data("./data_analyze/mff.parquet")
+        ds_test_unbounded = load_data("./data_analyze/unbounded.parquet")
 
         ds_sho_rk4 = load_data("./data_analyze/sho_rk4.parquet")
         ds_quartic_rk4 = load_data("./data_analyze/quartic_rk4.parquet")
         ds_morse_rk4 = load_data("./data_analyze/morse_rk4.parquet")
         ds_smff_rk4 = load_data("./data_analyze/smff_rk4.parquet")
         ds_mff_rk4 = load_data("./data_analyze/mff_rk4.parquet")
+        ds_unbounded_rk4 = load_data("./data_analyze/unbounded_rk4.parquet")
 
-        ds_tests = [ds_test_sho, ds_test_quartic, ds_test_morse, ds_test_smff, ds_test_mff]
-        ds_rk4s = [ds_sho_rk4, ds_quartic_rk4, ds_morse_rk4, ds_smff_rk4, ds_mff_rk4]
+        ds_tests = [ds_test_sho, ds_test_quartic, ds_test_morse, ds_test_smff, ds_test_mff, ds_test_unbounded]
+        ds_rk4s = [ds_sho_rk4, ds_quartic_rk4, ds_morse_rk4, ds_smff_rk4, ds_mff_rk4, ds_unbounded_rk4]
         dl_tests = [DataLoader(ds_test, batch_size=1) for ds_test in ds_tests]
         dl_rk4s = [DataLoader(ds_rk4, batch_size=1) for ds_rk4 in ds_rk4s]
-        tests_name = ["SHO", "Quartic", "Morse", "SMFF", "MFF"]
+        tests_name = ["SHO", "Quartic", "Morse", "SMFF", "MFF", "Unbounded"]
         for name, dl, dl_rk4 in zip(tests_name, dl_tests, dl_rk4s):
             print(f"Test {name}:")
             test_results = TestResults(model, dl, device, variational)
@@ -390,7 +392,7 @@ def main():
                 loss = 0.5 * (loss_x + loss_p)
                 print(f"RK4 Loss: {loss:.4e}")
 
-                t = np.linspace(0, 1, len(x))
+                t = np.linspace(0, 2, len(x))
                 with plt.style.context(["science", "nature"]):
                     fig, ax = plt.subplots()
                     ax.plot(t, x, color='gray', label=r"$q$", alpha=0.65, linewidth=1.75)
