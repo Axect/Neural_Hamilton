@@ -254,6 +254,55 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
+    def plot_V_expand(self, name:str, index:int):
+        q = np.linspace(0, 1, 100)
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(q, self.V_vec[index])
+            ax.set_xlabel(r"$q$")
+            ax.set_ylabel(r"$V(q)$")
+            ax.axvline(0.5, color='olive', linestyle='--')
+            ax.autoscale(tight=True)
+            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+    def plot_q_expand(self, name:str, index:int):
+        t = np.linspace(0, 2, len(self.x_preds[index]))
+        loss_x = self.total_loss_x_vec[index]
+        cmap = plt.get_cmap("gist_heat")
+        colors = cmap(np.linspace(0, 0.75, len(t)))
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(t, self.x_targets[index], color='gray', label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0)
+            ax.scatter(t, self.x_preds[index], color=colors, marker='.', s=9, label=r"$\hat{q}$", zorder=1, edgecolors='none')
+            ax.axvline(0.5, color='olive', linestyle='--')
+            ax.set_xlabel(r"$t$")
+            ax.set_ylabel(r"$q(t)$")
+            ax.autoscale(tight=True)
+            ax.text(0.05, 0.9, f"Loss: {loss_x:.4e}", transform=ax.transAxes, fontsize=5)
+            ax.legend()
+            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+    def plot_p_expand(self, name:str, index:int):
+        t = np.linspace(0, 2, len(self.p_preds[index]))
+        loss_p = self.total_loss_p_vec[index]
+        cmap = plt.get_cmap("gist_heat")
+        colors = cmap(np.linspace(0, 0.75, len(t)))
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(t, self.p_targets[index], color='gray', label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0)
+            ax.scatter(t, self.p_preds[index], color=colors, marker='.', s=9, label=r"$\hat{p}$", zorder=1, edgecolors='none')
+            ax.axvline(0.5, color='olive', linestyle='--')
+            ax.set_xlabel(r"$t$")
+            ax.set_ylabel(r"$p(t)$")
+            ax.autoscale(tight=True)
+            ax.text(0.05, 0.1, f"Loss: {loss_p:.4e}", transform=ax.transAxes, fontsize=5)
+            ax.legend()
+            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+
     def plot_compare_q(self, name:str, index:int):
         t = np.linspace(0, 2, len(self.x_preds[index]))
         loss_nn = self.total_loss_x_vec[index]
@@ -383,9 +432,14 @@ def main():
             if not os.path.exists(fig_dir):
                 os.makedirs(fig_dir)
 
-            test_results.plot_V(f"{fig_dir}/{name}_0_V_plot", 0)
-            test_results.plot_q(f"{fig_dir}/{name}_1_q_plot", 0)
-            test_results.plot_p(f"{fig_dir}/{name}_2_p_plot", 0)
+            if name == "Unbounded":
+                test_results.plot_V_expand(f"{fig_dir}/{name}_0_V_plot", 0)
+                test_results.plot_q_expand(f"{fig_dir}/{name}_1_q_plot", 0)
+                test_results.plot_p_expand(f"{fig_dir}/{name}_2_p_plot", 0)
+            else:
+                test_results.plot_V(f"{fig_dir}/{name}_0_V_plot", 0)
+                test_results.plot_q(f"{fig_dir}/{name}_1_q_plot", 0)
+                test_results.plot_p(f"{fig_dir}/{name}_2_p_plot", 0)
             test_results.plot_phase(f"{fig_dir}/{name}_3_phase_plot", 0)
 
             # RK4
