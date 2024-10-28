@@ -206,10 +206,12 @@ class TestResults:
     def plot_q(self, name:str, index:int):
         t = np.linspace(0, 2, len(self.x_preds[index]))
         loss_x = self.total_loss_x_vec[index]
+        cmap = plt.get_cmap("gist_heat")
+        colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(t, self.x_targets[index], color='gray', label=r"$q$", alpha=0.65, linewidth=1.75)
-            ax.plot(t, self.x_preds[index], ':', color='red', label=r"$\hat{q}$")
+            ax.plot(t, self.x_targets[index], color='gray', label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0)
+            ax.scatter(t, self.x_preds[index], color=colors, marker='.', s=9, label=r"$\hat{q}$", zorder=1, edgecolors='none')
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
@@ -221,10 +223,12 @@ class TestResults:
     def plot_p(self, name:str, index:int):
         t = np.linspace(0, 2, len(self.p_preds[index]))
         loss_p = self.total_loss_p_vec[index]
+        cmap = plt.get_cmap("gist_heat")
+        colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(t, self.p_targets[index], color='gray', label=r"$p$", alpha=0.65, linewidth=1.75)
-            ax.plot(t, self.p_preds[index], ':', color='red', label=r"$\hat{p}$")
+            ax.plot(t, self.p_targets[index], color='gray', label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0)
+            ax.scatter(t, self.p_preds[index], color=colors, marker='.', s=9, label=r"$\hat{p}$", zorder=1, edgecolors='none')
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$p(t)$")
             ax.autoscale(tight=True)
@@ -234,11 +238,14 @@ class TestResults:
             plt.close(fig)
 
     def plot_phase(self, name:str, index:int):
+        t = np.linspace(0, 2, len(self.p_preds[index]))
         loss = self.total_loss_vec[index]
+        cmap = plt.get_cmap("gist_heat")
+        colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(self.x_targets[index], self.p_targets[index], color='gray', label=r"$(q,p)$", alpha=0.65, linewidth=1.75)
-            ax.plot(self.x_preds[index], self.p_preds[index], ':', color='red', label=r"$(\hat{q}, \hat{p})$")
+            ax.plot(self.x_targets[index], self.p_targets[index], color='gray', label=r"$(q,p)$", alpha=0.5, linewidth=1.75, zorder=0)
+            ax.scatter(self.x_preds[index], self.p_preds[index], color=colors, marker='.', s=9, label=r"$(\hat{q}, \hat{p})$", zorder=1, edgecolors='none')
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$p$")
             ax.autoscale(tight=True)
@@ -393,10 +400,12 @@ def main():
                 print(f"RK4 Loss: {loss:.4e}")
 
                 t = np.linspace(0, 2, len(x))
+                cmap = plt.get_cmap("gist_heat")
+                colors = cmap(np.linspace(0, 0.75, len(t)))
                 with plt.style.context(["science", "nature"]):
                     fig, ax = plt.subplots()
-                    ax.plot(t, x, color='gray', label=r"$q$", alpha=0.65, linewidth=1.75)
-                    ax.plot(t, x_hat, ':', color='red', label=r"$\hat{q}$")
+                    ax.plot(t, x, color='gray', label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0)
+                    ax.scatter(t, x_hat, color=colors, marker='.', s=9, label=r"$\hat{q}$", zorder=1, edgecolors='none')
                     ax.set_xlabel(r"$t$")
                     ax.set_ylabel(r"$q(t)$")
                     ax.autoscale(tight=True)
@@ -406,8 +415,8 @@ def main():
                     plt.close(fig)
 
                     fig, ax = plt.subplots()
-                    ax.plot(t, p, color='gray', label=r"$p$", alpha=0.65, linewidth=1.75)
-                    ax.plot(t, p_hat, ':', color='red', label=r"$\hat{p}$")
+                    ax.plot(t, p, color='gray', label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0)
+                    ax.scatter(t, p_hat, color=colors, marker='.', s=9, label=r"$\hat{p}$", zorder=1, edgecolors='none')
                     ax.set_xlabel(r"$t$")
                     ax.set_ylabel(r"$p(t)$")
                     ax.autoscale(tight=True)
@@ -417,8 +426,8 @@ def main():
                     plt.close(fig)
 
                     fig, ax = plt.subplots()
-                    ax.plot(x, p, color='gray', label=r"$p$", alpha=0.65, linewidth=1.75)
-                    ax.plot(x_hat, p_hat, ':', color='red', label=r"$\hat{p}$")
+                    ax.plot(x, p, color='gray', label=r"$(q, p)$", alpha=0.5, linewidth=1.75, zorder=0)
+                    ax.scatter(x_hat, p_hat, color=colors, marker='.', s=9, label=r"$(\hat{q}, \hat{p})$", zorder=1, edgecolors='none')
                     ax.set_xlabel(r"$q$")
                     ax.set_ylabel(r"$p$")
                     ax.autoscale(tight=True)
