@@ -43,6 +43,26 @@ Key features:
 
 ## Usage
 
+### Data Generation
+
+To generate training & validation data with Rust:
+```bash
+cargo run --release --bin neural_hamilton
+```
+
+To generate physically relevant potentials:
+```bash
+cargo run --release --bin <potential_name>
+```
+
+For `potential_name`, there are six options:
+- `sho`: Simple Harmonic Oscillator
+- `quartic`: Double-well
+- `morse`: Morse
+- `mff`: Mirrored Free Fall
+- `smff`: Softened Mirrored Free Fall
+- `unbounded`: Unbounded potential example in the paper
+
 ### Training Models
 
 The main training script can be run with different dataset sizes:
@@ -71,43 +91,42 @@ The script provides options to:
 
 ### Model Architectures
 
-1. **DeepONet**: Baseline neural operator model
-   ```python
-   config = {
-       "nodes": 128,
-       "layers": 3,
-       "branches": 10
-   }
+1. **DeepONet**: Baseline neural operator model (config example: `configs/deeponet_run.yaml`)
+   ```yaml
+   net_config:
+     nodes: 128
+     layers: 3
+     branches: 10
    ```
 
-2. **VaRONet**: Variational Recurrent Operator Network
-   ```python
-   config = {
-       "hidden_size": 512,
-       "num_layers": 4,
-       "latent_size": 30
-   }
+2. **VaRONet**: Variational Recurrent Operator Network (config example: `configs/varonet_run.yaml`)
+   ```yaml
+   net_config:
+     hidden_size: 512
+     num_layers: 4
+     latent_size: 30
+     dropout: 0.0
+     kl_weight: 0.1
    ```
 
-3. **TraONet**: Transformer Operator Network
-   ```python
-   config = {
-       "d_model": 64,
-       "nhead": 8,
-       "num_layers": 3,
-       "dim_feedforward": 512
-   }
+3. **TraONet**: Transformer Operator Network (config example: `configs/traonet_run.yaml`)
+   ```yaml
+   net_config:
+     d_model: 64
+     nhead: 8
+     num_layers: 3
+     dim_feedforward: 512
+     dropout: 0.0
    ```
 
-4. **MambONet**: Mamba Operator Network
-   ```python
-   config = {
-       "d_model": 128,
-       "num_layers1": 4,
-       "n_head": 4,
-       "num_layers2": 4,
-       "d_ff": 1024
-   }
+4. **MambONet**: Mamba Operator Network (config example: `configs/mambonet_run.yaml`)
+   ```yaml
+   net_config:
+     d_model: 128
+     num_layers1: 4
+     n_head: 4
+     num_layers2: 4
+     d_ff: 1024
    ```
 
 ## Key Results
