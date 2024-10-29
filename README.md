@@ -164,3 +164,10 @@ If you use this code in your research, please cite:
 ## License
 
 [MIT License](LICENSE)
+
+## Acknowledgments
+
+This project uses code from the following repositories:
+
+* [mamba.py](https://github.com/alxndrTL/mamba.py) - Implementation of Mamba and parallel scan used in MambONet
+* [HyperbolicLR](https://github.com/Axect/HyperbolicLR) - Implementation of ExpHyperbolicLR scheduler
