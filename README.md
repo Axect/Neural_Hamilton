@@ -17,9 +17,10 @@ Key features:
 ## Installation
 
 ### Prerequisites
+- [Rust & Cargo](https://rustup.rs/)
 - Python 3.8+
-- PyTorch 2.0+
 - CUDA (optional, for GPU support)
+- [uv](https://github.com/astral-sh/uv) (recommended) or pip
 
 ### Setup
 
@@ -31,14 +32,15 @@ Key features:
 
 2. Install the required packages:
    ```bash
-   # Use pip
-   pip install -r requirements.txt
-
-   # Or Use uv with sync requirements.txt (recommended)
+   # Use uv with sync requirements.txt (recommended)
    uv pip sync requirements.txt
 
-   # Or Use uv (fresh install)
+   # Or use uv (fresh install)
    uv pip install -U torch wandb survey polars numpy optuna matplotlib scienceplots beaupy rich
+
+   # Or use pip
+   pip install -r requirements.txt
+
    ```
 
 ## Usage
