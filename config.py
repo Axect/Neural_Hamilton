@@ -24,33 +24,33 @@ class RunConfig:
 
     @classmethod
     def from_yaml(cls, path: str):
-        with open(path, 'r') as file:
+        with open(path, "r") as file:
             config = yaml.safe_load(file)
         return cls(**config)
 
     def to_yaml(self, path: str):
-        with open(path, 'w') as file:
+        with open(path, "w") as file:
             yaml.dump(asdict(self), file, sort_keys=False)
 
     def create_model(self):
-        module_name, class_name = self.net.rsplit('.', 1)
+        module_name, class_name = self.net.rsplit(".", 1)
         module = importlib.import_module(module_name)
         model_class = getattr(module, class_name)
         return model_class(self.net_config)
 
     def create_optimizer(self, model):
-        module_name, class_name = self.optimizer.rsplit('.', 1)
+        module_name, class_name = self.optimizer.rsplit(".", 1)
         module = importlib.import_module(module_name)
         optimizer_class = getattr(module, class_name)
         return optimizer_class(model.parameters(), **self.optimizer_config)
 
     def create_scheduler(self, optimizer):
-        scheduler_module, scheduler_class = self.scheduler.rsplit('.', 1)
+        scheduler_module, scheduler_class = self.scheduler.rsplit(".", 1)
         scheduler_module = importlib.import_module(scheduler_module)
         scheduler_class = getattr(scheduler_module, scheduler_class)
         return scheduler_class(optimizer, **self.scheduler_config)
 
-    def gen_group_name(self, data:str|None):
+    def gen_group_name(self, data: str | None):
         name = f"{self.net.split('.')[-1]}"
         for k, v in self.net_config.items():
             name += f"_{k[0]}_{v}"
@@ -69,10 +69,10 @@ class RunConfig:
 
     def gen_tags(self):
         return [
-            self.net.split('.')[-1],
+            self.net.split(".")[-1],
             *[f"{k[0]}={v}" for k, v in self.net_config.items()],
-            self.optimizer.split('.')[-1],
-            self.scheduler.split('.')[-1]
+            self.optimizer.split(".")[-1],
+            self.scheduler.split(".")[-1],
         ]
 
     def gen_config(self):
@@ -116,44 +116,44 @@ class OptimizeConfig:
 
     @classmethod
     def from_yaml(cls, path):
-        with open(path, 'r') as file:
+        with open(path, "r") as file:
             config = yaml.safe_load(file)
         return cls(**config)
 
     def to_yaml(self, path):
-        with open(path, 'w') as file:
+        with open(path, "w") as file:
             yaml.dump(asdict(self), file, sort_keys=False)
 
     def _create_sampler(self):
-        module_name, class_name = self.sampler["name"].rsplit('.', 1)
+        module_name, class_name = self.sampler["name"].rsplit(".", 1)
         module = importlib.import_module(module_name)
         sampler_class = getattr(module, class_name)
-        sampler_kwargs = self.sampler.get('kwargs', {})
+        sampler_kwargs = self.sampler.get("kwargs", {})
         if class_name == "GridSampler":
-            sampler_kwargs['search_space'] = self.grid_search_space()
+            sampler_kwargs["search_space"] = self.grid_search_space()
         return sampler_class(**sampler_kwargs)
 
     def _create_pruner(self):
         if not self.pruner:
             return None
-        module_name, class_name = self.pruner["name"].rsplit('.', 1)
+        module_name, class_name = self.pruner["name"].rsplit(".", 1)
         module = importlib.import_module(module_name)
         pruner_class = getattr(module, class_name)
-        pruner_kwargs = self.pruner.get('kwargs', {})
+        pruner_kwargs = self.pruner.get("kwargs", {})
         return pruner_class(**pruner_kwargs)
 
     def create_study(self, project):
         sampler = self._create_sampler()
         study = {
-            'study_name': self.study_name,
-            'storage': f'sqlite:///{project}.db',
-            'sampler': sampler,
-            'direction': self.direction,
-            'load_if_exists': True,
+            "study_name": self.study_name,
+            "storage": f"sqlite:///{project}.db",
+            "sampler": sampler,
+            "direction": self.direction,
+            "load_if_exists": True,
         }
         pruner = self._create_pruner()
         if pruner:
-            study['pruner'] = pruner
+            study["pruner"] = pruner
         return optuna.create_study(**study)
 
     def suggest_params(self, trial):
@@ -161,38 +161,45 @@ class OptimizeConfig:
         for category, config in self.search_space.items():
             params[category] = {}
             for param, param_config in config.items():
-                if param_config['type'] == 'int':
-                    params[category][param] = trial.suggest_int(f"{category}_{param}", 
-                                                                param_config['min'], 
-                                                                param_config['max'], 
-                                                                step=param_config.get('step', 1))
-                elif param_config['type'] == 'float':
-                    if param_config.get('log', False):
-                        params[category][param] = trial.suggest_float(f"{category}_{param}", 
-                                                                      param_config['min'], 
-                                                                      param_config['max'],
-                                                                      log=True)
+                if param_config["type"] == "int":
+                    params[category][param] = trial.suggest_int(
+                        f"{category}_{param}",
+                        param_config["min"],
+                        param_config["max"],
+                        step=param_config.get("step", 1),
+                    )
+                elif param_config["type"] == "float":
+                    if param_config.get("log", False):
+                        params[category][param] = trial.suggest_float(
+                            f"{category}_{param}",
+                            param_config["min"],
+                            param_config["max"],
+                            log=True,
+                        )
                     else:
-                        params[category][param] = trial.suggest_float(f"{category}_{param}", 
-                                                                      param_config['min'], 
-                                                                      param_config['max'])
-                elif param_config['type'] == 'categorical':
-                    params[category][param] = trial.suggest_categorical(f"{category}_{param}", 
-                                                                        param_config['choices'])
+                        params[category][param] = trial.suggest_float(
+                            f"{category}_{param}",
+                            param_config["min"],
+                            param_config["max"],
+                        )
+                elif param_config["type"] == "categorical":
+                    params[category][param] = trial.suggest_categorical(
+                        f"{category}_{param}", param_config["choices"]
+                    )
         return params
 
     def grid_search_space(self):
         params = {}
         for category, config in self.search_space.items():
             for param, param_config in config.items():
-                if param_config['type'] == 'categorical':
-                    params[f"{category}_{param}"] = param_config['choices']
+                if param_config["type"] == "categorical":
+                    params[f"{category}_{param}"] = param_config["choices"]
                 else:
-                    raise ValueError(f"Unsupported grid search space type: {param_config['type']}")
+                    raise ValueError(
+                        f"Unsupported grid search space type: {param_config['type']}"
+                    )
         return params
 
 
 def abbreviate(s: str):
-    return ''.join([w for w in s if w.isupper()])
-
-
+    return "".join([w for w in s if w.isupper()])

@@ -11,7 +11,16 @@ import survey
 import os
 import time
 
-from util import select_project, select_group, select_seed, select_device, load_model, load_data, load_study, load_best_model
+from util import (
+    select_project,
+    select_group,
+    select_seed,
+    select_device,
+    load_model,
+    load_data,
+    load_study,
+    load_best_model,
+)
 
 
 # ┌──────────────────────────────────────────────────────────┐
@@ -45,7 +54,7 @@ def solve_hamilton(V, x0, p0, t):
     for i in range(1, len(t)):
         solution[i] = rk4_step(hamilton_eqs, solution[i - 1], t[i - 1], dt)
 
-    return solution[:,0], solution[:,1]
+    return solution[:, 0], solution[:, 1]
 
 
 class TestResults:
@@ -54,7 +63,7 @@ class TestResults:
         self.dl_val = dl_val
         self.device = device
         self.variational = variational
-        
+
         self.run_test()
         self.load_rk4()
         self.measure_rk4()
@@ -75,16 +84,21 @@ class TestResults:
 
         with torch.no_grad():
             for V, t, x, p in self.dl_val:
-                V, t, x, p = V.to(self.device), t.to(self.device), x.to(self.device), p.to(self.device)
-                
+                V, t, x, p = (
+                    V.to(self.device),
+                    t.to(self.device),
+                    x.to(self.device),
+                    p.to(self.device),
+                )
+
                 t_start = time.time()
                 if not self.variational:
-                    self.reparameterize=False
+                    self.reparameterize = False
                     x_pred, p_pred = self.model(V, t)
                 else:
                     x_pred, p_pred, _, _ = self.model(V, t)
                 t_total = (time.time() - t_start) / V.shape[0]
-                
+
                 loss_x_vec = F.mse_loss(x_pred, x, reduction="none")
                 loss_p_vec = F.mse_loss(p_pred, p, reduction="none")
                 loss_vec = 0.5 * (loss_x_vec + loss_p_vec)
@@ -92,7 +106,7 @@ class TestResults:
                 loss_x = loss_x_vec.mean(dim=1)
                 loss_p = loss_p_vec.mean(dim=1)
                 loss = loss_vec.mean(dim=1)
-                
+
                 V_vec.extend(V.cpu().numpy())
                 x_preds.extend(x_pred.cpu().numpy())
                 p_preds.extend(p_pred.cpu().numpy())
@@ -138,10 +152,10 @@ class TestResults:
         print(f"Total Loss x: {self.total_loss_x_vec.mean():.4e}")
         print(f"Total Loss p: {self.total_loss_p_vec.mean():.4e}")
 
-    def hist_loss(self, name:str):
+    def hist_loss(self, name: str):
         losses = self.total_loss_vec
         times = self.total_time_vec
-        df_losses = pl.DataFrame({"loss":losses, "time":times})
+        df_losses = pl.DataFrame({"loss": losses, "time": times})
         df_losses.write_parquet(f"{name}.parquet")
         loss_min_log = np.log10(losses.min())
         loss_max_log = np.log10(losses.max())
@@ -157,7 +171,7 @@ class TestResults:
             fig, ax = plt.subplots()
             logbins = np.logspace(loss_min_log, loss_max_log, 100)
             ax.hist(losses, bins=logbins)
-            ax.axvline(losses.mean(), color='red', linestyle='--')
+            ax.axvline(losses.mean(), color="red", linestyle="--")
             ax.set_xlabel("Total Loss")
             ax.set_ylabel("Count")
             ax.set_xscale("log")
@@ -165,10 +179,10 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def hist_loss_rk4(self, name:str):
+    def hist_loss_rk4(self, name: str):
         losses = self.rk4_loss
         times = self.t_total_time_vec_rk4
-        df_losses = pl.DataFrame({"loss":losses, "time":times})
+        df_losses = pl.DataFrame({"loss": losses, "time": times})
         df_losses.write_parquet(f"{name}.parquet")
         loss_min_log = np.log10(losses.min())
         loss_max_log = np.log10(losses.max())
@@ -184,7 +198,7 @@ class TestResults:
             fig, ax = plt.subplots()
             logbins = np.logspace(loss_min_log, loss_max_log, 100)
             ax.hist(losses, bins=logbins)
-            ax.axvline(losses.mean(), color='red', linestyle='--')
+            ax.axvline(losses.mean(), color="red", linestyle="--")
             ax.set_xlabel("Total Loss")
             ax.set_ylabel("Count")
             ax.set_xscale("log")
@@ -192,7 +206,7 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_V(self, name:str, index:int):
+    def plot_V(self, name: str, index: int):
         q = np.linspace(0, 1, 100)
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
@@ -203,49 +217,104 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_q(self, name:str, index:int):
+    def plot_q(self, name: str, index: int):
         t = np.linspace(0, 2, len(self.x_preds[index]))
         loss_x = self.total_loss_x_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(t, self.x_targets[index], color='gray', label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0)
-            ax.scatter(t, self.x_preds[index], color=colors, marker='.', s=9, label=r"$\hat{q}$", zorder=1, edgecolors='none')
+            ax.plot(
+                t,
+                self.x_targets[index],
+                color="gray",
+                label=r"$q$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                t,
+                self.x_preds[index],
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$\hat{q}$",
+                zorder=1,
+                edgecolors="none",
+            )
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
-            ax.text(0.05, 0.9, f"Loss: {loss_x:.4e}", transform=ax.transAxes, fontsize=5)
+            ax.text(
+                0.05, 0.9, f"Loss: {loss_x:.4e}", transform=ax.transAxes, fontsize=5
+            )
             ax.legend()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_p(self, name:str, index:int):
+    def plot_p(self, name: str, index: int):
         t = np.linspace(0, 2, len(self.p_preds[index]))
         loss_p = self.total_loss_p_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(t, self.p_targets[index], color='gray', label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0)
-            ax.scatter(t, self.p_preds[index], color=colors, marker='.', s=9, label=r"$\hat{p}$", zorder=1, edgecolors='none')
+            ax.plot(
+                t,
+                self.p_targets[index],
+                color="gray",
+                label=r"$p$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                t,
+                self.p_preds[index],
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$\hat{p}$",
+                zorder=1,
+                edgecolors="none",
+            )
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$p(t)$")
             ax.autoscale(tight=True)
-            ax.text(0.05, 0.1, f"Loss: {loss_p:.4e}", transform=ax.transAxes, fontsize=5)
+            ax.text(
+                0.05, 0.1, f"Loss: {loss_p:.4e}", transform=ax.transAxes, fontsize=5
+            )
             ax.legend()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_phase(self, name:str, index:int):
+    def plot_phase(self, name: str, index: int):
         t = np.linspace(0, 2, len(self.p_preds[index]))
         loss = self.total_loss_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(self.x_targets[index], self.p_targets[index], color='gray', label=r"$(q,p)$", alpha=0.5, linewidth=1.75, zorder=0)
-            ax.scatter(self.x_preds[index], self.p_preds[index], color=colors, marker='.', s=9, label=r"$(\hat{q}, \hat{p})$", zorder=1, edgecolors='none')
+            ax.plot(
+                self.x_targets[index],
+                self.p_targets[index],
+                color="gray",
+                label=r"$(q,p)$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                self.x_preds[index],
+                self.p_preds[index],
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$(\hat{q}, \hat{p})$",
+                zorder=1,
+                edgecolors="none",
+            )
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$p$")
             ax.autoscale(tight=True)
@@ -254,104 +323,218 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_V_expand(self, name:str, index:int):
+    def plot_V_expand(self, name: str, index: int):
         q = np.linspace(0, 1, 100)
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
             ax.plot(q, self.V_vec[index])
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$V(q)$")
-            ax.axvline(0.5, color='olive', linestyle='--')
+            ax.axvline(0.5, color="olive", linestyle="--")
             ax.autoscale(tight=True)
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_q_expand(self, name:str, index:int):
+    def plot_q_expand(self, name: str, index: int):
         t = np.linspace(0, 2, len(self.x_preds[index]))
         loss_x = self.total_loss_x_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(t, self.x_targets[index], color='gray', label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0)
-            ax.scatter(t, self.x_preds[index], color=colors, marker='.', s=9, label=r"$\hat{q}$", zorder=1, edgecolors='none')
-            ax.axvline(0.5, color='olive', linestyle='--')
+            ax.plot(
+                t,
+                self.x_targets[index],
+                color="gray",
+                label=r"$q$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                t,
+                self.x_preds[index],
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$\hat{q}$",
+                zorder=1,
+                edgecolors="none",
+            )
+            ax.axvline(0.5, color="olive", linestyle="--")
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
-            ax.text(0.03, 0.9, f"Loss: {loss_x:.4e}", transform=ax.transAxes, fontsize=5)
+            ax.text(
+                0.03, 0.9, f"Loss: {loss_x:.4e}", transform=ax.transAxes, fontsize=5
+            )
             ax.legend()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_p_expand(self, name:str, index:int):
+    def plot_p_expand(self, name: str, index: int):
         t = np.linspace(0, 2, len(self.p_preds[index]))
         loss_p = self.total_loss_p_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(t, self.p_targets[index], color='gray', label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0)
-            ax.scatter(t, self.p_preds[index], color=colors, marker='.', s=9, label=r"$\hat{p}$", zorder=1, edgecolors='none')
-            ax.axvline(0.5, color='olive', linestyle='--')
+            ax.plot(
+                t,
+                self.p_targets[index],
+                color="gray",
+                label=r"$p$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                t,
+                self.p_preds[index],
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$\hat{p}$",
+                zorder=1,
+                edgecolors="none",
+            )
+            ax.axvline(0.5, color="olive", linestyle="--")
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$p(t)$")
             ax.autoscale(tight=True)
-            ax.text(0.03, 0.1, f"Loss: {loss_p:.4e}", transform=ax.transAxes, fontsize=5)
+            ax.text(
+                0.03, 0.1, f"Loss: {loss_p:.4e}", transform=ax.transAxes, fontsize=5
+            )
             ax.legend()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-
-    def plot_compare_q(self, name:str, index:int):
+    def plot_compare_q(self, name: str, index: int):
         t = np.linspace(0, 2, len(self.x_preds[index]))
         loss_nn = self.total_loss_x_vec[index]
         loss_rk4 = self.rk4_loss_x[index]
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(t, self.x_targets[index], color='gray', label=r"$q$ (Target)", alpha=0.65, linewidth=1.75)
-            ax.plot(t, self.x_preds[index], ':', color='red', label=r"$\hat{q}$ (Neural Network)")
-            ax.plot(t, self.rk4_x[index], '--', color='blue', label=r"$q$ (RK4)")
+            ax.plot(
+                t,
+                self.x_targets[index],
+                color="gray",
+                label=r"$q$ (Target)",
+                alpha=0.65,
+                linewidth=1.75,
+            )
+            ax.plot(
+                t,
+                self.x_preds[index],
+                ":",
+                color="red",
+                label=r"$\hat{q}$ (Neural Network)",
+            )
+            ax.plot(t, self.rk4_x[index], "--", color="blue", label=r"$q$ (RK4)")
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
-            ax.text(0.05, 0.95, f"NN Loss: {loss_nn:.4e}", transform=ax.transAxes, fontsize=5)
-            ax.text(0.05, 0.9, f"RK4 Loss: {loss_rk4:.4e}", transform=ax.transAxes, fontsize=5)
+            ax.text(
+                0.05,
+                0.95,
+                f"NN Loss: {loss_nn:.4e}",
+                transform=ax.transAxes,
+                fontsize=5,
+            )
+            ax.text(
+                0.05,
+                0.9,
+                f"RK4 Loss: {loss_rk4:.4e}",
+                transform=ax.transAxes,
+                fontsize=5,
+            )
             ax.legend()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_compare_p(self, name:str, index:int):
+    def plot_compare_p(self, name: str, index: int):
         t = np.linspace(0, 2, len(self.p_preds[index]))
         loss_nn = self.total_loss_p_vec[index]
         loss_rk4 = self.rk4_loss_p[index]
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(t, self.p_targets[index], color='gray', label=r"$p$ (Target)", alpha=0.65, linewidth=1.75)
-            ax.plot(t, self.p_preds[index], ':', color='red', label=r"$\hat{p}$ (Neural Network)")
-            ax.plot(t, self.rk4_p[index], '--', color='blue', label=r"$p$ (RK4)")
+            ax.plot(
+                t,
+                self.p_targets[index],
+                color="gray",
+                label=r"$p$ (Target)",
+                alpha=0.65,
+                linewidth=1.75,
+            )
+            ax.plot(
+                t,
+                self.p_preds[index],
+                ":",
+                color="red",
+                label=r"$\hat{p}$ (Neural Network)",
+            )
+            ax.plot(t, self.rk4_p[index], "--", color="blue", label=r"$p$ (RK4)")
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$p(t)$")
             ax.autoscale(tight=True)
-            ax.text(0.05, 0.95, f"NN Loss: {loss_nn:.4e}", transform=ax.transAxes, fontsize=5)
-            ax.text(0.05, 0.9, f"RK4 Loss: {loss_rk4:.4e}", transform=ax.transAxes, fontsize=5)
+            ax.text(
+                0.05,
+                0.95,
+                f"NN Loss: {loss_nn:.4e}",
+                transform=ax.transAxes,
+                fontsize=5,
+            )
+            ax.text(
+                0.05,
+                0.9,
+                f"RK4 Loss: {loss_rk4:.4e}",
+                transform=ax.transAxes,
+                fontsize=5,
+            )
             ax.legend()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_compare_phase(self, name:str, index:int):
+    def plot_compare_phase(self, name: str, index: int):
         loss_nn = self.total_loss_vec[index]
         loss_rk4 = self.rk4_loss[index]
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(self.x_targets[index], self.p_targets[index], color='gray', label=r"$(q,p)$", alpha=0.65, linewidth=1.75)
-            ax.plot(self.x_preds[index], self.p_preds[index], ':', color='red', label=r"$(\hat{q}, \hat{p})$")
-            ax.plot(self.rk4_x[index], self.rk4_p[index], '--', color='blue', label=r"$(q,p)$ (RK4)")
+            ax.plot(
+                self.x_targets[index],
+                self.p_targets[index],
+                color="gray",
+                label=r"$(q,p)$",
+                alpha=0.65,
+                linewidth=1.75,
+            )
+            ax.plot(
+                self.x_preds[index],
+                self.p_preds[index],
+                ":",
+                color="red",
+                label=r"$(\hat{q}, \hat{p})$",
+            )
+            ax.plot(
+                self.rk4_x[index],
+                self.rk4_p[index],
+                "--",
+                color="blue",
+                label=r"$(q,p)$ (RK4)",
+            )
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$p$")
             ax.autoscale(tight=True)
-            ax.text(0.05, 0.9, f"NN Loss: {loss_nn:.4e}", transform=ax.transAxes, fontsize=5)
-            ax.text(0.05, 0.85, f"RK4 Loss: {loss_rk4:.4e}", transform=ax.transAxes, fontsize=5)
+            ax.text(
+                0.05, 0.9, f"NN Loss: {loss_nn:.4e}", transform=ax.transAxes, fontsize=5
+            )
+            ax.text(
+                0.05,
+                0.85,
+                f"RK4 Loss: {loss_rk4:.4e}",
+                transform=ax.transAxes,
+                fontsize=5,
+            )
             ax.legend()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
@@ -375,7 +558,6 @@ def main():
     if test_option == 0:
         ds_val = load_data("./data_normal/test.parquet")
         dl_val = DataLoader(ds_val, batch_size=100)
-
 
         test_results = TestResults(model, dl_val, device, variational)
         test_results.print_results()
@@ -418,8 +600,22 @@ def main():
         ds_mff_rk4 = load_data("./data_analyze/mff_rk4.parquet")
         ds_unbounded_rk4 = load_data("./data_analyze/unbounded_rk4.parquet")
 
-        ds_tests = [ds_test_sho, ds_test_quartic, ds_test_morse, ds_test_smff, ds_test_mff, ds_test_unbounded]
-        ds_rk4s = [ds_sho_rk4, ds_quartic_rk4, ds_morse_rk4, ds_smff_rk4, ds_mff_rk4, ds_unbounded_rk4]
+        ds_tests = [
+            ds_test_sho,
+            ds_test_quartic,
+            ds_test_morse,
+            ds_test_smff,
+            ds_test_mff,
+            ds_test_unbounded,
+        ]
+        ds_rk4s = [
+            ds_sho_rk4,
+            ds_quartic_rk4,
+            ds_morse_rk4,
+            ds_smff_rk4,
+            ds_mff_rk4,
+            ds_unbounded_rk4,
+        ]
         dl_tests = [DataLoader(ds_test, batch_size=1) for ds_test in ds_tests]
         dl_rk4s = [DataLoader(ds_rk4, batch_size=1) for ds_rk4 in ds_rk4s]
         tests_name = ["SHO", "Quartic", "Morse", "SMFF", "MFF", "Unbounded"]
@@ -458,36 +654,117 @@ def main():
                 colors = cmap(np.linspace(0, 0.75, len(t)))
                 with plt.style.context(["science", "nature"]):
                     fig, ax = plt.subplots()
-                    ax.plot(t, x, color='gray', label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0)
-                    ax.scatter(t, x_hat, color=colors, marker='.', s=9, label=r"$\hat{q}$", zorder=1, edgecolors='none')
+                    ax.plot(
+                        t,
+                        x,
+                        color="gray",
+                        label=r"$q$",
+                        alpha=0.5,
+                        linewidth=1.75,
+                        zorder=0,
+                    )
+                    ax.scatter(
+                        t,
+                        x_hat,
+                        color=colors,
+                        marker=".",
+                        s=9,
+                        label=r"$\hat{q}$",
+                        zorder=1,
+                        edgecolors="none",
+                    )
                     ax.set_xlabel(r"$t$")
                     ax.set_ylabel(r"$q(t)$")
                     ax.autoscale(tight=True)
-                    ax.text(0.05, 0.9, f"Loss: {loss_x:.4e}", transform=ax.transAxes, fontsize=5)
+                    ax.text(
+                        0.05,
+                        0.9,
+                        f"Loss: {loss_x:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
+                    )
                     ax.legend()
-                    fig.savefig(f"{fig_dir}/{name}_RK4_0_q_plot.png", dpi=600, bbox_inches="tight")
+                    fig.savefig(
+                        f"{fig_dir}/{name}_RK4_0_q_plot.png",
+                        dpi=600,
+                        bbox_inches="tight",
+                    )
                     plt.close(fig)
 
                     fig, ax = plt.subplots()
-                    ax.plot(t, p, color='gray', label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0)
-                    ax.scatter(t, p_hat, color=colors, marker='.', s=9, label=r"$\hat{p}$", zorder=1, edgecolors='none')
+                    ax.plot(
+                        t,
+                        p,
+                        color="gray",
+                        label=r"$p$",
+                        alpha=0.5,
+                        linewidth=1.75,
+                        zorder=0,
+                    )
+                    ax.scatter(
+                        t,
+                        p_hat,
+                        color=colors,
+                        marker=".",
+                        s=9,
+                        label=r"$\hat{p}$",
+                        zorder=1,
+                        edgecolors="none",
+                    )
                     ax.set_xlabel(r"$t$")
                     ax.set_ylabel(r"$p(t)$")
                     ax.autoscale(tight=True)
-                    ax.text(0.05, 0.1, f"Loss: {loss_p:.4e}", transform=ax.transAxes, fontsize=5)
+                    ax.text(
+                        0.05,
+                        0.1,
+                        f"Loss: {loss_p:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
+                    )
                     ax.legend()
-                    fig.savefig(f"{fig_dir}/{name}_RK4_1_p_plot.png", dpi=600, bbox_inches="tight")
+                    fig.savefig(
+                        f"{fig_dir}/{name}_RK4_1_p_plot.png",
+                        dpi=600,
+                        bbox_inches="tight",
+                    )
                     plt.close(fig)
 
                     fig, ax = plt.subplots()
-                    ax.plot(x, p, color='gray', label=r"$(q, p)$", alpha=0.5, linewidth=1.75, zorder=0)
-                    ax.scatter(x_hat, p_hat, color=colors, marker='.', s=9, label=r"$(\hat{q}, \hat{p})$", zorder=1, edgecolors='none')
+                    ax.plot(
+                        x,
+                        p,
+                        color="gray",
+                        label=r"$(q, p)$",
+                        alpha=0.5,
+                        linewidth=1.75,
+                        zorder=0,
+                    )
+                    ax.scatter(
+                        x_hat,
+                        p_hat,
+                        color=colors,
+                        marker=".",
+                        s=9,
+                        label=r"$(\hat{q}, \hat{p})$",
+                        zorder=1,
+                        edgecolors="none",
+                    )
                     ax.set_xlabel(r"$q$")
                     ax.set_ylabel(r"$p$")
                     ax.autoscale(tight=True)
-                    ax.text(0.05, 0.5, f"Loss: {loss:.4e}", transform=ax.transAxes, fontsize=5)
+                    ax.text(
+                        0.05,
+                        0.5,
+                        f"Loss: {loss:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
+                    )
                     ax.legend()
-                    fig.savefig(f"{fig_dir}/{name}_RK4_2_phase_plot.png", dpi=600, bbox_inches="tight")
+                    fig.savefig(
+                        f"{fig_dir}/{name}_RK4_2_phase_plot.png",
+                        dpi=600,
+                        bbox_inches="tight",
+                    )
                     plt.close(fig)
 
 
