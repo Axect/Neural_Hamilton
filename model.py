@@ -6,9 +6,9 @@ from mamba import Mamba, MambaConfig
 
 def create_net(sizes):
     net = []
-    for i in range(len(sizes)-1):
-        net.append(nn.Linear(sizes[i], sizes[i+1]))
-        if i < len(sizes)-2:
+    for i in range(len(sizes) - 1):
+        net.append(nn.Linear(sizes[i], sizes[i + 1]))
+        if i < len(sizes) - 2:
             net.append(nn.GELU())
     return nn.Sequential(*net)
 
@@ -24,28 +24,26 @@ class DeepONet(nn.Module):
         output_size = 1
 
         self.branch_net = create_net(
-            [input_size]
-            + [nodes*(layers-1)]
-            + [2 * branches]
+            [input_size] + [nodes * (layers - 1)] + [2 * branches]
         )
         self.trunk_net = create_net(
-            [output_size]
-            + [nodes*(layers-1)]
-            + [2 * branches]
+            [output_size] + [nodes * (layers - 1)] + [2 * branches]
         )
-        self.bias = nn.Parameter(torch.randn(2), requires_grad=True)
+        # self.bias = nn.Parameter(torch.randn(2), requires_grad=True)
 
     def forward(self, u, y):
         B, _ = u.shape
         window = y.shape[1]
-        branch_out = self.branch_net(u)         # B x 2p
+        branch_out = self.branch_net(u)  # B x 2p
         branch_out = branch_out.view(B, -1, 2)  # B x p x 2
-        trunk_out = torch.stack([self.trunk_net(y[:, i:i+1]).view(B, -1, 2)
-                                for i in range(window)], dim=3)
+        trunk_out = torch.stack(
+            [self.trunk_net(y[:, i : i + 1]).view(B, -1, 2) for i in range(window)],
+            dim=3,
+        )
         pred = torch.einsum("bpq,bpqw->bqw", branch_out, trunk_out)
-        pred = pred.permute(0, 2, 1) # B x W x 2
-        pred = pred + self.bias
-        return pred[:,:,0], pred[:,:,1]
+        pred = pred.permute(0, 2, 1)  # B x W x 2
+        # pred = pred + self.bias
+        return pred[:, :, 0], pred[:, :, 1]
 
 
 class Encoder(nn.Module):
@@ -57,7 +55,7 @@ class Encoder(nn.Module):
             num_layers=num_layers,
             batch_first=True,
             dropout=dropout,
-            bidirectional=True
+            bidirectional=True,
         )
 
     def forward(self, x):
@@ -79,7 +77,7 @@ class Decoder(nn.Module):
             num_layers=num_layers,
             batch_first=True,
             dropout=dropout,
-            bidirectional=True
+            bidirectional=True,
         )
         self.fc = nn.Linear(2 * hidden_size, 1)
 
@@ -125,10 +123,10 @@ class VaRONet(nn.Module):
         (h0, c0) = self.branch_net(u)
 
         # Reparameterize (VAE)
-        mu = self.fc_mu(h0)                             # D*L, B, Z
-        logvar = self.fc_var(h0)                        # D*L, B, Z
-        mu = mu.permute(1, 0, 2).contiguous()           # B, D*L, Z
-        logvar = logvar.permute(1, 0, 2).contiguous()   # B, D*L, Z
+        mu = self.fc_mu(h0)  # D*L, B, Z
+        logvar = self.fc_var(h0)  # D*L, B, Z
+        mu = mu.permute(1, 0, 2).contiguous()  # B, D*L, Z
+        logvar = logvar.permute(1, 0, 2).contiguous()  # B, D*L, Z
         if self.reparametrize:
             std = torch.exp(0.5 * logvar)
             eps = torch.randn_like(std)
@@ -137,14 +135,14 @@ class VaRONet(nn.Module):
             z = mu
 
         # Decoding
-        hz_x = self.fc_z_x(z)                       # B, D * L, H
-        hz_p = self.fc_z_p(z)                       # B, D * L, H
+        hz_x = self.fc_z_x(z)  # B, D * L, H
+        hz_p = self.fc_z_p(z)  # B, D * L, H
         hzp_x = hz_x.permute(1, 0, 2).contiguous()  # D * L, B, H
         hzp_p = hz_p.permute(1, 0, 2).contiguous()  # D * L, B, H
         h_c_x = (hzp_x, c0)
         h_c_p = (hzp_p, c0)
-        o_x = self.trunk_x_net(y, h_c_x)          # B, W2, 1
-        o_p = self.trunk_p_net(y, h_c_p)          # B, W2, 1
+        o_x = self.trunk_x_net(y, h_c_x)  # B, W2, 1
+        o_p = self.trunk_p_net(y, h_c_p)  # B, W2, 1
         return o_x.squeeze(-1), o_p.squeeze(-1), mu, logvar
 
 
@@ -159,7 +157,7 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x):
         """
@@ -168,7 +166,7 @@ class PositionalEncoding(nn.Module):
         - self.pe[:, :x.size(1), :]: (1, W, d_model)
         - output: (B, W, d_model)
         """
-        x = x + self.pe[:, :x.size(1), :]
+        x = x + self.pe[:, : x.size(1), :]
         return x
 
 
@@ -178,7 +176,7 @@ class TFEncoder(nn.Module):
         self.d_model = d_model
         self.embedding = nn.Linear(1, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
-        #self.pos_encoder = LearnablePositionalEncoding(d_model)
+        # self.pos_encoder = LearnablePositionalEncoding(d_model)
         self.encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -208,13 +206,13 @@ class TFDecoder(nn.Module):
         self.d_model = d_model
         self.embedding = nn.Linear(1, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
-        #self.pos_encoder = LearnablePositionalEncoding(d_model)
+        # self.pos_encoder = LearnablePositionalEncoding(d_model)
         self.decoder_layer = nn.TransformerDecoderLayer(
             d_model=d_model,
             nhead=nhead,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
-            batch_first=True
+            batch_first=True,
         )
         self.transformer_decoder = nn.TransformerDecoder(
             self.decoder_layer, num_layers, norm=nn.LayerNorm(d_model)
@@ -246,9 +244,9 @@ class TraONet(nn.Module):
         dropout = hparams["dropout"]
 
         self.branch_net = TFEncoder(
-            d_model, nhead, num_layers, dim_feedforward, dropout)
-        self.trunk_net = TFDecoder(
-            d_model, nhead, num_layers, dim_feedforward, dropout)
+            d_model, nhead, num_layers, dim_feedforward, dropout
+        )
+        self.trunk_net = TFDecoder(d_model, nhead, num_layers, dim_feedforward, dropout)
 
     def forward(self, u, y):
         """
@@ -269,7 +267,7 @@ class TraONet(nn.Module):
 
         # Decoding
         o = self.trunk_net(y, memory)
-        return o[:,:,0], o[:,:,1]
+        return o[:, :, 0], o[:, :, 1]
 
 
 # ┌──────────────────────────────────────────────────────────┐
@@ -298,14 +296,14 @@ class MambONet(nn.Module):
     def __init__(self, hparams):
         super().__init__()
 
-        d_model     = hparams["d_model"]        # hidden_size
-        #d_state     = hparams["d_state"]        # SSM state expansion factor
-        #d_conv      = hparams["d_conv"]         # Local convolution width
-        #expand      = hparams["expand"]         # Block expansion factor
-        num_layers1 = hparams["num_layers1"]    # Number of layers (Mamba)
-        n_head      = hparams["n_head"]         # Number of heads
-        num_layers2 = hparams["num_layers2"]    # Number of layers (Decoder)
-        d_ff        = hparams["d_ff"]           # Feedforward dimension
+        d_model = hparams["d_model"]  # hidden_size
+        # d_state     = hparams["d_state"]        # SSM state expansion factor
+        # d_conv      = hparams["d_conv"]         # Local convolution width
+        # expand      = hparams["expand"]         # Block expansion factor
+        num_layers1 = hparams["num_layers1"]  # Number of layers (Mamba)
+        n_head = hparams["n_head"]  # Number of heads
+        num_layers2 = hparams["num_layers2"]  # Number of layers (Decoder)
+        d_ff = hparams["d_ff"]  # Feedforward dimension
 
         self.encoder = MambaEncoder(d_model, num_layers1)
         self.decoder = TFDecoder(d_model, n_head, num_layers2, d_ff, 0.0)
@@ -329,5 +327,4 @@ class MambONet(nn.Module):
 
         # Decoding
         o = self.decoder(y, memory)
-        return o[:,:,0], o[:,:,1]
-
+        return o[:, :, 0], o[:, :, 1]
