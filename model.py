@@ -29,7 +29,7 @@ class DeepONet(nn.Module):
         self.trunk_net = create_net(
             [output_size] + [nodes * (layers - 1)] + [2 * branches]
         )
-        # self.bias = nn.Parameter(torch.randn(2), requires_grad=True)
+        self.bias = nn.Parameter(torch.randn(2), requires_grad=True)
 
     def forward(self, u, y):
         B, _ = u.shape
@@ -42,7 +42,7 @@ class DeepONet(nn.Module):
         )
         pred = torch.einsum("bpq,bpqw->bqw", branch_out, trunk_out)
         pred = pred.permute(0, 2, 1)  # B x W x 2
-        # pred = pred + self.bias
+        pred = pred + self.bias
         return pred[:, :, 0], pred[:, :, 1]
 
 
