@@ -1,10 +1,14 @@
 from torch.utils.data import DataLoader
+import torch
 import wandb
 
 from util import load_data, run
 from config import RunConfig, OptimizeConfig
 
 import argparse
+
+
+torch.set_float32_matmul_precision("medium")
 
 
 def main():
@@ -20,8 +24,6 @@ def main():
     )
     args = parser.parse_args()
 
-    wandb.require("core")  # pyright: ignore
-
     # Run Config
     base_config = RunConfig.from_yaml(args.run_config)
 
@@ -30,10 +32,12 @@ def main():
     ds_train = load_data(f"{data_folder}/train.parquet")
     ds_val = load_data(f"{data_folder}/val.parquet")
     dl_train = DataLoader(ds_train, batch_size=base_config.batch_size, shuffle=True)
-    dl_val = DataLoader(ds_val, batch_size=base_config.batch_size)
+    dl_val = DataLoader(ds_val, batch_size=base_config.batch_size, shuffle=False)
 
     # Run
     if args.optimize_config:
+        optimize_config = OptimizeConfig.from_yaml(args.optimize_config)
+        pruner = optimize_config.create_pruner()
 
         def objective(trial, base_config, optimize_config, dl_train, dl_val):
             params = optimize_config.suggest_params(trial)
@@ -49,9 +53,10 @@ def main():
 
             trial.set_user_attr("group_name", group_name)
 
-            return run(run_config, dl_train, dl_val, group_name)
+            return run(
+                run_config, dl_train, dl_val, group_name, trial=trial, pruner=pruner
+            )
 
-        optimize_config = OptimizeConfig.from_yaml(args.optimize_config)
         study = optimize_config.create_study(project=base_config.project)
         study.optimize(
             lambda trial: objective(

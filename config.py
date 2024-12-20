@@ -1,11 +1,15 @@
-import torch
-from torch import nn
-import survey
-import optuna
-
 from dataclasses import dataclass, asdict, field
+import optuna
 import yaml
 import importlib
+
+
+@dataclass
+class EarlyStoppingConfig:
+    enabled: bool = False
+    patience: int = 10
+    mode: str = "min"  # "min" or "max"
+    min_delta: float = 0.0001
 
 
 @dataclass
@@ -21,6 +25,13 @@ class RunConfig:
     net_config: dict[str, int]
     optimizer_config: dict[str, int | float]
     scheduler_config: dict[str, int | float]
+    early_stopping_config: EarlyStoppingConfig = field(
+        default_factory=lambda: EarlyStoppingConfig()
+    )
+
+    def __post_init__(self):
+        if isinstance(self.early_stopping_config, dict):
+            self.early_stopping_config = EarlyStoppingConfig(**self.early_stopping_config)
 
     @classmethod
     def from_yaml(cls, path: str):
@@ -133,7 +144,7 @@ class OptimizeConfig:
             sampler_kwargs["search_space"] = self.grid_search_space()
         return sampler_class(**sampler_kwargs)
 
-    def _create_pruner(self):
+    def create_pruner(self):
         if not self.pruner:
             return None
         module_name, class_name = self.pruner["name"].rsplit(".", 1)
@@ -151,9 +162,6 @@ class OptimizeConfig:
             "direction": self.direction,
             "load_if_exists": True,
         }
-        pruner = self._create_pruner()
-        if pruner:
-            study["pruner"] = pruner
         return optuna.create_study(**study)
 
     def suggest_params(self, trial):

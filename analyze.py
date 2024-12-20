@@ -1,12 +1,13 @@
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 import matplotlib.pyplot as plt
 import scienceplots
 import polars as pl
-import survey
+import beaupy
+from rich.console import Console
 
 import os
 import time
@@ -23,6 +24,40 @@ from util import (
 )
 
 
+torch.set_float32_matmul_precision("medium")
+
+
+def load_relevant_data(potential: str):
+    file_name = f"./data_analyze/{potential}.parquet"
+    df = pl.read_parquet(file_name)
+    V = df["V"].to_numpy()
+    t = df["t"].to_numpy()
+    ds_vec = []
+    ds_rk4_vec = []
+    for i in range(5):
+        q = df[f"q_{i}"].to_numpy()
+        p = df[f"p_{i}"].to_numpy()
+        ds = TensorDataset(
+            torch.tensor(V, dtype=torch.float32).unsqueeze(0),
+            torch.tensor(t, dtype=torch.float32).unsqueeze(0),
+            torch.tensor(q, dtype=torch.float32).unsqueeze(0),
+            torch.tensor(p, dtype=torch.float32).unsqueeze(0),
+        )
+        ds_vec.append(ds)
+
+        q_rk4 = df[f"q_rk4_{i}"].to_numpy()
+        p_rk4 = df[f"p_rk4_{i}"].to_numpy()
+        ds_rk4 = TensorDataset(
+            torch.tensor(V, dtype=torch.float32).unsqueeze(0),
+            torch.tensor(t, dtype=torch.float32).unsqueeze(0),
+            torch.tensor(q_rk4, dtype=torch.float32).unsqueeze(0),
+            torch.tensor(p_rk4, dtype=torch.float32).unsqueeze(0),
+        )
+        ds_rk4_vec.append(ds_rk4)
+
+    return ds_vec, ds_rk4_vec
+
+
 # ┌──────────────────────────────────────────────────────────┐
 #  RK4 Solver
 # └──────────────────────────────────────────────────────────┘
@@ -34,18 +69,18 @@ def rk4_step(f, y, t, dt):
     return y + (k1 + 2 * k2 + 2 * k3 + k4) / 6
 
 
-def solve_hamilton(V, x0, p0, t):
-    x = np.linspace(0, 1, 100)
-    V_interp = PchipInterpolator(x, V)
-    dVdx_interp = V_interp.derivative()
+def solve_hamilton(V, q0, p0, t):
+    q = np.linspace(0, 1, 100)
+    V_interp = PchipInterpolator(q, V)
+    dVdq_interp = V_interp.derivative()
 
     def hamilton_eqs(y, _t):
-        x, p = y
-        dxdt = p
-        dpdt = -dVdx_interp(x)
-        return np.array([dxdt, dpdt])
+        q, p = y
+        dqdt = p
+        dpdt = -dVdq_interp(q)
+        return np.array([dqdt, dpdt])
 
-    y0 = np.array([x0, p0])
+    y0 = np.array([q0, p0])
     dt = t[1] - t[0]
 
     solution = np.zeros((len(t), 2))
@@ -72,72 +107,72 @@ class TestResults:
         self.model.eval()
 
         V_vec = []
-        x_preds = []
+        q_preds = []
         p_preds = []
-        x_targets = []
+        q_targets = []
         p_targets = []
 
-        total_loss_x_vec = []
+        total_loss_q_vec = []
         total_loss_p_vec = []
         total_loss_vec = []
         total_time_vec = []
 
         with torch.no_grad():
-            for V, t, x, p in self.dl_val:
-                V, t, x, p = (
+            for V, t, q, p in self.dl_val:
+                V, t, q, p = (
                     V.to(self.device),
                     t.to(self.device),
-                    x.to(self.device),
+                    q.to(self.device),
                     p.to(self.device),
                 )
 
                 t_start = time.time()
                 if not self.variational:
                     self.reparameterize = False
-                    x_pred, p_pred = self.model(V, t)
+                    q_pred, p_pred = self.model(V, t)
                 else:
-                    x_pred, p_pred, _, _ = self.model(V, t)
+                    q_pred, p_pred, _, _ = self.model(V, t)
                 t_total = (time.time() - t_start) / V.shape[0]
 
-                loss_x_vec = F.mse_loss(x_pred, x, reduction="none")
+                loss_q_vec = F.mse_loss(q_pred, q, reduction="none")
                 loss_p_vec = F.mse_loss(p_pred, p, reduction="none")
-                loss_vec = 0.5 * (loss_x_vec + loss_p_vec)
+                loss_vec = 0.5 * (loss_q_vec + loss_p_vec)
 
-                loss_x = loss_x_vec.mean(dim=1)
+                loss_q = loss_q_vec.mean(dim=1)
                 loss_p = loss_p_vec.mean(dim=1)
                 loss = loss_vec.mean(dim=1)
 
                 V_vec.extend(V.cpu().numpy())
-                x_preds.extend(x_pred.cpu().numpy())
+                q_preds.extend(q_pred.cpu().numpy())
                 p_preds.extend(p_pred.cpu().numpy())
-                x_targets.extend(x.cpu().numpy())
+                q_targets.extend(q.cpu().numpy())
                 p_targets.extend(p.cpu().numpy())
                 total_loss_vec.extend(loss.cpu().numpy())
-                total_loss_x_vec.extend(loss_x.cpu().numpy())
+                total_loss_q_vec.extend(loss_q.cpu().numpy())
                 total_loss_p_vec.extend(loss_p.cpu().numpy())
                 total_time_vec.extend([t_total] * V.shape[0])
 
         self.total_loss_vec = np.array(total_loss_vec)
-        self.total_loss_x_vec = np.array(total_loss_x_vec)
+        self.total_loss_q_vec = np.array(total_loss_q_vec)
         self.total_loss_p_vec = np.array(total_loss_p_vec)
         self.total_time_vec = np.array(total_time_vec)
         self.V_vec = np.array(V_vec)
-        self.x_preds = np.array(x_preds)
+        self.q_preds = np.array(q_preds)
         self.p_preds = np.array(p_preds)
-        self.x_targets = np.array(x_targets)
+        self.q_targets = np.array(q_targets)
         self.p_targets = np.array(p_targets)
 
     def load_rk4(self):
         df_rk4 = pl.read_parquet("./data_analyze/rk4.parquet")
-        self.rk4_x = df_rk4["x"].to_numpy().reshape(-1, 100)
+        self.rk4_q = df_rk4["q"].to_numpy().reshape(-1, 100)
         self.rk4_p = df_rk4["p"].to_numpy().reshape(-1, 100)
-        self.rk4_loss_x = df_rk4["loss_x"].to_numpy().reshape(-1, 100).mean(axis=1)
+        self.rk4_loss_q = df_rk4["loss_q"].to_numpy().reshape(-1, 100).mean(axis=1)
         self.rk4_loss_p = df_rk4["loss_p"].to_numpy().reshape(-1, 100).mean(axis=1)
         self.rk4_loss = df_rk4["loss"].to_numpy().reshape(-1, 100).mean(axis=1)
 
     def measure_rk4(self):
         t_total_vec = []
-        for V, _, x, p in self.dl_val:
+        for V, _, _, p in self.dl_val:
             for i in range(V.shape[0]):
                 V_i = V[i].detach().cpu().numpy()
                 t = np.linspace(0, 2, 100)
@@ -147,9 +182,9 @@ class TestResults:
         self.t_total_time_vec_rk4 = np.array(t_total_vec)
 
     def print_results(self):
-        print(self.total_loss_vec.shape)
+        print(f"Shape: {self.total_loss_vec.shape}")
         print(f"Total Loss: {self.total_loss_vec.mean():.4e}")
-        print(f"Total Loss x: {self.total_loss_x_vec.mean():.4e}")
+        print(f"Total Loss q: {self.total_loss_q_vec.mean():.4e}")
         print(f"Total Loss p: {self.total_loss_p_vec.mean():.4e}")
 
     def hist_loss(self, name: str):
@@ -175,7 +210,6 @@ class TestResults:
             ax.set_xlabel("Total Loss")
             ax.set_ylabel("Count")
             ax.set_xscale("log")
-            ax.set_yscale("log")
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
@@ -202,7 +236,6 @@ class TestResults:
             ax.set_xlabel("Total Loss")
             ax.set_ylabel("Count")
             ax.set_xscale("log")
-            ax.set_yscale("log")
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
@@ -218,15 +251,15 @@ class TestResults:
             plt.close(fig)
 
     def plot_q(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.x_preds[index]))
-        loss_x = self.total_loss_x_vec[index]
+        t = np.linspace(0, 2, len(self.q_preds[index]))
+        loss_q = self.total_loss_q_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
             ax.plot(
                 t,
-                self.x_targets[index],
+                self.q_targets[index],
                 color="gray",
                 label=r"$q$",
                 alpha=0.5,
@@ -235,7 +268,7 @@ class TestResults:
             )
             ax.scatter(
                 t,
-                self.x_preds[index],
+                self.q_preds[index],
                 color=colors,
                 marker=".",
                 s=9,
@@ -247,7 +280,7 @@ class TestResults:
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
             ax.text(
-                0.05, 0.9, f"Loss: {loss_x:.4e}", transform=ax.transAxes, fontsize=5
+                0.05, 0.9, f"Loss: {loss_q:.4e}", transform=ax.transAxes, fontsize=5
             )
             ax.legend()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
@@ -297,7 +330,7 @@ class TestResults:
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
             ax.plot(
-                self.x_targets[index],
+                self.q_targets[index],
                 self.p_targets[index],
                 color="gray",
                 label=r"$(q,p)$",
@@ -306,7 +339,7 @@ class TestResults:
                 zorder=0,
             )
             ax.scatter(
-                self.x_preds[index],
+                self.q_preds[index],
                 self.p_preds[index],
                 color=colors,
                 marker=".",
@@ -336,15 +369,15 @@ class TestResults:
             plt.close(fig)
 
     def plot_q_expand(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.x_preds[index]))
-        loss_x = self.total_loss_x_vec[index]
+        t = np.linspace(0, 2, len(self.q_preds[index]))
+        loss_q = self.total_loss_q_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
             ax.plot(
                 t,
-                self.x_targets[index],
+                self.q_targets[index],
                 color="gray",
                 label=r"$q$",
                 alpha=0.5,
@@ -353,7 +386,7 @@ class TestResults:
             )
             ax.scatter(
                 t,
-                self.x_preds[index],
+                self.q_preds[index],
                 color=colors,
                 marker=".",
                 s=9,
@@ -366,7 +399,7 @@ class TestResults:
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
             ax.text(
-                0.03, 0.9, f"Loss: {loss_x:.4e}", transform=ax.transAxes, fontsize=5
+                0.03, 0.9, f"Loss: {loss_q:.4e}", transform=ax.transAxes, fontsize=5
             )
             ax.legend()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
@@ -409,142 +442,17 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_compare_q(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.x_preds[index]))
-        loss_nn = self.total_loss_x_vec[index]
-        loss_rk4 = self.rk4_loss_x[index]
-        with plt.style.context(["science", "nature"]):
-            fig, ax = plt.subplots()
-            ax.plot(
-                t,
-                self.x_targets[index],
-                color="gray",
-                label=r"$q$ (Target)",
-                alpha=0.65,
-                linewidth=1.75,
-            )
-            ax.plot(
-                t,
-                self.x_preds[index],
-                ":",
-                color="red",
-                label=r"$\hat{q}$ (Neural Network)",
-            )
-            ax.plot(t, self.rk4_x[index], "--", color="blue", label=r"$q$ (RK4)")
-            ax.set_xlabel(r"$t$")
-            ax.set_ylabel(r"$q(t)$")
-            ax.autoscale(tight=True)
-            ax.text(
-                0.05,
-                0.95,
-                f"NN Loss: {loss_nn:.4e}",
-                transform=ax.transAxes,
-                fontsize=5,
-            )
-            ax.text(
-                0.05,
-                0.9,
-                f"RK4 Loss: {loss_rk4:.4e}",
-                transform=ax.transAxes,
-                fontsize=5,
-            )
-            ax.legend()
-            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
-            plt.close(fig)
-
-    def plot_compare_p(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.p_preds[index]))
-        loss_nn = self.total_loss_p_vec[index]
-        loss_rk4 = self.rk4_loss_p[index]
-        with plt.style.context(["science", "nature"]):
-            fig, ax = plt.subplots()
-            ax.plot(
-                t,
-                self.p_targets[index],
-                color="gray",
-                label=r"$p$ (Target)",
-                alpha=0.65,
-                linewidth=1.75,
-            )
-            ax.plot(
-                t,
-                self.p_preds[index],
-                ":",
-                color="red",
-                label=r"$\hat{p}$ (Neural Network)",
-            )
-            ax.plot(t, self.rk4_p[index], "--", color="blue", label=r"$p$ (RK4)")
-            ax.set_xlabel(r"$t$")
-            ax.set_ylabel(r"$p(t)$")
-            ax.autoscale(tight=True)
-            ax.text(
-                0.05,
-                0.95,
-                f"NN Loss: {loss_nn:.4e}",
-                transform=ax.transAxes,
-                fontsize=5,
-            )
-            ax.text(
-                0.05,
-                0.9,
-                f"RK4 Loss: {loss_rk4:.4e}",
-                transform=ax.transAxes,
-                fontsize=5,
-            )
-            ax.legend()
-            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
-            plt.close(fig)
-
-    def plot_compare_phase(self, name: str, index: int):
-        loss_nn = self.total_loss_vec[index]
-        loss_rk4 = self.rk4_loss[index]
-        with plt.style.context(["science", "nature"]):
-            fig, ax = plt.subplots()
-            ax.plot(
-                self.x_targets[index],
-                self.p_targets[index],
-                color="gray",
-                label=r"$(q,p)$",
-                alpha=0.65,
-                linewidth=1.75,
-            )
-            ax.plot(
-                self.x_preds[index],
-                self.p_preds[index],
-                ":",
-                color="red",
-                label=r"$(\hat{q}, \hat{p})$",
-            )
-            ax.plot(
-                self.rk4_x[index],
-                self.rk4_p[index],
-                "--",
-                color="blue",
-                label=r"$(q,p)$ (RK4)",
-            )
-            ax.set_xlabel(r"$q$")
-            ax.set_ylabel(r"$p$")
-            ax.autoscale(tight=True)
-            ax.text(
-                0.05, 0.9, f"NN Loss: {loss_nn:.4e}", transform=ax.transAxes, fontsize=5
-            )
-            ax.text(
-                0.05,
-                0.85,
-                f"RK4 Loss: {loss_rk4:.4e}",
-                transform=ax.transAxes,
-                fontsize=5,
-            )
-            ax.legend()
-            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
-            plt.close(fig)
-
 
 def main():
     # Test run
+    console.print("[bold green]Analyzing the model...[/bold green]")
+    console.print("Select a project to analyze:")
     project = select_project()
+    console.print("Select a group to analyze:")
     group_name = select_group(project)
+    console.print("Select a seed to analyze:")
     seed = select_seed(project, group_name)
+    console.print("Select a device:")
     device = select_device()
     model, config = load_model(project, group_name, seed)
     model = model.to(device)
@@ -554,9 +462,10 @@ def main():
         variational = True
 
     test_options = ["test", "physical"]
-    test_option = survey.routines.select("Select test option:", options=test_options)
-    if test_option == 0:
-        ds_val = load_data("./data_normal/test.parquet")
+    console.print("Select a test option:")
+    test_option = beaupy.select(test_options)
+    if test_option == "test":
+        ds_val = load_data("./data_test/test.parquet")
         dl_val = DataLoader(ds_val, batch_size=100)
 
         test_results = TestResults(model, dl_val, device, variational)
@@ -586,191 +495,190 @@ def main():
         test_results.plot_p(f"{fig_dir}/{worst_idx:02}_2_p_plot", worst_idx)
         test_results.plot_phase(f"{fig_dir}/{worst_idx:02}_3_phase_plot", worst_idx)
     else:
-        ds_test_sho = load_data("./data_analyze/sho.parquet")
-        ds_test_quartic = load_data("./data_analyze/quartic.parquet")
-        ds_test_morse = load_data("./data_analyze/morse.parquet")
-        ds_test_smff = load_data("./data_analyze/smff.parquet")
-        ds_test_mff = load_data("./data_analyze/mff.parquet")
-        ds_test_unbounded = load_data("./data_analyze/unbounded.parquet")
-        ds_test_cliff = load_data("./data_analyze/cliff.parquet")
-
-        ds_sho_rk4 = load_data("./data_analyze/sho_rk4.parquet")
-        ds_quartic_rk4 = load_data("./data_analyze/quartic_rk4.parquet")
-        ds_morse_rk4 = load_data("./data_analyze/morse_rk4.parquet")
-        ds_smff_rk4 = load_data("./data_analyze/smff_rk4.parquet")
-        ds_mff_rk4 = load_data("./data_analyze/mff_rk4.parquet")
-        ds_unbounded_rk4 = load_data("./data_analyze/unbounded_rk4.parquet")
-        ds_cliff_rk4 = load_data("./data_analyze/cliff_rk4.parquet")
+        ds_test_sho, ds_rk4_sho = load_relevant_data("sho")
+        ds_test_double_well, ds_rk4_double_well = load_relevant_data("double_well")
+        ds_test_morse, ds_rk4_morse = load_relevant_data("morse")
+        ds_test_pendulum, ds_rk4_pendulum = load_relevant_data("pendulum")
+        ds_test_mff, ds_rk4_mff = load_relevant_data("mff")
+        ds_test_smff, ds_rk4_smff = load_relevant_data("smff")
 
         ds_tests = [
             ds_test_sho,
-            ds_test_quartic,
+            ds_test_double_well,
             ds_test_morse,
-            ds_test_smff,
+            ds_test_pendulum,
             ds_test_mff,
-            ds_test_unbounded,
-            ds_test_cliff,
+            ds_test_smff,
         ]
         ds_rk4s = [
-            ds_sho_rk4,
-            ds_quartic_rk4,
-            ds_morse_rk4,
-            ds_smff_rk4,
-            ds_mff_rk4,
-            ds_unbounded_rk4,
-            ds_cliff_rk4,
+            ds_rk4_sho,
+            ds_rk4_double_well,
+            ds_rk4_morse,
+            ds_rk4_pendulum,
+            ds_rk4_mff,
+            ds_rk4_smff,
         ]
-        dl_tests = [DataLoader(ds_test, batch_size=1) for ds_test in ds_tests]
-        dl_rk4s = [DataLoader(ds_rk4, batch_size=1) for ds_rk4 in ds_rk4s]
-        tests_name = ["SHO", "Quartic", "Morse", "SMFF", "MFF", "Unbounded", "Cliff"]
-        for name, dl, dl_rk4 in zip(tests_name, dl_tests, dl_rk4s):
-            print(f"Test {name}:")
-            test_results = TestResults(model, dl, device, variational)
-            test_results.print_results()
+        tests_name = ["SHO", "DoubleWell", "Morse", "Pendulum", "MFF", "SMFF"]
 
-            fig_dir = f"figs/{project}"
-            if not os.path.exists(fig_dir):
-                os.makedirs(fig_dir)
+        for i in range(len(ds_tests)):
+            print()
+            print(f"Test {tests_name[i]}:")
+            ds_test_vec = ds_tests[i]
+            ds_rk4_vec = ds_rk4s[i]
+            test_name = tests_name[i]
 
-            if name == "Unbounded":
-                test_results.plot_V_expand(f"{fig_dir}/{name}_0_V_plot", 0)
-                test_results.plot_q_expand(f"{fig_dir}/{name}_1_q_plot", 0)
-                test_results.plot_p_expand(f"{fig_dir}/{name}_2_p_plot", 0)
-            else:
-                test_results.plot_V(f"{fig_dir}/{name}_0_V_plot", 0)
-                test_results.plot_q(f"{fig_dir}/{name}_1_q_plot", 0)
-                test_results.plot_p(f"{fig_dir}/{name}_2_p_plot", 0)
-            test_results.plot_phase(f"{fig_dir}/{name}_3_phase_plot", 0)
+            for j in range(len(ds_test_vec)):
+                print(f"Initial Condition {j}:")
+                dl_test = DataLoader(ds_test_vec[j], batch_size=1)
+                dl_rk4 = DataLoader(ds_rk4_vec[j], batch_size=1)
 
-            # RK4
-            for (_, _, x, p), (_, _, x_hat, p_hat) in zip(dl, dl_rk4):
-                x = x.numpy().reshape(-1)
-                p = p.numpy().reshape(-1)
-                x_hat = x_hat.numpy().reshape(-1)
-                p_hat = p_hat.numpy().reshape(-1)
-                loss_x = np.mean(np.square(x - x_hat))
-                loss_p = np.mean(np.square(p - p_hat))
-                loss = 0.5 * (loss_x + loss_p)
-                print(f"RK4 Loss: {loss:.4e}")
+                test_results = TestResults(model, dl_test, device, variational)
+                test_results.print_results()
 
-                t = np.linspace(0, 2, len(x))
-                cmap = plt.get_cmap("gist_heat")
-                colors = cmap(np.linspace(0, 0.75, len(t)))
-                with plt.style.context(["science", "nature"]):
-                    fig, ax = plt.subplots()
-                    ax.plot(
-                        t,
-                        x,
-                        color="gray",
-                        label=r"$q$",
-                        alpha=0.5,
-                        linewidth=1.75,
-                        zorder=0,
-                    )
-                    ax.scatter(
-                        t,
-                        x_hat,
-                        color=colors,
-                        marker=".",
-                        s=9,
-                        label=r"$\hat{q}$",
-                        zorder=1,
-                        edgecolors="none",
-                    )
-                    ax.set_xlabel(r"$t$")
-                    ax.set_ylabel(r"$q(t)$")
-                    ax.autoscale(tight=True)
-                    ax.text(
-                        0.05,
-                        0.9,
-                        f"Loss: {loss_x:.4e}",
-                        transform=ax.transAxes,
-                        fontsize=5,
-                    )
-                    ax.legend()
-                    fig.savefig(
-                        f"{fig_dir}/{name}_RK4_0_q_plot.png",
-                        dpi=600,
-                        bbox_inches="tight",
-                    )
-                    plt.close(fig)
+                fig_dir = f"figs/{project}/{test_name}"
+                if not os.path.exists(fig_dir):
+                    os.makedirs(fig_dir)
 
-                    fig, ax = plt.subplots()
-                    ax.plot(
-                        t,
-                        p,
-                        color="gray",
-                        label=r"$p$",
-                        alpha=0.5,
-                        linewidth=1.75,
-                        zorder=0,
+                if j == 0:
+                    test_results.plot_V(
+                        f"{fig_dir}/{i:02}_{test_name}_{j:02}_0_V_plot", 0
                     )
-                    ax.scatter(
-                        t,
-                        p_hat,
-                        color=colors,
-                        marker=".",
-                        s=9,
-                        label=r"$\hat{p}$",
-                        zorder=1,
-                        edgecolors="none",
-                    )
-                    ax.set_xlabel(r"$t$")
-                    ax.set_ylabel(r"$p(t)$")
-                    ax.autoscale(tight=True)
-                    ax.text(
-                        0.05,
-                        0.1,
-                        f"Loss: {loss_p:.4e}",
-                        transform=ax.transAxes,
-                        fontsize=5,
-                    )
-                    ax.legend()
-                    fig.savefig(
-                        f"{fig_dir}/{name}_RK4_1_p_plot.png",
-                        dpi=600,
-                        bbox_inches="tight",
-                    )
-                    plt.close(fig)
+                test_results.plot_q(f"{fig_dir}/{i:02}_{test_name}_{j:02}_1_q_plot", 0)
+                test_results.plot_p(f"{fig_dir}/{i:02}_{test_name}_{j:02}_2_p_plot", 0)
+                test_results.plot_phase(
+                    f"{fig_dir}/{i:02}_{test_name}_{j:02}_3_phase_plot", 0
+                )
 
-                    fig, ax = plt.subplots()
-                    ax.plot(
-                        x,
-                        p,
-                        color="gray",
-                        label=r"$(q, p)$",
-                        alpha=0.5,
-                        linewidth=1.75,
-                        zorder=0,
-                    )
-                    ax.scatter(
-                        x_hat,
-                        p_hat,
-                        color=colors,
-                        marker=".",
-                        s=9,
-                        label=r"$(\hat{q}, \hat{p})$",
-                        zorder=1,
-                        edgecolors="none",
-                    )
-                    ax.set_xlabel(r"$q$")
-                    ax.set_ylabel(r"$p$")
-                    ax.autoscale(tight=True)
-                    ax.text(
-                        0.05,
-                        0.5,
-                        f"Loss: {loss:.4e}",
-                        transform=ax.transAxes,
-                        fontsize=5,
-                    )
-                    ax.legend()
-                    fig.savefig(
-                        f"{fig_dir}/{name}_RK4_2_phase_plot.png",
-                        dpi=600,
-                        bbox_inches="tight",
-                    )
-                    plt.close(fig)
+                # RK4
+                for (_, _, q, p), (_, _, q_hat, p_hat) in zip(dl_test, dl_rk4):
+                    q = q.numpy().reshape(-1)
+                    p = p.numpy().reshape(-1)
+                    q_hat = q_hat.numpy().reshape(-1)
+                    p_hat = p_hat.numpy().reshape(-1)
+                    loss_q = np.mean(np.square(q - q_hat))
+                    loss_p = np.mean(np.square(p - p_hat))
+                    loss = 0.5 * (loss_q + loss_p)
+                    print(f"RK4 Loss: {loss:.4e}")
+
+                    t = np.linspace(0, 2, len(q))
+                    cmap = plt.get_cmap("gist_heat")
+                    colors = cmap(np.linspace(0, 0.75, len(t)))
+                    with plt.style.context(["science", "nature"]):
+                        fig, ax = plt.subplots()
+                        ax.plot(
+                            t,
+                            q,
+                            color="gray",
+                            label=r"$q$",
+                            alpha=0.5,
+                            linewidth=1.75,
+                            zorder=0,
+                        )
+                        ax.scatter(
+                            t,
+                            q_hat,
+                            color=colors,
+                            marker=".",
+                            s=9,
+                            label=r"$\hat{q}$",
+                            zorder=1,
+                            edgecolors="none",
+                        )
+                        ax.set_xlabel(r"$t$")
+                        ax.set_ylabel(r"$q(t)$")
+                        ax.autoscale(tight=True)
+                        ax.text(
+                            0.05,
+                            0.9,
+                            f"Loss: {loss_q:.4e}",
+                            transform=ax.transAxes,
+                            fontsize=5,
+                        )
+                        ax.legend()
+                        fig.savefig(
+                            f"{fig_dir}/{i:02}_{test_name}_{j:02}_RK4_0_q_plot.png",
+                            dpi=600,
+                            bbox_inches="tight",
+                        )
+                        plt.close(fig)
+
+                        fig, ax = plt.subplots()
+                        ax.plot(
+                            t,
+                            p,
+                            color="gray",
+                            label=r"$p$",
+                            alpha=0.5,
+                            linewidth=1.75,
+                            zorder=0,
+                        )
+                        ax.scatter(
+                            t,
+                            p_hat,
+                            color=colors,
+                            marker=".",
+                            s=9,
+                            label=r"$\hat{p}$",
+                            zorder=1,
+                            edgecolors="none",
+                        )
+                        ax.set_xlabel(r"$t$")
+                        ax.set_ylabel(r"$p(t)$")
+                        ax.autoscale(tight=True)
+                        ax.text(
+                            0.05,
+                            0.1,
+                            f"Loss: {loss_p:.4e}",
+                            transform=ax.transAxes,
+                            fontsize=5,
+                        )
+                        ax.legend()
+                        fig.savefig(
+                            f"{fig_dir}/{i:02}_{test_name}_{j:02}_RK4_1_p_plot.png",
+                            dpi=600,
+                            bbox_inches="tight",
+                        )
+                        plt.close(fig)
+
+                        fig, ax = plt.subplots()
+                        ax.plot(
+                            q,
+                            p,
+                            color="gray",
+                            label=r"$(q,p)$",
+                            alpha=0.5,
+                            linewidth=1.75,
+                            zorder=0,
+                        )
+                        ax.scatter(
+                            q_hat,
+                            p_hat,
+                            color=colors,
+                            marker=".",
+                            s=9,
+                            label=r"$(\hat{q}, \hat{p})$",
+                            zorder=1,
+                            edgecolors="none",
+                        )
+                        ax.set_xlabel(r"$q$")
+                        ax.set_ylabel(r"$p$")
+                        ax.autoscale(tight=True)
+                        ax.text(
+                            0.05,
+                            0.5,
+                            f"Loss: {loss:.4e}",
+                            transform=ax.transAxes,
+                            fontsize=5,
+                        )
+                        ax.legend()
+                        fig.savefig(
+                            f"{fig_dir}/{i:02}_{test_name}_{j:02}_RK4_2_phase_plot.png",
+                            dpi=600,
+                            bbox_inches="tight",
+                        )
+                        plt.close(fig)
 
 
 if __name__ == "__main__":
+    console = Console()
     main()
