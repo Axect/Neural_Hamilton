@@ -1,70 +1,202 @@
 use dialoguer::{theme::ColorfulTheme, Select};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressIterator};
-use peroxide::fuga::anyhow::Result;
 use peroxide::fuga::*;
 use rayon::prelude::*;
 use rugfield::{grf_with_rng, Kernel};
 
-#[allow(non_snake_case)]
-fn main() -> std::result::Result<(), Box<dyn Error>> {
-    let normal_or_more = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Normal or More or Much?")
-        .items(&["Normal", "More", "Much"])
+const V0: f64 = 2f64;
+const L: f64 = 1f64;
+const NSENSORS: usize = 100;
+const BOUNDARY: f64 = 0f64;
+const TSTEP: f64 = 1e-3;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let normal_or_more_or_much = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Normal or More or Much or Test?")
+        .items(&["Normal", "More", "Much", "Test"])
         .default(0)
         .interact()?;
-    let n = match normal_or_more {
+    let n = match normal_or_more_or_much {
         0 => 10000,
         1 => 100000,
-        _ => 1000000,
+        2 => 1000000,
+        3 => 4000,
+        _ => unreachable!(),
+    };
+    let folder = match normal_or_more_or_much {
+        0 => "data_normal",
+        1 => "data_more",
+        2 => "data_much",
+        3 => "data_test",
+        _ => unreachable!(),
     };
 
-    println!("Generate dataset...");
-    let ds = Dataset::generate(n, 0.8, 8407)?;
-    ds.write_parquet(normal_or_more, false)?;
-    println!("Generate dataset complete");
-    
-    if normal_or_more == 0 {
-        println!("Generate test dataset...");
-        let ds = Dataset::generate(5000, 0.2, 42)?;
-        ds.write_parquet(normal_or_more, true)?;
-        println!("Generate test dataset complete");
+    if normal_or_more_or_much == 3 {
+        println!("\nGenerate test data...");
+        let ds_test = Dataset::generate(n, 789)?;
+        let ds_test = ds_test.take(n);
+        println!("Take test data: {}", ds_test.data.len());
+        let (q_max, p_max) = ds_test.max();
+        println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
+
+        println!("\nWrite data...");
+        ds_test.write_parquet(&format!("{}/test.parquet", folder))?;
+    } else {
+        let train_ratio = 0.8;
+        let n_train = (n as f64 * train_ratio).round() as usize;
+        let n_val = n - n_train;
+
+        println!("\nGenerate training data...");
+        let ds_train = Dataset::generate(n_train, 123)?;
+        let ds_train = ds_train.take(n_train);
+        println!("Take training data: {}", ds_train.data.len());
+        let (q_max, p_max) = ds_train.max();
+        println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
+
+        println!("\nGenerate validation data...");
+        let ds_val = Dataset::generate(n_val, 456)?;
+        let ds_val = ds_val.take(n_val);
+        println!("Take validation data: {}", ds_val.data.len());
+        let (q_max, p_max) = ds_val.max();
+        println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
+
+        println!("\nWrite data...");
+        ds_train.write_parquet(&format!("{}/train.parquet", folder))?;
+        ds_val.write_parquet(&format!("{}/val.parquet", folder))?;
     }
 
     Ok(())
 }
 
-// ┌─────────────────────────────────────────────────────────┐
-//  Dataset
-// └─────────────────────────────────────────────────────────┘
-#[allow(non_snake_case)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Dataset {
-    pub train_u: Matrix,
-    pub train_y: Matrix,
-    pub train_Gu_x: Matrix,
-    pub train_Gu_p: Matrix,
-    pub val_u: Matrix,
-    pub val_y: Matrix,
-    pub val_Gu_x: Matrix,
-    pub val_Gu_p: Matrix,
+    pub data: Vec<Data>,
 }
 
 impl Dataset {
-    #[allow(non_snake_case)]
-    pub fn generate(n: usize, f_train: f64, seed: u64) -> Result<Self> {
-        // For safety
-        let n_cand = (n as f64 * 1.25).round() as usize;
+    pub fn new(data: Vec<Data>) -> Self {
+        Dataset { data }
+    }
 
-        // Generate GRF
-        let m = 100; // # sensors
-        //let u_b = WeightedUniform::new(
-        //    vec![1f64, 2f64, 2f64, 2f64, 2f64],         // weights
-        //    vec![0f64, 1f64, 2f64, 3f64, 4f64, 5f64],   // intervals
-        //)?;
+    pub fn take(&self, n: usize) -> Self {
+        Dataset {
+            data: self.data.iter().take(n).cloned().collect(),
+        }
+    }
+
+    /// Get max of q and p
+    pub fn max(&self) -> (f64, f64) {
+        let q_max = self
+            .data
+            .iter()
+            .map(|d| d.q.iter().cloned().fold(f64::NEG_INFINITY, f64::max))
+            .fold(f64::NEG_INFINITY, f64::max);
+        let p_max = self
+            .data
+            .iter()
+            .map(|d| d.p.iter().cloned().fold(f64::NEG_INFINITY, f64::max))
+            .fold(f64::NEG_INFINITY, f64::max);
+        (q_max, p_max)
+    }
+
+    pub fn generate(n: usize, seed: u64) -> anyhow::Result<Self> {
+        let potential = BoundedPotential::generate_potential(n, seed);
+        potential.generate_data()
+    }
+
+    #[allow(non_snake_case)]
+    pub fn unzip(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+        let V = self
+            .data
+            .iter()
+            .map(|d| d.V.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+        let t = self
+            .data
+            .iter()
+            .map(|d| d.t.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+        let q = self
+            .data
+            .iter()
+            .map(|d| d.q.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+        let p = self
+            .data
+            .iter()
+            .map(|d| d.p.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+        (V, t, q, p)
+    }
+
+    #[allow(non_snake_case)]
+    pub fn write_parquet(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // if parent directory does not exist, create it
+        let parent = std::path::Path::new(path).parent().unwrap();
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let (V, t, q, p) = self.unzip();
+
+        let mut df = DataFrame::new(vec![]);
+        df.push("V", Series::new(V));
+        df.push("t", Series::new(t));
+        df.push("q", Series::new(q));
+        df.push("p", Series::new(p));
+        df.print();
+
+        df.write_parquet(path, CompressionOptions::Uncompressed)?;
+
+        Ok(())
+    }
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Clone)]
+pub struct Data {
+    pub V: Vec<f64>,
+    pub t: Vec<f64>,
+    pub q: Vec<f64>,
+    pub p: Vec<f64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BoundedPotential {
+    pub potential_pair: Vec<(Vec<f64>, Vec<f64>)>,
+}
+
+impl BoundedPotential {
+    /// Generate Potential via GRF + B-Spline
+    ///
+    /// # Parameters
+    /// - `n`: usize - Number of potentials
+    /// - `V0`: f64 - Potential max
+    /// - `L`: f64 - Length of domain
+    /// - `omega`: f64 - Stability parameter
+    /// - `m`: usize - Number of sensors
+    /// - `u_b`: Uniform<usize> - Number of GRFs
+    /// - `u_l`: Uniform<f64> - Kernel length scale
+    /// - `n_q`: Normal<f64> - If b = 1, then normal distribution
+    /// - `degree`: usize - Degree of B-Spline
+    #[allow(non_snake_case)]
+    pub fn generate_potential(n: usize, seed: u64) -> Self {
+        // For safety
+        let n_cand = (n as f64 * 1.5).round() as usize;
+
+        // Declare parameters
+        let omega = 0.05;
         let u_b = Uniform(1, 7);
         let u_l = Uniform(0.01, 0.2);
-        let u_n = Normal(0.0, 1.0);
+        let n_q = Normal(0.0, L);
+        let degree = 3;
         let mut rng = stdrng_from_seed(seed);
+
+        // Generate GRF
         let b = u_b
             .sample_with_rng(&mut rng, n_cand)
             .into_iter()
@@ -72,310 +204,285 @@ impl Dataset {
             .collect::<Vec<_>>();
         let l = u_l.sample_with_rng(&mut rng, n_cand);
 
-        let grf_vec = (0..n_cand)
-            .zip(b.iter())
+        let grf_vec = b
+            .iter()
             .zip(l)
             .progress_with(ProgressBar::new(n_cand as u64))
-            .map(|((_, &b), l)| if b > 1 {
-                grf_with_rng(&mut rng, b, Kernel::SquaredExponential(l))
-            } else {
-                u_n.sample_with_rng(&mut rng, 1)
+            .map(|(&b, l)| {
+                if b > 1 {
+                    grf_with_rng(&mut rng, b, Kernel::SquaredExponential(l))
+                } else {
+                    n_q.sample_with_rng(&mut rng, 1)
+                }
             })
             .collect::<Vec<_>>();
 
         // Normalize
         let grf_max_vec = grf_vec.iter().map(|grf| grf.max()).collect::<Vec<_>>();
-
         let grf_min_vec = grf_vec.iter().map(|grf| grf.min()).collect::<Vec<_>>();
-
         let grf_max = grf_max_vec.max();
         let grf_min = grf_min_vec.min();
-
-        let grf_scaled_vec = grf_vec
-            .iter()
-            .map(|grf| grf.fmap(|x| (x - grf_min) / (grf_max - grf_min)))
+        let mut grf_scaled_vec = grf_vec
+            .par_iter()
+            .map(|grf| grf.fmap(|x| V0 * (1f64 - 2f64 * (x - grf_min) / (grf_max - grf_min))))
             .collect::<Vec<_>>();
 
-        let mut x_vec = vec![];
-        for &b in b.iter() {
-            let b_step = 1f64 / (b as f64);
-            let mut x_sample = vec![0f64];
-            if b == 1 {
-                let epsilon = 0.05;
-                let u = Uniform(epsilon, 1f64 - epsilon);
-                x_sample.push(u.sample_with_rng(&mut rng, 1)[0]);
-            } else {
-                for j in 0..b {
-                    let epsilon_1 = if j == 0 { 0.05 } else { 0.025 };
-                    let epsilon_2 = if j == b - 1 { 0.05 } else { 0.025 };
-                    let u = Uniform(
-                        epsilon_1 + b_step * (j as f64),
-                        b_step * ((j + 1) as f64) - epsilon_2,
-                    );
-                    x_sample.push(u.sample_with_rng(&mut rng, 1)[0]);
+        // Sample nodes
+        let q_vec = b
+            .iter()
+            .map(|&b| {
+                let b_step = 1f64 / (b as f64);
+                let mut q_sample = vec![0f64];
+                if b == 1 {
+                    let u = Uniform(omega, 1f64 - omega);
+                    q_sample.push(u.sample_with_rng(&mut rng, 1)[0]);
+                } else {
+                    for j in 0..b {
+                        let omega_1 = if j == 0 { omega } else { omega / 2f64 };
+                        let omega_2 = if j == b - 1 { omega } else { omega / 2f64 };
+                        let u = Uniform(
+                            omega_1 + b_step * (j as f64),
+                            b_step * ((j + 1) as f64) - omega_2,
+                        );
+                        q_sample.push(u.sample_with_rng(&mut rng, 1)[0]);
+                    }
                 }
-            }
-            x_sample.push(1f64);
-            x_vec.push(x_sample);
-        }
-
-        let potential_vec = grf_scaled_vec
-            .into_par_iter()
-            .map(|grf| {
-                let mut potential = grf.fmap(|x| 2f64 - 4f64 * x);
-                potential.insert(0, 2f64);
-                potential.push(2f64);
-                potential
+                q_sample.push(L);
+                q_sample
             })
             .collect::<Vec<_>>();
 
-        type ParReturn = (
-            Vec<Vec<f64>>,
-            (
-                Vec<Vec<f64>>,
-                (Vec<Vec<f64>>, (Vec<Vec<f64>>, Vec<Vec<f64>>)),
-            ),
-        );
-        let (x_vec, (potential_vec, (y_vec, (Gu_x_vec, Gu_p_vec)))): ParReturn = potential_vec
+        // Insert boundary
+        grf_scaled_vec.par_iter_mut().for_each(|grf| {
+            grf.insert(0, V0);
+            grf.push(V0);
+        });
+
+        // Cubic B-Spline
+        let bounded_potential = q_vec
             .par_iter()
-            .zip(x_vec.par_iter())
+            .zip(grf_scaled_vec.par_iter())
             .progress_with(ProgressBar::new(n_cand as u64))
-            .filter_map(|(potential, x)| match solve_grf_ode(potential, x) {
-                Ok((t_vec, y_vec, p_vec)) => {
-                    Some((x.clone(), (potential.clone(), (t_vec, (y_vec, p_vec)))))
-                }
-                Err(_) => None,
-            })
-            .unzip();
-
-        // Filter odd data
-        let mut ics = vec![];
-        for (i, (u, gu)) in potential_vec.iter().zip(Gu_x_vec.iter()).enumerate() {
-            if gu.iter().any(|gu| gu.abs() > 1.1 || !gu.is_finite()) || u.iter().any(|u| u.abs() > 10f64 || !u.is_finite()) {
-                continue;
-            }
-            ics.push(i);
-        }
-        let x_vec = ics.iter().map(|i| x_vec[*i].clone()).collect::<Vec<_>>();
-        let potential_vec = ics
-            .iter()
-            .map(|i| potential_vec[*i].clone())
-            .collect::<Vec<_>>();
-        let y_vec = ics.iter().map(|i| y_vec[*i].clone()).collect::<Vec<_>>();
-        let Gu_x_vec = ics.iter().map(|i| Gu_x_vec[*i].clone()).collect::<Vec<_>>();
-        let Gu_p_vec = ics.iter().map(|i| Gu_p_vec[*i].clone()).collect::<Vec<_>>();
-
-        let sensors = linspace(0, 1, m);
-        let u_vec = potential_vec
-            .par_iter()
-            .zip(x_vec.par_iter())
-            .map(|(potential, x)| {
-                let degree = 3;
-                let control_points = x.iter()
-                    .zip(potential.iter())
-                    .map(|(&x, &y)| vec![x, y])
+            .filter_map(|(q, V)| {
+                let control_points = q
+                    .iter()
+                    .zip(V.iter())
+                    .map(|(&q, &V)| vec![q, V])
                     .collect::<Vec<_>>();
-                let knots = linspace(0, 1, x.len() + 1 - degree);
-                let bspline = BSpline::clamped(degree, knots, control_points)?;
-    
-                let t = linspace(0, 1, 100);
-                let (x_new, potential): (Vec<f64>, Vec<f64>) = bspline.eval_vec(&t).into_iter().unzip();
-
-                let cs = cubic_hermite_spline(&x_new, &potential, Quadratic)?;
-                Ok(cs.eval_vec(&sensors))
+                let knots = linspace(0, 1, q.len() + 1 - degree);
+                match BSpline::clamped(degree, knots, control_points) {
+                    Ok(b_spline) => {
+                        let t = linspace(0, 1, NSENSORS);
+                        let (q_new, potential): (Vec<f64>, Vec<f64>) =
+                            b_spline.eval_vec(&t).into_iter().unzip();
+                        Some((q_new, potential))
+                    }
+                    Err(_) => return None,
+                }
             })
-            .collect::<Result<Vec<_>>>()?;
-
-        let n_train = (n as f64 * f_train).round() as usize;
-        let n_val = n - n_train;
-
-        println!("total data: {}", u_vec.len());
-        println!("n_train: {}", n_train);
-        println!("n_val: {}", n_val);
-
-        let train_u = u_vec.iter().take(n_train).cloned().collect::<Vec<_>>();
-        let train_y = y_vec.iter().take(n_train).cloned().collect::<Vec<_>>();
-        let train_Gu_x = Gu_x_vec.iter().take(n_train).cloned().collect::<Vec<_>>();
-        let train_Gu_p = Gu_p_vec.iter().take(n_train).cloned().collect::<Vec<_>>();
-
-        let val_u = u_vec
-            .iter()
-            .skip(n_train)
-            .take(n_val)
-            .cloned()
-            .collect::<Vec<_>>();
-        let val_y = y_vec
-            .iter()
-            .skip(n_train)
-            .take(n_val)
-            .cloned()
-            .collect::<Vec<_>>();
-        let val_Gu_x = Gu_x_vec
-            .iter()
-            .skip(n_train)
-            .take(n_val)
-            .cloned()
-            .collect::<Vec<_>>();
-        let val_Gu_p = Gu_p_vec
-            .iter()
-            .skip(n_train)
-            .take(n_val)
-            .cloned()
             .collect::<Vec<_>>();
 
-        Ok(Self {
-            train_u: py_matrix(train_u),
-            train_y: py_matrix(train_y),
-            train_Gu_x: py_matrix(train_Gu_x),
-            train_Gu_p: py_matrix(train_Gu_p),
-            val_u: py_matrix(val_u),
-            val_y: py_matrix(val_y),
-            val_Gu_x: py_matrix(val_Gu_x),
-            val_Gu_p: py_matrix(val_Gu_p),
+        BoundedPotential {
+            potential_pair: bounded_potential,
+        }
+    }
+
+    #[allow(non_snake_case)]
+    pub fn generate_data(&self) -> anyhow::Result<Dataset> {
+        println!("Generate data. Candidates: {}", self.potential_pair.len());
+
+        let data = self
+            .potential_pair
+            .par_iter()
+            .progress_with(ProgressBar::new(self.potential_pair.len() as u64))
+            .filter_map(|potential_pair| {
+                match solve_hamilton_equation(potential_pair.clone()) {
+                    Ok(data) => {
+                        let V = &data.V;
+                        let q = &data.q;
+
+                        // Filtering
+                        if q.iter()
+                            .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
+                            || V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64)
+                        {
+                            None
+                        } else {
+                            Some(data)
+                        }
+                    }
+                    Err(_) => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        println!("Generated data: {}", data.len());
+
+        Ok(Dataset::new(data))
+    }
+}
+
+#[allow(non_snake_case)]
+pub struct HamiltonEquation {
+    pub V: CubicHermiteSpline,
+    pub V_prime: CubicHermiteSpline,
+    pub poly_left: Polynomial,
+    pub poly_right: Polynomial,
+    pub poly_left_grad: Polynomial,
+    pub poly_right_grad: Polynomial,
+}
+
+impl HamiltonEquation {
+    #[allow(non_snake_case)]
+    pub fn new(potential_pair: (Vec<f64>, Vec<f64>)) -> anyhow::Result<Self> {
+        let (q, V) = potential_pair;
+        let cs = cubic_hermite_spline(&q, &V, Quadratic)?;
+        let cs_grad = cs.derivative();
+        let cs_hess = cs_grad.derivative();
+        let V_grad_0 = cs_grad.eval(0f64);
+        let V_hess_0 = cs_hess.eval(0f64);
+        let V_grad_L = cs_grad.eval(L);
+        let V_hess_L = cs_hess.eval(L);
+
+        let poly_left = poly(vec![1f64, 0f64, 0.5 * V_hess_0, V_grad_0, V0]);
+        let poly_right_unit = poly(vec![0f64, 0f64, 0f64, 1f64, -L]);
+        let poly_right = poly_right_unit.powi(4)
+            + poly_right_unit.powi(2) * (0.5 * V_hess_L)
+            + poly_right_unit * V_grad_L
+            + V0;
+
+        let poly_left_grad = poly_left.derivative();
+        let poly_right_grad = poly_right.derivative();
+
+        Ok(HamiltonEquation {
+            V: cs,
+            V_prime: cs_grad,
+            poly_left,
+            poly_right,
+            poly_left_grad,
+            poly_right_grad,
         })
     }
 
-    #[allow(non_snake_case)]
-    pub fn train_set(&self) -> (Matrix, Matrix, Matrix, Matrix) {
-        (
-            self.train_u.clone(),
-            self.train_y.clone(),
-            self.train_Gu_x.clone(),
-            self.train_Gu_p.clone(),
-        )
-    }
-
-    #[allow(non_snake_case)]
-    pub fn val_set(&self) -> (Matrix, Matrix, Matrix, Matrix) {
-        (
-            self.val_u.clone(),
-            self.val_y.clone(),
-            self.val_Gu_x.clone(),
-            self.val_Gu_p.clone(),
-        )
-    }
-
-    #[allow(non_snake_case)]
-    pub fn write_parquet(
-        &self,
-        normal_or_more: usize,
-        test: bool
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let data_folder = match normal_or_more {
-            0 => "data_normal",
-            1 => "data_more",
-            _ => "data_much",
-        };
-        if !std::path::Path::new(data_folder).exists() {
-            std::fs::create_dir(data_folder)?;
-        }
-
-        let (train_u, train_y, train_Gu_x, train_Gu_p) = self.train_set();
-        let (val_u, val_y, val_Gu_x, val_Gu_p) = self.val_set();
-
-        let mut df = DataFrame::new(vec![]);
-        df.push("train_u", Series::new(train_u.data));
-        df.push("train_y", Series::new(train_y.data));
-        df.push("train_Gu_x", Series::new(train_Gu_x.data));
-        df.push("train_Gu_p", Series::new(train_Gu_p.data));
-
-        if !test {
-            let train_path = format!("{}/train.parquet", data_folder);
-            df.write_parquet(&train_path, CompressionOptions::Uncompressed)?;
-        }
-
-        let mut df = DataFrame::new(vec![]);
-        df.push("val_u", Series::new(val_u.data));
-        df.push("val_y", Series::new(val_y.data));
-        df.push("val_Gu_x", Series::new(val_Gu_x.data));
-        df.push("val_Gu_p", Series::new(val_Gu_p.data));
-
-        let val_path = if !test {
-            format!("{}/val.parquet", data_folder)
+    pub fn eval(&self, q: f64) -> f64 {
+        if q < 0f64 {
+            self.poly_left.eval(q)
+        } else if q > L {
+            self.poly_right.eval(q)
         } else {
-            format!("{}/test.parquet", data_folder)
-        };
-        df.write_parquet(&val_path, CompressionOptions::Uncompressed)?;
+            self.V.eval(q)
+        }
+    }
 
-        Ok(())
+    pub fn eval_vec(&self, q: &[f64]) -> Vec<f64> {
+        q.iter()
+            .map(|&x| {
+                if x < 0f64 {
+                    self.poly_left.eval(x)
+                } else if x > L {
+                    self.poly_right.eval(x)
+                } else {
+                    self.V.eval(x)
+                }
+            })
+            .collect()
+    }
+
+    pub fn eval_grad(&self, q: f64) -> f64 {
+        if q < 0f64 {
+            self.poly_left_grad.eval(q)
+        } else if q > L {
+            self.poly_right_grad.eval(q)
+        } else {
+            self.V_prime.eval(q)
+        }
     }
 }
 
-#[allow(dead_code)]
-pub struct GRFODE {
-    cs: CubicHermiteSpline,
-    cs_deriv: CubicHermiteSpline,
-}
-
-impl GRFODE {
-    pub fn new(potential: &[f64], x: &[f64]) -> anyhow::Result<Self> {
-        let degree = 3;
-        let control_points = x.iter()
-            .zip(potential.iter())
-            .map(|(&x, &y)| vec![x, y])
-            .collect::<Vec<_>>();
-        let knots = linspace(0, 1, x.len() + 1 - degree);
-        let bspline = BSpline::clamped(degree, knots, control_points)?;
-    
-        let t = linspace(0, 1, 100);
-        let (x_new, potential): (Vec<f64>, Vec<f64>) = bspline.eval_vec(&t).into_iter().unzip();
-
-        let cs = cubic_hermite_spline(&x_new, &potential, Quadratic)?;
-        let cs_deriv = cs.derivative();
-        Ok(Self { cs, cs_deriv })
-    }
-}
-
-impl ODEProblem for GRFODE {
-    fn initial_conditions(&self) -> Vec<f64> {
-        vec![0f64, 0f64]
-    }
-
+impl ODEProblem for HamiltonEquation {
     fn rhs(&self, _t: f64, y: &[f64], dy: &mut [f64]) -> anyhow::Result<()> {
-        dy[0] = y[1]; // dot(x) = p
-        dy[1] = -self.cs_deriv.eval(y[0]); // dot(p) = - partial V / partial x
+        dy[0] = y[1];
+        dy[1] = -self.eval_grad(y[0]);
         Ok(())
     }
 }
 
-pub fn solve_grf_ode(
-    potential: &[f64],
-    x: &[f64],
-) -> anyhow::Result<(Vec<f64>, Vec<f64>, Vec<f64>)> {
-    let grf_ode = GRFODE::new(potential, x)?;
-    let integrator = GL4 {
-        solver: ImplicitSolver::FixedPoint,
-        tol: 1e-6,
-        max_step_iter: 100,
-    };
-    let solver = BasicODESolver::new(integrator);
-    let (t_vec, xp_vec) = solver.solve(&grf_ode, (0f64, 2f64), 1e-3)?;
-    let (x_vec, p_vec): (Vec<f64>, Vec<f64>) = xp_vec.into_iter().map(|xp| (xp[0], xp[1])).unzip();
-
-    // Uniform nodes
-    let n = 100;
-    let cs_x = cubic_hermite_spline(&t_vec, &x_vec, Quadratic)?;
-    let cs_p = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
-    let t_vec = linspace(0, 2, n);
-    let x_vec = cs_x.eval_vec(&t_vec);
-    let p_vec = cs_p.eval_vec(&t_vec);
-
-    Ok((t_vec, x_vec, p_vec))
+pub struct YoshidaSolver {
+    problem: HamiltonEquation,
 }
 
-/// Sabitsky-Golay Filter for smoothing (5-point quadratic)
-pub fn sabitsky_golay_filter_5(y: &[f64]) -> Vec<f64> {
-    let n = y.len();
-    let mut y_smooth = vec![0f64; n];
-    for i in 0..n {
-        if i < 2 || i > n - 3 {
-            y_smooth[i] = y[i];
-        } else {
-            y_smooth[i] = (-3f64 * (y[i - 2] + y[i + 2])
-                + 12f64 * (y[i - 1] + y[i + 1])
-                + 17f64 * y[i])
-                / 35f64;
-        }
+const W0: f64 = -1.7024143839193153;
+const W1: f64 = 1.3512071919596578;
+
+const YOSHIDA_COEFF: [f64; 8] = [
+    W1 / 2f64,
+    (W0 + W1) / 2f64,
+    (W0 + W1) / 2f64,
+    W1 / 2f64,
+    W1,
+    W0,
+    W1,
+    0f64,
+];
+
+impl YoshidaSolver {
+    pub fn new(problem: HamiltonEquation) -> Self {
+        YoshidaSolver { problem }
     }
-    y_smooth
+
+    #[allow(non_snake_case)]
+    pub fn solve(
+        &self,
+        t_span: (f64, f64),
+        dt: f64,
+        initial_condition: &[f64],
+    ) -> anyhow::Result<Data> {
+        let hamilton_eq = &self.problem;
+
+        let t_vec = linspace(
+            t_span.0,
+            t_span.1,
+            ((t_span.1 - t_span.0) / dt) as usize + 1,
+        );
+        let mut q_vec = vec![0f64; t_vec.len()];
+        let mut p_vec = vec![0f64; t_vec.len()];
+        q_vec[0] = initial_condition[0];
+        p_vec[0] = initial_condition[1];
+
+        for i in 1..t_vec.len() {
+            let mut q = q_vec[i - 1];
+            let mut p = p_vec[i - 1];
+            for j in 0..4 {
+                q = q + YOSHIDA_COEFF[j] * p * dt;
+                p = p + YOSHIDA_COEFF[j + 4] * (-hamilton_eq.eval_grad(q)) * dt;
+            }
+            q_vec[i] = q;
+            p_vec[i] = p;
+        }
+
+        let cs_q = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
+        let cs_p = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
+
+        let t_vec = linspace(t_span.0, t_span.1, NSENSORS);
+        let q_vec = cs_q.eval_vec(&t_vec);
+        let p_vec = cs_p.eval_vec(&t_vec);
+
+        let q_uniform = linspace(0, L, NSENSORS);
+        let V = hamilton_eq.eval_vec(&q_uniform);
+        Ok(Data {
+            V,
+            t: t_vec,
+            q: q_vec,
+            p: p_vec,
+        })
+    }
+}
+
+#[allow(non_snake_case)]
+pub fn solve_hamilton_equation(
+    potential_pair: (Vec<f64>, Vec<f64>),
+) -> anyhow::Result<Data> {
+    let initial_condition = vec![0f64, 0f64];
+    let hamilton_eq = HamiltonEquation::new(potential_pair.clone())?;
+    let solver = YoshidaSolver::new(hamilton_eq);
+    solver.solve((0f64, 2f64), TSTEP, &initial_condition)
 }
