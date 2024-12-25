@@ -1,20 +1,21 @@
-project: NeuralHamilton_v1.1_MambONet
+project: NeuralHamilton_v1.2_MambONet
 device: cuda:0
 net: model.MambONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
-epochs: 50
+epochs: 250
 batch_size: 100
-seeds: [89, 231, 928, 814, 269]
+seeds: [89]
 net_config:
-  d_model: 128
-  num_layers1: 4
+  d_model: 64
+  num_layers1: 5
   n_head: 4
   num_layers2: 4
   d_ff: 1024
 optimizer_config:
-  lr: 1.e-3
+  lr: 0.0012677007159700765
 scheduler_config:
   upper_bound: 300
-  max_iter: 50
-  infimum_lr: 1.e-6
+  max_iter: 250
+  infimum_lr: 2.0405777555232315e-7 # 1:1
+  #infimum_lr: 0.00001387231606635331 # original
