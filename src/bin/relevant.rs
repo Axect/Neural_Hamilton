@@ -14,7 +14,8 @@ macro_rules! yoshida_solve {
         if $potential.is_analytic() {
             let t_span = (0f64, 2f64);
             let (q_vec, p_vec) = $potential.analytic_trajectory(t_span, NSENSORS).unwrap();
-            let V = $potential.V_map(&q_vec);
+            let q_uniform = linspace(-BOUNDARY, 1f64 + BOUNDARY, NSENSORS);
+            let V = $potential.V_map(&q_uniform);
             Ok(Data { V, t: linspace(t_span.0, t_span.1, NSENSORS), q: q_vec, p: p_vec })
         } else {
             YoshidaSolver::new($potential).solve((0f64, 2f64), TSTEP, $initial_condition)

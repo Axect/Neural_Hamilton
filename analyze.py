@@ -32,30 +32,25 @@ def load_relevant_data(potential: str):
     df = pl.read_parquet(file_name)
     V = df["V"].to_numpy()
     t = df["t"].to_numpy()
-    ds_vec = []
-    ds_rk4_vec = []
-    for i in range(5):
-        q = df[f"q_{i}"].to_numpy()
-        p = df[f"p_{i}"].to_numpy()
-        ds = TensorDataset(
-            torch.tensor(V, dtype=torch.float32).unsqueeze(0),
-            torch.tensor(t, dtype=torch.float32).unsqueeze(0),
-            torch.tensor(q, dtype=torch.float32).unsqueeze(0),
-            torch.tensor(p, dtype=torch.float32).unsqueeze(0),
-        )
-        ds_vec.append(ds)
+    q = df[f"q"].to_numpy()
+    p = df[f"p"].to_numpy()
+    ds = TensorDataset(
+        torch.tensor(V, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(t, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(q, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(p, dtype=torch.float32).unsqueeze(0),
+    )
 
-        q_rk4 = df[f"q_rk4_{i}"].to_numpy()
-        p_rk4 = df[f"p_rk4_{i}"].to_numpy()
-        ds_rk4 = TensorDataset(
-            torch.tensor(V, dtype=torch.float32).unsqueeze(0),
-            torch.tensor(t, dtype=torch.float32).unsqueeze(0),
-            torch.tensor(q_rk4, dtype=torch.float32).unsqueeze(0),
-            torch.tensor(p_rk4, dtype=torch.float32).unsqueeze(0),
-        )
-        ds_rk4_vec.append(ds_rk4)
+    q_rk4 = df[f"q_rk4"].to_numpy()
+    p_rk4 = df[f"p_rk4"].to_numpy()
+    ds_rk4 = TensorDataset(
+        torch.tensor(V, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(t, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(q_rk4, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(p_rk4, dtype=torch.float32).unsqueeze(0),
+    )
 
-    return ds_vec, ds_rk4_vec
+    return ds, ds_rk4
 
 
 # ┌──────────────────────────────────────────────────────────┐
@@ -523,160 +518,157 @@ def main():
         for i in range(len(ds_tests)):
             print()
             print(f"Test {tests_name[i]}:")
-            ds_test_vec = ds_tests[i]
-            ds_rk4_vec = ds_rk4s[i]
+            ds_test = ds_tests[i]
+            ds_rk4 = ds_rk4s[i]
             test_name = tests_name[i]
 
-            for j in range(len(ds_test_vec)):
-                print(f"Initial Condition {j}:")
-                dl_test = DataLoader(ds_test_vec[j], batch_size=1)
-                dl_rk4 = DataLoader(ds_rk4_vec[j], batch_size=1)
+            dl_test = DataLoader(ds_test, batch_size=1)
+            dl_rk4 = DataLoader(ds_rk4, batch_size=1)
 
-                test_results = TestResults(model, dl_test, device, variational)
-                test_results.print_results()
+            test_results = TestResults(model, dl_test, device, variational)
+            test_results.print_results()
 
-                fig_dir = f"figs/{project}/{test_name}"
-                if not os.path.exists(fig_dir):
-                    os.makedirs(fig_dir)
+            fig_dir = f"figs/{project}/{test_name}"
+            if not os.path.exists(fig_dir):
+                os.makedirs(fig_dir)
 
-                if j == 0:
-                    test_results.plot_V(
-                        f"{fig_dir}/{i:02}_{test_name}_{j:02}_0_V_plot", 0
+            test_results.plot_V(
+                f"{fig_dir}/{i:02}_{test_name}_0_V_plot", 0
+            )
+            test_results.plot_q(f"{fig_dir}/{i:02}_{test_name}_1_q_plot", 0)
+            test_results.plot_p(f"{fig_dir}/{i:02}_{test_name}_2_p_plot", 0)
+            test_results.plot_phase(
+                f"{fig_dir}/{i:02}_{test_name}_3_phase_plot", 0
+            )
+
+            # RK4
+            for (_, _, q, p), (_, _, q_hat, p_hat) in zip(dl_test, dl_rk4):
+                q = q.numpy().reshape(-1)
+                p = p.numpy().reshape(-1)
+                q_hat = q_hat.numpy().reshape(-1)
+                p_hat = p_hat.numpy().reshape(-1)
+                loss_q = np.mean(np.square(q - q_hat))
+                loss_p = np.mean(np.square(p - p_hat))
+                loss = 0.5 * (loss_q + loss_p)
+                print(f"RK4 Loss: {loss:.4e}")
+
+                t = np.linspace(0, 2, len(q))
+                cmap = plt.get_cmap("gist_heat")
+                colors = cmap(np.linspace(0, 0.75, len(t)))
+                with plt.style.context(["science", "nature"]):
+                    fig, ax = plt.subplots()
+                    ax.plot(
+                        t,
+                        q,
+                        color="gray",
+                        label=r"$q$",
+                        alpha=0.5,
+                        linewidth=1.75,
+                        zorder=0,
                     )
-                test_results.plot_q(f"{fig_dir}/{i:02}_{test_name}_{j:02}_1_q_plot", 0)
-                test_results.plot_p(f"{fig_dir}/{i:02}_{test_name}_{j:02}_2_p_plot", 0)
-                test_results.plot_phase(
-                    f"{fig_dir}/{i:02}_{test_name}_{j:02}_3_phase_plot", 0
-                )
+                    ax.scatter(
+                        t,
+                        q_hat,
+                        color=colors,
+                        marker=".",
+                        s=9,
+                        label=r"$\hat{q}$",
+                        zorder=1,
+                        edgecolors="none",
+                    )
+                    ax.set_xlabel(r"$t$")
+                    ax.set_ylabel(r"$q(t)$")
+                    ax.autoscale(tight=True)
+                    ax.text(
+                        0.05,
+                        0.9,
+                        f"Loss: {loss_q:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
+                    )
+                    ax.legend()
+                    fig.savefig(
+                        f"{fig_dir}/{i:02}_{test_name}_RK4_0_q_plot.png",
+                        dpi=600,
+                        bbox_inches="tight",
+                    )
+                    plt.close(fig)
 
-                # RK4
-                for (_, _, q, p), (_, _, q_hat, p_hat) in zip(dl_test, dl_rk4):
-                    q = q.numpy().reshape(-1)
-                    p = p.numpy().reshape(-1)
-                    q_hat = q_hat.numpy().reshape(-1)
-                    p_hat = p_hat.numpy().reshape(-1)
-                    loss_q = np.mean(np.square(q - q_hat))
-                    loss_p = np.mean(np.square(p - p_hat))
-                    loss = 0.5 * (loss_q + loss_p)
-                    print(f"RK4 Loss: {loss:.4e}")
+                    fig, ax = plt.subplots()
+                    ax.plot(
+                        t,
+                        p,
+                        color="gray",
+                        label=r"$p$",
+                        alpha=0.5,
+                        linewidth=1.75,
+                        zorder=0,
+                    )
+                    ax.scatter(
+                        t,
+                        p_hat,
+                        color=colors,
+                        marker=".",
+                        s=9,
+                        label=r"$\hat{p}$",
+                        zorder=1,
+                        edgecolors="none",
+                    )
+                    ax.set_xlabel(r"$t$")
+                    ax.set_ylabel(r"$p(t)$")
+                    ax.autoscale(tight=True)
+                    ax.text(
+                        0.05,
+                        0.1,
+                        f"Loss: {loss_p:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
+                    )
+                    ax.legend()
+                    fig.savefig(
+                        f"{fig_dir}/{i:02}_{test_name}_RK4_1_p_plot.png",
+                        dpi=600,
+                        bbox_inches="tight",
+                    )
+                    plt.close(fig)
 
-                    t = np.linspace(0, 2, len(q))
-                    cmap = plt.get_cmap("gist_heat")
-                    colors = cmap(np.linspace(0, 0.75, len(t)))
-                    with plt.style.context(["science", "nature"]):
-                        fig, ax = plt.subplots()
-                        ax.plot(
-                            t,
-                            q,
-                            color="gray",
-                            label=r"$q$",
-                            alpha=0.5,
-                            linewidth=1.75,
-                            zorder=0,
-                        )
-                        ax.scatter(
-                            t,
-                            q_hat,
-                            color=colors,
-                            marker=".",
-                            s=9,
-                            label=r"$\hat{q}$",
-                            zorder=1,
-                            edgecolors="none",
-                        )
-                        ax.set_xlabel(r"$t$")
-                        ax.set_ylabel(r"$q(t)$")
-                        ax.autoscale(tight=True)
-                        ax.text(
-                            0.05,
-                            0.9,
-                            f"Loss: {loss_q:.4e}",
-                            transform=ax.transAxes,
-                            fontsize=5,
-                        )
-                        ax.legend()
-                        fig.savefig(
-                            f"{fig_dir}/{i:02}_{test_name}_{j:02}_RK4_0_q_plot.png",
-                            dpi=600,
-                            bbox_inches="tight",
-                        )
-                        plt.close(fig)
-
-                        fig, ax = plt.subplots()
-                        ax.plot(
-                            t,
-                            p,
-                            color="gray",
-                            label=r"$p$",
-                            alpha=0.5,
-                            linewidth=1.75,
-                            zorder=0,
-                        )
-                        ax.scatter(
-                            t,
-                            p_hat,
-                            color=colors,
-                            marker=".",
-                            s=9,
-                            label=r"$\hat{p}$",
-                            zorder=1,
-                            edgecolors="none",
-                        )
-                        ax.set_xlabel(r"$t$")
-                        ax.set_ylabel(r"$p(t)$")
-                        ax.autoscale(tight=True)
-                        ax.text(
-                            0.05,
-                            0.1,
-                            f"Loss: {loss_p:.4e}",
-                            transform=ax.transAxes,
-                            fontsize=5,
-                        )
-                        ax.legend()
-                        fig.savefig(
-                            f"{fig_dir}/{i:02}_{test_name}_{j:02}_RK4_1_p_plot.png",
-                            dpi=600,
-                            bbox_inches="tight",
-                        )
-                        plt.close(fig)
-
-                        fig, ax = plt.subplots()
-                        ax.plot(
-                            q,
-                            p,
-                            color="gray",
-                            label=r"$(q,p)$",
-                            alpha=0.5,
-                            linewidth=1.75,
-                            zorder=0,
-                        )
-                        ax.scatter(
-                            q_hat,
-                            p_hat,
-                            color=colors,
-                            marker=".",
-                            s=9,
-                            label=r"$(\hat{q}, \hat{p})$",
-                            zorder=1,
-                            edgecolors="none",
-                        )
-                        ax.set_xlabel(r"$q$")
-                        ax.set_ylabel(r"$p$")
-                        ax.autoscale(tight=True)
-                        ax.text(
-                            0.05,
-                            0.5,
-                            f"Loss: {loss:.4e}",
-                            transform=ax.transAxes,
-                            fontsize=5,
-                        )
-                        ax.legend()
-                        fig.savefig(
-                            f"{fig_dir}/{i:02}_{test_name}_{j:02}_RK4_2_phase_plot.png",
-                            dpi=600,
-                            bbox_inches="tight",
-                        )
-                        plt.close(fig)
+                    fig, ax = plt.subplots()
+                    ax.plot(
+                        q,
+                        p,
+                        color="gray",
+                        label=r"$(q,p)$",
+                        alpha=0.5,
+                        linewidth=1.75,
+                        zorder=0,
+                    )
+                    ax.scatter(
+                        q_hat,
+                        p_hat,
+                        color=colors,
+                        marker=".",
+                        s=9,
+                        label=r"$(\hat{q}, \hat{p})$",
+                        zorder=1,
+                        edgecolors="none",
+                    )
+                    ax.set_xlabel(r"$q$")
+                    ax.set_ylabel(r"$p$")
+                    ax.autoscale(tight=True)
+                    ax.text(
+                        0.05,
+                        0.5,
+                        f"Loss: {loss:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
+                    )
+                    ax.legend()
+                    fig.savefig(
+                        f"{fig_dir}/{i:02}_{test_name}_RK4_2_phase_plot.png",
+                        dpi=600,
+                        bbox_inches="tight",
+                    )
+                    plt.close(fig)
 
 
 if __name__ == "__main__":
