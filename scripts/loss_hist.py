@@ -55,7 +55,7 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
     else:
         max *= 1.01
     bins = np.logspace(-8, 0, 100, base=10)
-    colors = ['gray', 'orange', 'darkgreen', 'maroon', 'darkblue']
+    colors = ['gray', 'orange', 'darkgreen', 'darkblue']
     with plt.style.context(["science", "nature"]):
         fig, ax = plt.subplots()
         loss_means = []
@@ -173,6 +173,6 @@ if __name__ == "__main__":
     console = Console()
     selected = choose_projects_to_plot()
     losses, times = losses_from_projects(selected)
-    legends = ["RK4", "DeepONet", "TraONet", "VaRONet", "MambONet"]
+    legends = ["RK4", "DeepONet", "TraONet", "MambONet"]
     hist_losses(losses, legends)
     hist_times(times, legends)
