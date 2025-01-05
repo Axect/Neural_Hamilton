@@ -13,6 +13,7 @@ def create_net(sizes):
     return nn.Sequential(*net)
 
 
+@torch.compile
 class DeepONet(nn.Module):
     def __init__(self, hparams):
         super().__init__()
@@ -233,6 +234,7 @@ class TFDecoder(nn.Module):
         return out
 
 
+@torch.compile
 class TraONet(nn.Module):
     def __init__(self, hparams):
         super().__init__()
