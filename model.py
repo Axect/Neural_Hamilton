@@ -24,10 +24,10 @@ class DeepONet(nn.Module):
         output_size = 1
 
         self.branch_net = create_net(
-            [input_size] + [nodes * (layers - 1)] + [2 * branches]
+            [input_size] + [nodes] * (layers - 1) + [2 * branches]
         )
         self.trunk_net = create_net(
-            [output_size] + [nodes * (layers - 1)] + [2 * branches]
+            [output_size] + [nodes] * (layers - 1) + [2 * branches]
         )
         self.bias = nn.Parameter(torch.randn(2), requires_grad=True)
 
