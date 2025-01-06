@@ -5,17 +5,14 @@ optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
 epochs: 250
 batch_size: 100
-seeds: [89, 231, 928]
+seeds: [89]
 net_config:
-  nodes: 128
-  layers: 3
-  branches: 10
+  nodes: 1024
+  layers: 6
+  branches: 50
 optimizer_config:
-  lr: 0.008363500318664346
+  lr: 0.000907797512263306
 scheduler_config:
-  upper_bound: 350
+  upper_bound: 400
   max_iter: 250
-  infimum_lr: 1.4166031991092077e-4 # 1:1
-  #infimum_lr: 2.2773407586873652e-6
-  #infimum_lr: 1.988835609153572e-5
-  #infimum_lr: 0.00017368797643252363
+  infimum_lr: 4.7211783731884042e-7
