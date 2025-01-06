@@ -9,11 +9,13 @@ sampler:
   #kwargs:
   #  n_startup_trials: 10
 
-#pruner:
-#  name: optuna.pruners.HyperbandPruner
-#  kwargs:
-#    min_resource: 10
-#    max_resource: 100
+pruner:
+  name: pruner.PFLPruner
+  kwargs:
+    n_startup_trials: 10
+    n_warmup_epochs: 10
+    top_k: 10
+    target_epoch: 50
 
 search_space:
   optimizer_config:
