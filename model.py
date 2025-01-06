@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import math
-from mamba import Mamba, MambaConfig
+from mambapy.mamba import Mamba, MambaConfig
 
 
 def create_net(sizes):
