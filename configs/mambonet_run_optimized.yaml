@@ -13,10 +13,11 @@ net_config:
   num_layers2: 4
   d_ff: 1024
 optimizer_config:
-  lr: 0.0012677007159700765
+  lr: 0.00012677007159700765 # 1/10
 scheduler_config:
   upper_bound: 300
   max_iter: 250
-  infimum_lr: 4.9998219522134166e-8 # 2:1
+  infimum_lr: 0.000001387231606635331 # 1/10
+  #infimum_lr: 4.9998219522134166e-8 # 2:1
   #infimum_lr: 2.0405777555232315e-7 # 1:1
   #infimum_lr: 0.00001387231606635331 # original
