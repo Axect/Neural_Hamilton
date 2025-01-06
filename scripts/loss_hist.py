@@ -1,5 +1,4 @@
 import polars as pl
-import pandas as pd
 import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
@@ -92,7 +91,7 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
         ax.legend()
         fig.savefig("figs/loss_hist.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
-        df = pd.DataFrame({
+        df = pl.DataFrame({
             "loss_mean": loss_means,
             "loss_std": loss_stds,
             "loss_geo_mean": loss_geo_means,
@@ -102,7 +101,6 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
             "loss_q3": loss_q3s,
             "loss_iqr": loss_iqrs
         })
-        pd.set_option('display.float_format', lambda x: '%.4e' % x)
         print(df)
 
 
@@ -155,7 +153,7 @@ def hist_times(times: List[np.ndarray], legends: List[str]):
         ax.legend()
         fig.savefig("figs/time_hist.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
-        df = pd.DataFrame({
+        df = pl.DataFrame({
             "time_mean": time_means,
             "time_std": time_stds,
             "time_geo_mean": time_geo_means,
@@ -165,7 +163,6 @@ def hist_times(times: List[np.ndarray], legends: List[str]):
             "time_q3": time_q3s,
             "time_iqr": time_iqrs
         })
-        pd.set_option('display.float_format', lambda x: '%.4e' % x)
         print(df)
 
 
@@ -173,6 +170,6 @@ if __name__ == "__main__":
     console = Console()
     selected = choose_projects_to_plot()
     losses, times = losses_from_projects(selected)
-    legends = ["RK4", "DeepONet", "TraONet", "MambONet"]
+    legends = [r"RK4 $(\Delta t = 10^{-3})$", "DeepONet", "TraONet", "MambONet"]
     hist_losses(losses, legends)
     hist_times(times, legends)
