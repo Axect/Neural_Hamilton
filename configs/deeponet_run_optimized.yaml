@@ -16,7 +16,8 @@ optimizer_config:
 scheduler_config:
   upper_bound: 400
   max_iter: 250
-  infimum_lr: 1.4929676899203720e-7 # 1 / sqrt(10) 1:1
+  infimum_lr: 4.0768437570594899e-8 # 1/sqrt(10) 2:1
+  #infimum_lr: 1.4929676899203720e-7 # 1 / sqrt(10) 1:1
   #infimum_lr: 0.000002318619228444606 # 1/10
   #infimum_lr: 7.332117788547222e-6 # 1 / sqrt(10)
   #infimum_lr: 4.5639722438156136e-8 # 4:1
