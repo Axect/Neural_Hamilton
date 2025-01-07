@@ -11,15 +11,8 @@ net_config:
   layers: 6
   branches: 50
 optimizer_config:
-  lr: 0.0002870707792986683 # 1 / sqrt(10)
-  #lr: 0.000907797512263306 # Original
+  lr: 0.0006362177006307136
 scheduler_config:
-  upper_bound: 400
+  upper_bound: 300
   max_iter: 250
-  infimum_lr: 4.0768437570594899e-8 # 1/sqrt(10) 2:1
-  #infimum_lr: 1.4929676899203720e-7 # 1 / sqrt(10) 1:1
-  #infimum_lr: 0.000002318619228444606 # 1/10
-  #infimum_lr: 7.332117788547222e-6 # 1 / sqrt(10)
-  #infimum_lr: 4.5639722438156136e-8 # 4:1
-  #infimum_lr: 1.2892111936946254e-7 # 2:1
-  #infimum_lr: 4.7211783731884042e-7 # 1:1
+  infimum_lr: 0.00000040296883414133 # Original
