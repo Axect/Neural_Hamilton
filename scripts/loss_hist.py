@@ -86,7 +86,7 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
         ax.set_ylabel("Count")
         ax.set_xscale("log")
         ax.set_xlim((1e-8, 1e+0))
-        ax.set_ylim((0, 400))
+        ax.set_ylim((0, 450))
         #ax.set_yscale("log")
         ax.legend()
         fig.savefig("figs/loss_hist.png", dpi=600, bbox_inches="tight")
