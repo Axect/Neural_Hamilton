@@ -1,4 +1,4 @@
-project: NeuralHamilton_v1.2_DeepONet
+project: NeuralHamilton_v1.3_DeepONet
 device: cuda:1
 net: model.DeepONet
 optimizer: torch.optim.adamw.AdamW
