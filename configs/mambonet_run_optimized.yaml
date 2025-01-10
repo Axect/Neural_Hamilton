@@ -3,7 +3,7 @@ device: cuda:1
 net: model.MambONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
-epochs: 250
+epochs: 500
 batch_size: 100
 seeds: [89]
 net_config:
@@ -15,9 +15,9 @@ net_config:
 optimizer_config:
   lr: 0.00168647450418752
 scheduler_config:
-  upper_bound: 400
-  max_iter: 250
-  infimum_lr: 5.6203789874276416e-10 # 1:3
+  upper_bound: 800
+  max_iter: 500
+  infimum_lr: 2.2745523885195647e-12 # 1:1
+  #infimum_lr: 5.6203789874276416e-10 # 1:3
   #infimum_lr: 8.9565835673862984e-11 # 1:2
-  #infimum_lr: 2.2745523885195647e-12 # 1:1
   #infimum_lr: 0.00000013887857726099 # Original
