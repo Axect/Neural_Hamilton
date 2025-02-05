@@ -4,7 +4,7 @@ net: model.MambONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
 epochs: 50
-batch_size: 1024
+batch_size: 100
 seeds: [89, 231, 928]
 net_config:
   d_model: 128
