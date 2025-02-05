@@ -14,23 +14,23 @@ pruner:
   kwargs:
     n_startup_trials: 10
     n_warmup_epochs: 10
-    top_k: 10
+    top_k: 20
     target_epoch: 50
 
 search_space:
   net_config:
     d_model:
       type: categorical
-      choices: [64, 128]
+      choices: [64, 128, 256]
     num_layers1:
       type: categorical
-      choices: [3, 4, 5]
+      choices: [3, 4, 5, 6]
     n_head:
       type: categorical
-      choices: [4, 8, 16]
+      choices: [4, 8, 16, 32]
     num_layers2:
       type: categorical
-      choices: [3, 4, 5]
+      choices: [3, 4, 5, 6]
     d_ff:
       type: categorical
       choices: [256, 512, 1024]
