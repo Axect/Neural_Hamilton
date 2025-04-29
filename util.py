@@ -77,7 +77,7 @@ def predict_final_loss(losses, max_epochs):
         y = np.array(losses)
         t = np.arange(len(y))
 
-        # 첫번째 값 기준으로 decay fitting
+        # Decay fitting
         y_transformed = np.log(y)
         K, log_A = np.polyfit(t, y_transformed, 1)
         A = np.exp(log_A)
