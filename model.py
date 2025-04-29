@@ -231,6 +231,7 @@ class TFDecoder(nn.Module):
         x = self.embedding(x) * math.sqrt(self.d_model)
         x = self.pos_encoder(x)
         out = self.transformer_decoder(x, memory)
+        out = self.fc(out)
         return out
 
 
