@@ -22,10 +22,17 @@ def main():
     parser.add_argument(
         "--optimize_config", type=str, help="Path to the optimization YAML config file"
     )
+    parser.add_argument(
+        "--device", type=str, help="Device to run on (e.g. 'cuda:0' or 'cpu')"
+    )
     args = parser.parse_args()
 
     # Run Config
     base_config = RunConfig.from_yaml(args.run_config)
+
+    # Device
+    if args.device:
+        base_config.device = args.device
 
     # Load data
     data_folder = f"data_{args.data}"

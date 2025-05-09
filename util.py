@@ -195,16 +195,19 @@ class Trainer:
 
     def train(self, dl_train, dl_val, epochs):
         val_loss = 0
+        train_losses = []
         val_losses = []
 
         for epoch in range(epochs):
             train_loss = self.train_epoch(dl_train)
             val_loss = self.val_epoch(dl_val)
+            train_losses.append(train_loss)
             val_losses.append(val_loss)
 
             # Early stopping if loss becomes NaN
             if math.isnan(train_loss) or math.isnan(val_loss):
                 print("Early stopping due to NaN loss")
+                train_loss = math.inf
                 val_loss = math.inf
                 break
 
@@ -222,7 +225,7 @@ class Trainer:
 
             if epoch >= 10:
                 log_dict["predicted_final_loss"] = predict_final_loss(
-                    val_losses, epochs
+                    train_losses, epochs
                 )
 
             # Pruning check
