@@ -1,4 +1,4 @@
-project: NeuralHamilton_v1.2_TraONet
+project: NeuralHamilton_v1.5_TraONet
 device: cuda:1
 net: model.TraONet
 optimizer: torch.optim.adamw.AdamW
@@ -16,5 +16,5 @@ optimizer_config:
   lr: 1.e-3
 scheduler_config:
   upper_bound: 300
-  max_iter: 50
+  max_iter: 150
   infimum_lr: 1.e-6
