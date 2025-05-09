@@ -1,6 +1,6 @@
+use indicatif::ParallelProgressIterator;
 use peroxide::fuga::*;
 use rayon::prelude::*;
-use indicatif::ParallelProgressIterator;
 
 #[allow(non_snake_case)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,21 +15,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let samples = val_u.len() / 100;
 
     // RK4 (parallel)
-    let results = (0 .. samples)
+    let results = (0..samples)
         .into_par_iter()
         .progress_count(samples as u64)
         .map(|i| -> Result<_, anyhow::Error> {
-            let u = val_u[i * 100 .. (i + 1) * 100].to_vec();
-            let x_true = val_Gu_x[i * 100 .. (i + 1) * 100].to_vec();
-            let p_true = val_Gu_p[i * 100 .. (i + 1) * 100].to_vec();
+            let u = val_u[i * 100..(i + 1) * 100].to_vec();
+            let x_true = val_Gu_x[i * 100..(i + 1) * 100].to_vec();
+            let p_true = val_Gu_p[i * 100..(i + 1) * 100].to_vec();
             let ode = PotentialODE::new(&u)?;
             let integrator = GL4 {
                 solver: ImplicitSolver::FixedPoint,
                 max_step_iter: 100,
-                tol: 1e-6
+                tol: 1e-6,
             };
             let solver = BasicODESolver::new(integrator);
-            let (t_vec, xp_vec) = solver.solve(&ode, (0f64, 2f64), 1e-4)?;
+            let (t_vec, xp_vec) = solver.solve(&ode, (0f64, 2f64), 1e-4, &vec![0.0, 0.0])?;
             let (x_vec, p_vec): (Vec<f64>, Vec<f64>) = xp_vec.iter().map(|v| (v[0], v[1])).unzip();
 
             let cs_x: CubicHermiteSpline = cubic_hermite_spline(&t_vec, &x_vec, Quadratic)?;
@@ -47,18 +47,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let (t_total, x_total, p_total, loss_x_total, loss_p_total, loss_total): (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) = results.into_iter()
-        .map(|(t, x, p, loss_x, loss_p, loss)| (
-            t.into_iter(),
-            x.into_iter(),
-            p.into_iter(),
-            loss_x.into_iter(),
-            loss_p.into_iter(),
-            loss.into_iter()
-        ))
+    let (t_total, x_total, p_total, loss_x_total, loss_p_total, loss_total): (
+        Vec<f64>,
+        Vec<f64>,
+        Vec<f64>,
+        Vec<f64>,
+        Vec<f64>,
+        Vec<f64>,
+    ) = results
+        .into_iter()
+        .map(|(t, x, p, loss_x, loss_p, loss)| {
+            (
+                t.into_iter(),
+                x.into_iter(),
+                p.into_iter(),
+                loss_x.into_iter(),
+                loss_p.into_iter(),
+                loss.into_iter(),
+            )
+        })
         .fold(
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()),
-            |(mut t_acc, mut x_acc, mut p_acc, mut loss_x_acc, mut loss_p_acc, mut loss_acc), (t, x, p, loss_x, loss_p, loss)| {
+            (
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ),
+            |(mut t_acc, mut x_acc, mut p_acc, mut loss_x_acc, mut loss_p_acc, mut loss_acc),
+             (t, x, p, loss_x, loss_p, loss)| {
                 t_acc.extend(t);
                 x_acc.extend(x);
                 p_acc.extend(p);
@@ -66,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 loss_p_acc.extend(loss_p);
                 loss_acc.extend(loss);
                 (t_acc, x_acc, p_acc, loss_x_acc, loss_p_acc, loss_acc)
-            }
+            },
         );
 
     let mut dg = DataFrame::new(vec![]);
@@ -100,10 +118,6 @@ impl PotentialODE {
 }
 
 impl ODEProblem for PotentialODE {
-    fn initial_conditions(&self) -> Vec<f64> {
-        vec![0.0, 0.0]
-    }
-
     fn rhs(&self, _: f64, y: &[f64], dy: &mut [f64]) -> anyhow::Result<()> {
         dy[0] = y[1];
         dy[1] = -self.cs_deriv.eval(y[0]);

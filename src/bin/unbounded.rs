@@ -1,4 +1,3 @@
-
 use peroxide::fuga::*;
 
 #[allow(non_snake_case)]
@@ -14,7 +13,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         max_step_iter: 100,
     };
     let solver = BasicODESolver::new(integrator);
-    let (t_vec, xp_vec) = solver.solve(&problem, (0f64, 2f64), 1e-3)?;
+    let (t_vec, xp_vec) = solver.solve(&problem, (0f64, 2f64), 1e-3, &vec![0.0, 0.0])?;
     let (x_vec, p_vec): (Vec<f64>, Vec<f64>) = xp_vec.into_iter().map(|xp| (xp[0], xp[1])).unzip();
 
     let cs_x = cubic_hermite_spline(&t_vec, &x_vec, Quadratic)?;
@@ -43,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let problem = FreeFall;
     let integrator = RK4;
     let solver = BasicODESolver::new(integrator);
-    let (t_vec, xp_vec) = solver.solve(&problem, (0f64, 2f64), 1e-3)?;
+    let (t_vec, xp_vec) = solver.solve(&problem, (0f64, 2f64), 1e-3, &vec![0.0, 0.0])?;
     let (x_vec, p_vec): (Vec<f64>, Vec<f64>) = xp_vec.into_iter().map(|xp| (xp[0], xp[1])).unzip();
 
     let cs_x = cubic_hermite_spline(&t_vec, &x_vec, Quadratic)?;
@@ -90,10 +89,6 @@ fn dVdx(x: f64) -> f64 {
 struct FreeFall;
 
 impl ODEProblem for FreeFall {
-    fn initial_conditions(&self) -> Vec<f64> {
-        vec![0f64, 0f64]
-    }
-
     fn rhs(&self, _t: f64, y: &[f64], dy: &mut [f64]) -> anyhow::Result<()> {
         dy[0] = y[1];
         dy[1] = -dVdx(y[0]);
