@@ -36,7 +36,7 @@ Key features:
    uv pip sync requirements.txt
 
    # Or use uv (fresh install)
-   uv pip install -U torch wandb survey polars numpy optuna matplotlib scienceplots beaupy rich
+   uv pip install -U torch wandb polars numpy optuna matplotlib scienceplots beaupy rich mambapy
 
    # Or use pip
    pip install -r requirements.txt

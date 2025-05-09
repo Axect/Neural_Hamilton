@@ -54,6 +54,7 @@ kiwisolver==1.4.8
     # via matplotlib
 mako==1.3.10
     # via alembic
+mambapy==1.2.0
 markdown-it-py==3.0.0
     # via rich
 markupsafe==3.0.2
@@ -192,6 +193,7 @@ sympy==1.14.0
 tomlkit==0.13.2
     # via pylint
 torch==2.7.0
+    # via mambapy
 tqdm==4.67.1
     # via optuna
 triton==3.3.0
