@@ -150,7 +150,7 @@ impl Dataset {
         df.push("p", Series::new(p));
         df.print();
 
-        df.write_parquet(path, CompressionOptions::Uncompressed)?;
+        df.write_parquet(path, CompressionOptions::Snappy)?;
 
         Ok(())
     }
@@ -190,9 +190,8 @@ impl BoundedPotential {
 
         // Declare parameters
         let omega = 0.05;
-        let u_b = Uniform(1, 7);
+        let u_b = Uniform(2, 7);
         let u_l = Uniform(0.01, 0.2);
-        let n_q = Normal(0.0, L);
         let degree = 3;
         let mut rng = stdrng_from_seed(seed);
 
@@ -208,13 +207,7 @@ impl BoundedPotential {
             .iter()
             .zip(l)
             .progress_with(ProgressBar::new(n_cand as u64))
-            .map(|(&b, l)| {
-                if b > 1 {
-                    grf_with_rng(&mut rng, b, Kernel::SquaredExponential(l))
-                } else {
-                    n_q.sample_with_rng(&mut rng, 1)
-                }
-            })
+            .map(|(&b, l)| grf_with_rng(&mut rng, b, Kernel::SquaredExponential(l)))
             .collect::<Vec<_>>();
 
         // Normalize
@@ -233,19 +226,15 @@ impl BoundedPotential {
             .map(|&b| {
                 let b_step = 1f64 / (b as f64);
                 let mut q_sample = vec![0f64];
-                if b == 1 {
-                    let u = Uniform(omega, 1f64 - omega);
-                    q_sample.push(u.sample_with_rng(&mut rng, 1)[0]);
-                } else {
-                    for j in 0..b {
-                        let omega_1 = if j == 0 { omega } else { omega / 2f64 };
-                        let omega_2 = if j == b - 1 { omega } else { omega / 2f64 };
-                        let u = Uniform(
-                            omega_1 + b_step * (j as f64),
-                            b_step * ((j + 1) as f64) - omega_2,
-                        );
-                        q_sample.push(u.sample_with_rng(&mut rng, 1)[0]);
-                    }
+                for j in 0..b {
+                    let omega_1 = if j == 0 { omega } else { omega / 2f64 };
+                    let omega_2 = if j == b - 1 { omega } else { omega / 2f64 };
+                    let u = Uniform(
+                        omega_1 + b_step * (j as f64),
+                        b_step * ((j + 1) as f64) - omega_2,
+                    );
+                    let sampled_normalized_coordinate = u.sample_with_rng(&mut rng, 1)[0];
+                    q_sample.push(sampled_normalized_coordinate * L);
                 }
                 q_sample.push(L);
                 q_sample
@@ -478,9 +467,7 @@ impl YoshidaSolver {
 }
 
 #[allow(non_snake_case)]
-pub fn solve_hamilton_equation(
-    potential_pair: (Vec<f64>, Vec<f64>),
-) -> anyhow::Result<Data> {
+pub fn solve_hamilton_equation(potential_pair: (Vec<f64>, Vec<f64>)) -> anyhow::Result<Data> {
     let initial_condition = vec![0f64, 0f64];
     let hamilton_eq = HamiltonEquation::new(potential_pair.clone())?;
     let solver = YoshidaSolver::new(hamilton_eq);
