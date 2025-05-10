@@ -1,4 +1,4 @@
-project: NeuralHamilton_v1.2_TraONet
+project: NeuralHamilton_v1.5_TraONet
 device: cuda:1
 net: model.TraONet
 optimizer: torch.optim.adamw.AdamW
@@ -7,14 +7,14 @@ epochs: 250
 batch_size: 100
 seeds: [89]
 net_config:
-  d_model: 32
+  d_model: 64
   nhead: 16
   num_layers: 4
-  dim_feedforward: 512
+  dim_feedforward: 256
   dropout: 0.0
 optimizer_config:
-  lr: 0.0015746255438489364
+  lr: 0.001394947193339794
 scheduler_config:
   upper_bound: 300
   max_iter: 250
-  infimum_lr: 2.6068319068240619e-6 # 1:1
+  infimum_lr: 0.00000001752490896675
