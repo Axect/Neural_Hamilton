@@ -1,4 +1,4 @@
-project: NeuralHamilton_v1.3_DeepONet
+project: NeuralHamilton_v1.5_DeepONet
 device: cuda:1
 net: model.DeepONet
 optimizer: torch.optim.adamw.AdamW
@@ -7,12 +7,12 @@ epochs: 250
 batch_size: 100
 seeds: [89]
 net_config:
-  nodes: 1024
-  layers: 6
-  branches: 50
+  nodes: 512
+  layers: 5
+  branches: 32
 optimizer_config:
-  lr: 0.0006362177006307136
+  lr: 0.0014088923929828267
 scheduler_config:
   upper_bound: 300
   max_iter: 250
-  infimum_lr: 0.00000040296883414133 # Original
+  infimum_lr: 0.00000108482233910544
