@@ -375,12 +375,36 @@ impl<V: Potential> YoshidaSolver<V> {
         q_vec[0] = initial_condition[0];
         p_vec[0] = initial_condition[1];
 
+        // Yoshida 8th-order symmetric composition coefficients (γ1…γ8)
+        const GAMMA: [f64; 8] = [
+            0.7416703643506129,  // γ1 = γ15
+            -0.4091008258000316, // γ2 = γ14
+            0.1907547102962384,  // γ3 = γ13
+            -0.5738624711160823, // γ4 = γ12
+            0.2990641813036559,  // γ5 = γ11
+            0.3346249182452982,  // γ6 = γ10
+            0.3152930923967666,  // γ7 = γ9
+            -0.7968879393529163, // γ8 (center)
+        ];
+
         for i in 1..t_vec.len() {
             let mut q = q_vec[i - 1];
             let mut p = p_vec[i - 1];
-            for j in 0..4 {
-                q = q + YOSHIDA_COEFF[j] * p * dt;
-                p = p + YOSHIDA_COEFF[j + 4] * (-potential.dV(q)) * dt;
+            // Yoshida 8th-order method (forward)
+            for &g in &GAMMA {
+                // Yoshida 4th-order method
+                for j in 0..4 {
+                    q = q + YOSHIDA_COEFF[j] * p * g * dt;
+                    p = p + YOSHIDA_COEFF[j + 4] * (-potential.dV(q)) * g * dt;
+                }
+            }
+            // Yoshida 8th-order method (backward)
+            for &g in GAMMA[..7].iter().rev() {
+                // Yoshida 4th-order method
+                for j in 0..4 {
+                    q = q + YOSHIDA_COEFF[j] * p * g * dt;
+                    p = p + YOSHIDA_COEFF[j + 4] * (-potential.dV(q)) * g * dt;
+                }
             }
             q_vec[i] = q;
             p_vec[i] = p;
