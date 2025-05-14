@@ -42,9 +42,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0 | 1 | 2 => {
             // Normal, More, Much (all Y4 for Train/Val)
             let (n_total_samples, folder, order) = match selection {
-                0 => (10000, "data_normal", SolverOrder::Yoshida4th),
-                1 => (100000, "data_more", SolverOrder::Yoshida4th),
-                2 => (1000000, "data_much", SolverOrder::Yoshida4th),
+                0 => (10000, "data_normal", SolverOrder::Yoshida8th),
+                1 => (100000, "data_more", SolverOrder::Yoshida8th),
+                2 => (1000000, "data_much", SolverOrder::Yoshida8th),
                 _ => unreachable!(),
             };
 
@@ -129,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Test
             let n = 4000;
             let folder = "data_test";
-            let order = SolverOrder::Yoshida4th;
+            let order = SolverOrder::Yoshida8th;
             let seed = 789;
 
             println!("\nGenerate test data (Order: {:?})...", order);
