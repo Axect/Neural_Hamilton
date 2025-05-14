@@ -53,6 +53,12 @@ def load_relevant_data(potential: str):
     return ds, ds_rk4
 
 
+def load_precise_data():
+    y4_ds = load_data("./data_precise/test.parquet")
+    y8_ds = load_data("./data_precise/compare.parquet")
+    return y4_ds, y8_ds
+
+
 # ┌──────────────────────────────────────────────────────────┐
 #  RK4 Solver
 # └──────────────────────────────────────────────────────────┘
@@ -88,15 +94,21 @@ def solve_hamilton(V, q0, p0, t):
 
 
 class TestResults:
-    def __init__(self, model, dl_val, device, variational=False):
+    def __init__(self, model, dl_val, device, variational=False, precise=False):
         self.model = model
-        self.dl_val = dl_val
+        if precise:
+            self.dl_val = None
+        else:
+            self.dl_val = dl_val
         self.device = device
         self.variational = variational
 
-        self.run_test()
-        self.load_rk4()
-        self.measure_rk4()
+        if precise:
+            self.run_precise_test()
+        else:
+            self.run_test()
+            self.load_rk4()
+            self.measure_rk4()
 
     def run_test(self):
         self.model.eval()
@@ -176,6 +188,83 @@ class TestResults:
                 t_total_vec.append(time.time() - t_start)
         self.t_total_time_vec_rk4 = np.array(t_total_vec)
 
+    def run_precise_test(self):
+        y4_ds, y8_ds = load_precise_data()
+        y4_dl = DataLoader(y4_ds, batch_size=100)
+        y8_dl = DataLoader(y8_ds, batch_size=100)
+        y8_model_loss_q_vec = []
+        y8_model_loss_p_vec = []
+        y8_model_loss_vec = []
+        y8_y4_loss_q_vec = []
+        y8_y4_loss_p_vec = []
+        y8_y4_loss_vec = []
+        precise_V_vec = []
+        precise_model_q_preds = []
+        precise_model_p_preds = []
+        precise_y8_q = []
+        precise_y8_p = []
+        precise_y4_q = []
+        precise_y4_p = []
+
+        self.model.eval()
+        with torch.no_grad():
+            for (V, t, q, p), (_, _, q8, p8) in zip(y4_dl, y8_dl):
+                V, t, q, p = (
+                    V.to(self.device),
+                    t.to(self.device),
+                    q.to(self.device),
+                    p.to(self.device),
+                )
+                q8, p8 = (
+                    q8.to(self.device),
+                    p8.to(self.device),
+                )
+                if not self.variational:
+                    self.reparameterize = False
+                    q_pred, p_pred = self.model(V, t)
+                else:
+                    q_pred, p_pred, _, _ = self.model(V, t)
+                loss_q_vec = F.mse_loss(q_pred, q8, reduction="none")
+                loss_p_vec = F.mse_loss(p_pred, p8, reduction="none")
+                loss_vec = 0.5 * (loss_q_vec + loss_p_vec)
+                loss_q = loss_q_vec.mean(dim=1)
+                loss_p = loss_p_vec.mean(dim=1)
+                loss = loss_vec.mean(dim=1)
+                loss_y4_q = F.mse_loss(q, q8, reduction="none")
+                loss_y4_p = F.mse_loss(p, p8, reduction="none")
+                loss_y4_vec = 0.5 * (loss_y4_q + loss_y4_p)
+                loss_y4_q = loss_y4_q.mean(dim=1)
+                loss_y4_p = loss_y4_p.mean(dim=1)
+                loss_y4 = loss_y4_vec.mean(dim=1)
+                y8_model_loss_q_vec.extend(loss_q.cpu().numpy())
+                y8_model_loss_p_vec.extend(loss_p.cpu().numpy())
+                y8_model_loss_vec.extend(loss.cpu().numpy())
+                y8_y4_loss_q_vec.extend(loss_y4_q.cpu().numpy())
+                y8_y4_loss_p_vec.extend(loss_y4_p.cpu().numpy())
+                y8_y4_loss_vec.extend(loss_y4.cpu().numpy())
+                precise_V_vec.extend(V.cpu().numpy())
+                precise_model_q_preds.extend(q_pred.cpu().numpy())
+                precise_model_p_preds.extend(p_pred.cpu().numpy())
+                precise_y8_q.extend(q8.cpu().numpy())
+                precise_y8_p.extend(p8.cpu().numpy())
+                precise_y4_q.extend(q.cpu().numpy())
+                precise_y4_p.extend(p.cpu().numpy())
+
+        self.y8_model_loss_q_vec = np.array(y8_model_loss_q_vec)
+        self.y8_model_loss_p_vec = np.array(y8_model_loss_p_vec)
+        self.y8_model_loss_vec = np.array(y8_model_loss_vec)
+        self.y8_y4_loss_q_vec = np.array(y8_y4_loss_q_vec)
+        self.y8_y4_loss_p_vec = np.array(y8_y4_loss_p_vec)
+        self.y8_y4_loss_vec = np.array(y8_y4_loss_vec)
+        self.precise_V_vec = np.array(precise_V_vec)
+        self.precise_model_q_preds = np.array(precise_model_q_preds)
+        self.precise_model_p_preds = np.array(precise_model_p_preds)
+        self.precise_y8_q = np.array(precise_y8_q)
+        self.precise_y8_p = np.array(precise_y8_p)
+        self.precise_y4_q = np.array(precise_y4_q)
+        self.precise_y4_p = np.array(precise_y4_p)
+
+
     def print_results(self):
         print(f"Shape: {self.total_loss_vec.shape}")
         print(f"Total Loss: {self.total_loss_vec.mean():.4e}")
@@ -234,43 +323,121 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_V(self, name: str, index: int):
+    def precise_hist_loss(self, name: str):
+        losses = self.y8_model_loss_vec
+        df_losses = pl.DataFrame({"loss": losses})
+        df_losses.write_parquet(f"{name}.parquet")
+        loss_min_log = np.log10(losses.min())
+        loss_max_log = np.log10(losses.max())
+        if loss_min_log < 0:
+            loss_min_log *= 1.01
+        else:
+            loss_min_log *= 0.99
+        if loss_max_log < 0:
+            loss_max_log *= 0.99
+        else:
+            loss_max_log *= 1.01
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            logbins = np.logspace(loss_min_log, loss_max_log, 100)
+            ax.hist(losses, bins=logbins)
+            ax.axvline(losses.mean(), color="red", linestyle="--")
+            ax.set_xlabel("Total Loss")
+            ax.set_ylabel("Count")
+            ax.set_xscale("log")
+            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+    def precise_hist_loss_y4(self, name: str):
+        losses = self.y8_y4_loss_vec
+        df_losses = pl.DataFrame({"loss": losses})
+        df_losses.write_parquet(f"{name}.parquet")
+        loss_min_log = np.log10(losses.min())
+        loss_max_log = np.log10(losses.max())
+        if loss_min_log < 0:
+            loss_min_log *= 1.01
+        else:
+            loss_min_log *= 0.99
+        if loss_max_log < 0:
+            loss_max_log *= 0.99
+        else:
+            loss_max_log *= 1.01
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            logbins = np.logspace(loss_min_log, loss_max_log, 100)
+            ax.hist(losses, bins=logbins)
+            ax.axvline(losses.mean(), color="red", linestyle="--")
+            ax.set_xlabel("Total Loss")
+            ax.set_ylabel("Count")
+            ax.set_xscale("log")
+            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+
+    def plot_V(self, name: str, index: int, precise=False):
         q = np.linspace(0, 1, 100)
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(q, self.V_vec[index])
+            if precise:
+                ax.plot(q, self.precise_V_vec[index])
+            else:
+                ax.plot(q, self.V_vec[index])
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$V(q)$")
             ax.autoscale(tight=True)
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_q(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.q_preds[index]))
-        loss_q = self.total_loss_q_vec[index]
+    def plot_q(self, name: str, index: int, precise=False):
+        if precise:
+            t = np.linspace(0, 2, len(self.precise_y8_q[index]))
+            loss_q = self.y8_model_loss_q_vec[index]
+        else:
+            t = np.linspace(0, 2, len(self.q_preds[index]))
+            loss_q = self.total_loss_q_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(
-                t,
-                self.q_targets[index],
-                color="gray",
-                label=r"$q$",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
-            ax.scatter(
-                t,
-                self.q_preds[index],
-                color=colors,
-                marker=".",
-                s=9,
-                label=r"$\hat{q}$",
-                zorder=1,
-                edgecolors="none",
-            )
+            if precise:
+                ax.plot(
+                    t,
+                    self.precise_y8_q[index],
+                    color="gray",
+                    label=r"$q_\text{Y8}$",
+                    alpha=0.5,
+                    linewidth=1.75,
+                    zorder=0,
+                )
+                ax.scatter(
+                    t,
+                    self.precise_model_q_preds[index],
+                    color=colors,
+                    marker=".",
+                    s=9,
+                    label=r"$\hat{q}$",
+                    zorder=1,
+                    edgecolors="none",
+                )
+            else:
+                ax.plot(
+                    t,
+                    self.q_targets[index],
+                    color="gray",
+                    label=r"$q$",
+                    alpha=0.5,
+                    linewidth=1.75,
+                    zorder=0,
+                )
+                ax.scatter(
+                    t,
+                    self.q_preds[index],
+                    color=colors,
+                    marker=".",
+                    s=9,
+                    label=r"$\hat{q}$",
+                    zorder=1,
+                    edgecolors="none",
+                )
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
@@ -281,32 +448,57 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_p(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.p_preds[index]))
-        loss_p = self.total_loss_p_vec[index]
+    def plot_p(self, name: str, index: int, precise=False):
+        if precise:
+            t = np.linspace(0, 2, len(self.precise_y8_p[index]))
+            loss_p = self.y8_model_loss_p_vec[index]
+        else:
+            t = np.linspace(0, 2, len(self.p_preds[index]))
+            loss_p = self.total_loss_p_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(
-                t,
-                self.p_targets[index],
-                color="gray",
-                label=r"$p$",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
-            ax.scatter(
-                t,
-                self.p_preds[index],
-                color=colors,
-                marker=".",
-                s=9,
-                label=r"$\hat{p}$",
-                zorder=1,
-                edgecolors="none",
-            )
+            if precise:
+                ax.plot(
+                    t,
+                    self.precise_y8_p[index],
+                    color="gray",
+                    label=r"$p_\text{Y8}$",
+                    alpha=0.5,
+                    linewidth=1.75,
+                    zorder=0,
+                )
+                ax.scatter(
+                    t,
+                    self.precise_model_p_preds[index],
+                    color=colors,
+                    marker=".",
+                    s=9,
+                    label=r"$\hat{p}$",
+                    zorder=1,
+                    edgecolors="none",
+                )
+            else:
+                ax.plot(
+                    t,
+                    self.p_targets[index],
+                    color="gray",
+                    label=r"$p$",
+                    alpha=0.5,
+                    linewidth=1.75,
+                    zorder=0,
+                )
+                ax.scatter(
+                    t,
+                    self.p_preds[index],
+                    color=colors,
+                    marker=".",
+                    s=9,
+                    label=r"$\hat{p}$",
+                    zorder=1,
+                    edgecolors="none",
+                )
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$p(t)$")
             ax.autoscale(tight=True)
@@ -317,32 +509,57 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_phase(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.p_preds[index]))
-        loss = self.total_loss_vec[index]
+    def plot_phase(self, name: str, index: int, precise=False):
+        if precise:
+            t = np.linspace(0, 2, len(self.precise_y8_q[index]))
+            loss = self.y8_model_loss_vec[index]
+        else:
+            t = np.linspace(0, 2, len(self.p_preds[index]))
+            loss = self.total_loss_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(
-                self.q_targets[index],
-                self.p_targets[index],
-                color="gray",
-                label=r"$(q,p)$",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
-            ax.scatter(
-                self.q_preds[index],
-                self.p_preds[index],
-                color=colors,
-                marker=".",
-                s=9,
-                label=r"$(\hat{q}, \hat{p})$",
-                zorder=1,
-                edgecolors="none",
-            )
+            if precise:
+                ax.plot(
+                    self.precise_y8_q[index],
+                    self.precise_y8_p[index],
+                    color="gray",
+                    label=r"$(q_\text{Y8},p_\text{Y8})$",
+                    alpha=0.5,
+                    linewidth=1.75,
+                    zorder=0,
+                )
+                ax.scatter(
+                    self.precise_model_q_preds[index],
+                    self.precise_model_p_preds[index],
+                    color=colors,
+                    marker=".",
+                    s=9,
+                    label=r"$(\hat{q}, \hat{p})$",
+                    zorder=1,
+                    edgecolors="none",
+                )
+            else:
+                ax.plot(
+                    self.q_targets[index],
+                    self.p_targets[index],
+                    color="gray",
+                    label=r"$(q,p)$",
+                    alpha=0.5,
+                    linewidth=1.75,
+                    zorder=0,
+                )
+                ax.scatter(
+                    self.q_preds[index],
+                    self.p_preds[index],
+                    color=colors,
+                    marker=".",
+                    s=9,
+                    label=r"$(\hat{q}, \hat{p})$",
+                    zorder=1,
+                    edgecolors="none",
+                )
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$p$")
             ax.autoscale(tight=True)
@@ -456,7 +673,7 @@ def main():
     if "VaRONet" in config.net:
         variational = True
 
-    test_options = ["test", "physical"]
+    test_options = ["test", "physical", "precise"]
     console.print("Select a test option:")
     test_option = beaupy.select(test_options)
     if test_option == "test":
@@ -489,7 +706,7 @@ def main():
         test_results.plot_q(f"{fig_dir}/{worst_idx:02}_1_q_plot", worst_idx)
         test_results.plot_p(f"{fig_dir}/{worst_idx:02}_2_p_plot", worst_idx)
         test_results.plot_phase(f"{fig_dir}/{worst_idx:02}_3_phase_plot", worst_idx)
-    else:
+    elif test_option == "physical":
         ds_test_sho, ds_rk4_sho = load_relevant_data("sho")
         ds_test_double_well, ds_rk4_double_well = load_relevant_data("double_well")
         ds_test_morse, ds_rk4_morse = load_relevant_data("morse")
@@ -669,7 +886,246 @@ def main():
                         bbox_inches="tight",
                     )
                     plt.close(fig)
+    elif test_option == "precise":
+        precise_results = TestResults(model, None, device, variational, precise=True)
 
+        fig_dir = f"figs/{project}/precise"
+        if not os.path.exists(fig_dir):
+            os.makedirs(fig_dir)
+
+        precise_results.precise_hist_loss(f"{fig_dir}/00_0_Loss_hist")
+        precise_results.precise_hist_loss_y4(f"{fig_dir}/00_1_Loss_hist")
+
+        losses = precise_results.y8_model_loss_vec
+        worst_idx = int(np.argmax(losses))
+
+        for index in range(10):
+            precise_results.plot_V(
+                f"{fig_dir}/{index:02}_0_V_plot", index, precise=True
+            )
+            precise_results.plot_q(
+                f"{fig_dir}/{index:02}_1_q_plot", index, precise=True
+            )
+            precise_results.plot_p(
+                f"{fig_dir}/{index:02}_2_p_plot", index, precise=True
+            )
+            precise_results.plot_phase(
+                f"{fig_dir}/{index:02}_3_phase_plot", index, precise=True
+            )
+            # Plot Y4 results (q)
+            t = np.linspace(0, 2, len(precise_results.precise_y4_q[index]))
+            cmap = plt.get_cmap("gist_heat")
+            colors = cmap(np.linspace(0, 0.75, len(t)))
+            losses_q = precise_results.y8_y4_loss_q_vec
+            losses_p = precise_results.y8_y4_loss_p_vec
+            losses = precise_results.y8_y4_loss_vec
+            with plt.style.context(["science", "nature"]):
+                fig, ax = plt.subplots()
+                ax.plot(
+                    t,
+                    precise_results.precise_y8_q[index],
+                    color="gray",
+                    label=r"$q_{\text{Y8}}$",
+                    alpha=0.5,
+                    linewidth=1.75,
+                    zorder=0,
+                )
+                ax.scatter(
+                    t,
+                    precise_results.precise_y4_q[index],
+                    color=colors,
+                    marker=".",
+                    s=9,
+                    label=r"$q_{\text{Y4}}$",
+                    zorder=1,
+                    edgecolors="none",
+                )
+                ax.set_xlabel(r"$t$")
+                ax.set_ylabel(r"$q(t)$")
+                ax.autoscale(tight=True)
+                ax.text(
+                    0.05, 0.9, f"Loss: {losses_q[index]:.4e}", transform=ax.transAxes, fontsize=5
+                )
+                ax.legend()
+                fig.savefig(f"{fig_dir}/{index:02}_1_Y4_q_plot.png", dpi=600, bbox_inches="tight")
+                plt.close(fig)
+            # Plot Y4 results (p)
+            with plt.style.context(["science", "nature"]):
+                fig, ax = plt.subplots()
+                ax.plot(
+                    t,
+                    precise_results.precise_y8_p[index],
+                    color="gray",
+                    label=r"$p_{\text{Y8}}$",
+                    alpha=0.5,
+                    linewidth=1.75,
+                    zorder=0,
+                )
+                ax.scatter(
+                    t,
+                    precise_results.precise_y4_p[index],
+                    color=colors,
+                    marker=".",
+                    s=9,
+                    label=r"$p_{\text{Y4}}$",
+                    zorder=1,
+                    edgecolors="none",
+                )
+                ax.set_xlabel(r"$t$")
+                ax.set_ylabel(r"$p(t)$")
+                ax.autoscale(tight=True)
+                ax.text(
+                    0.05, 0.1, f"Loss: {losses_p[index]:.4e}", transform=ax.transAxes, fontsize=5
+                )
+                ax.legend()
+                fig.savefig(f"{fig_dir}/{index:02}_2_Y4_p_plot.png", dpi=600, bbox_inches="tight")
+                plt.close(fig)
+            # Plot Y4 results (phase)
+            with plt.style.context(["science", "nature"]):
+                fig, ax = plt.subplots()
+                ax.plot(
+                    precise_results.precise_y8_q[index],
+                    precise_results.precise_y8_p[index],
+                    color="gray",
+                    label=r"$(q_\text{Y8}, p_\text{Y8})$",
+                    alpha=0.5,
+                    linewidth=1.75,
+                    zorder=0,
+                )
+                ax.scatter(
+                    precise_results.precise_y4_q[index],
+                    precise_results.precise_y4_p[index],
+                    color=colors,
+                    marker=".",
+                    s=9,
+                    label=r"$(q_{\text{Y4}}, p_{\text{Y4}})$",
+                    zorder=1,
+                    edgecolors="none",
+                )
+                ax.set_xlabel(r"$q$")
+                ax.set_ylabel(r"$p$")
+                ax.autoscale(tight=True)
+                ax.text(
+                    0.05, 0.5, f"Loss: {losses[index]:.4e}", transform=ax.transAxes, fontsize=5
+                )
+                ax.legend()
+                fig.savefig(f"{fig_dir}/{index:02}_3_Y4_phase_plot.png", dpi=600, bbox_inches="tight")
+                plt.close(fig)
+
+        # Plot the worst result
+        precise_results.plot_V(
+            f"{fig_dir}/{worst_idx:02}_0_V_plot", worst_idx, precise=True
+        )
+        precise_results.plot_q(
+            f"{fig_dir}/{worst_idx:02}_1_q_plot", worst_idx, precise=True
+        )
+        precise_results.plot_p(
+            f"{fig_dir}/{worst_idx:02}_2_p_plot", worst_idx, precise=True
+        )
+        precise_results.plot_phase(
+            f"{fig_dir}/{worst_idx:02}_3_phase_plot", worst_idx, precise=True
+        )
+        # Plot the worst result of Y4
+        t = np.linspace(0, 2, len(precise_results.precise_y4_q[worst_idx]))
+        q_target = precise_results.precise_y8_q[worst_idx]
+        p_target = precise_results.precise_y8_p[worst_idx]
+        q_pred = precise_results.precise_y4_q[worst_idx]
+        p_pred = precise_results.precise_y4_p[worst_idx]
+        cmap = plt.get_cmap("gist_heat")
+        colors = cmap(np.linspace(0, 0.75, len(t)))
+        losses_q = precise_results.y8_y4_loss_q_vec
+        losses_p = precise_results.y8_y4_loss_p_vec
+        losses = precise_results.y8_y4_loss_vec
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(
+                t,
+                q_target,
+                color="gray",
+                label=r"$q_{\text{Y8}}$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                t,
+                q_pred,
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$q_{\text{Y4}}$",
+                zorder=1,
+                edgecolors="none",
+            )
+            ax.set_xlabel(r"$t$")
+            ax.set_ylabel(r"$q(t)$")
+            ax.autoscale(tight=True)
+            ax.text(
+                0.05, 0.9, f"Loss: {losses_q[worst_idx]:.4e}", transform=ax.transAxes, fontsize=5
+            )
+            ax.legend()
+            fig.savefig(f"{fig_dir}/{worst_idx:02}_1_Y4_q_plot.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(
+                t,
+                p_target,
+                color="gray",
+                label=r"$p_{\text{Y8}}$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                t,
+                p_pred,
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$p_{\text{Y4}}$",
+                zorder=1,
+                edgecolors="none",
+            )
+            ax.set_xlabel(r"$t$")
+            ax.set_ylabel(r"$p(t)$")
+            ax.autoscale(tight=True)
+            ax.text(
+                0.05, 0.1, f"Loss: {losses_p[worst_idx]:.4e}", transform=ax.transAxes, fontsize=5
+                )
+            ax.legend()
+            fig.savefig(f"{fig_dir}/{worst_idx:02}_2_Y4_p_plot.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
+        with plt.style.context(["science", "nature"]):
+            fig, ax = plt.subplots()
+            ax.plot(
+                precise_results.precise_y8_q[worst_idx],
+                precise_results.precise_y8_p[worst_idx],
+                color="gray",
+                label=r"$(q_\text{Y8}, p_\text{Y8})$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                precise_results.precise_y4_q[worst_idx],
+                precise_results.precise_y4_p[worst_idx],
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$(q_{\text{Y4}}, p_{\text{Y4}})$",
+                zorder=1,
+                edgecolors="none",
+            )
+            ax.set_xlabel(r"$q$")
+            ax.set_ylabel(r"$p$")
+            ax.autoscale(tight=True)
+            ax.text(
+                0.05, 0.5, f"Loss: {losses[worst_idx]:.4e}", transform=ax.transAxes, fontsize=5
+            )
+            ax.legend()
+            fig.savefig(f"{fig_dir}/{worst_idx:02}_3_Y4_phase_plot.png", dpi=600, bbox_inches="tight")
+            plt.close(fig)
 
 if __name__ == "__main__":
     console = Console()

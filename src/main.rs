@@ -53,7 +53,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let n_val = n_total_samples - n_train;
 
             println!("\nGenerate training data (Order: {:?})...", order);
-            // Dataset::generate는 내부적으로 BoundedPotential::generate_potential 후 BoundedPotential::generate_data 호출
             let ds_train_gen = Dataset::generate(n_train, 123, order)?;
             let ds_train = ds_train_gen.take(n_train);
             println!("Take training data: {}", ds_train.data.len());
@@ -76,9 +75,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         3 => {
             // Precise (Y8 main, Y4 compare for the *exact same potentials*)
             let n_target_pairs = 4000;
-            let n_initial_potentials = (n_target_pairs as f64 * 2.5).round() as usize; // 예시: 2.5배수
+            let n_initial_potentials = (n_target_pairs as f64 * 2.5).round() as usize;
             let folder = "data_precise";
-            let seed = 789; // 일관된 시드
+            let seed = 789;
 
             println!("\n--- Precise Mode (Comparison Generation) ---");
 
