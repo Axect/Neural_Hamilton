@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (q_max, p_max) = ds_train.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
-            ds_train.write_parquet(&format!("{}/train.parquet", folder))?;
+            ds_train.write_parquet(&format!("{}/train_cand.parquet", folder))?;
 
             println!("\nGenerate validation data (Order: {:?})...", order);
             let ds_val_gen = Dataset::generate(n_val, 456, order)?;
@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (q_max, p_max) = ds_val.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
-            ds_val.write_parquet(&format!("{}/val.parquet", folder))?;
+            ds_val.write_parquet(&format!("{}/val_cand.parquet", folder))?;
         }
         3 => {
             // Precise (Y8 main, Y4 compare for the *exact same potentials*)
