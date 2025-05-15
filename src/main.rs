@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         4 => {
             // Test
-            let n = 4000;
+            let n = 4000 * 10; // For UMAP filtering
             let folder = "data_test";
             let order = SolverOrder::Yoshida8th;
             let seed = 789;
@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (q_max, p_max) = ds_test.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
-            ds_test.write_parquet(&format!("{}/test.parquet", folder))?;
+            ds_test.write_parquet(&format!("{}/test_cand.parquet", folder))?;
         }
         _ => unreachable!(),
     }
