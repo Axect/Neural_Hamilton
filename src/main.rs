@@ -47,6 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 2 => (1000000, "data_much", SolverOrder::Yoshida8th),
                 _ => unreachable!(),
             };
+            let n_total_samples = 10 * n_total_samples; // For UMAP filtering
 
             let train_ratio = 0.8;
             let n_train = (n_total_samples as f64 * train_ratio).round() as usize;
@@ -244,7 +245,7 @@ impl BoundedPotential {
     #[allow(non_snake_case)]
     pub fn generate_potential(n: usize, seed: u64, order: SolverOrder) -> Self {
         // Accept order
-        let n_cand = (n as f64 * 1.5).round() as usize;
+        let n_cand = (n as f64 * 1.1).round() as usize;
         let omega = 0.05;
         let u_b = Uniform(2, 7);
         let u_l = Uniform(0.01, 0.2);
