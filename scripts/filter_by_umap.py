@@ -132,7 +132,7 @@ def main():
         fig, ax = plt.subplots()
         #umap.plot.points(mapper_train, ax=ax, labels=cluster_train["Cluster"].to_numpy())
         color = cluster_train["Cluster"].to_numpy().astype(int)
-        ax.scatter(umap_train["UMAP1"].to_numpy(), umap_train["UMAP2"].to_numpy(), c=color, cmap="Spectral", s=0.1, markeredgewidth=0)
+        ax.plot(umap_train["UMAP1"].to_numpy(), umap_train["UMAP2"].to_numpy(), c=color, cmap="Spectral", ms=1, mew=0)
         ax.set_title(f"UMAP projection of training data ({args.data})")
         ax.set_xlabel("UMAP1")
         ax.set_ylabel("UMAP2")
@@ -174,7 +174,7 @@ def main():
             fig, ax = plt.subplots()
             #umap.plot.points(sampled_mapper_train, ax=ax, labels=sampled_umap_train["Cluster"].to_numpy()) # Use cluster labels from sampled_umap_train
             color = sampled_umap_train["Cluster"].to_numpy().astype(int)
-            ax.scatter(sampled_umap_train["UMAP1"].to_numpy(), sampled_umap_train["UMAP2"].to_numpy(), c=color, cmap="Spectral", s=0.1, markeredgewidth=0)
+            ax.plot(sampled_umap_train["UMAP1"].to_numpy(), sampled_umap_train["UMAP2"].to_numpy(), c=color, cmap="Spectral", ms=1, mew=0)
             ax.set_title(f"UMAP projection of sampled training data ({args.data})")
             ax.set_xlabel("UMAP1")
             ax.set_ylabel("UMAP2")
