@@ -1,7 +1,7 @@
 import umap
 import matplotlib.pyplot as plt
 import scienceplots
-import polars as pl
+import fireducks.pandas as pd
 import numpy as np
 import random
 from sklearn.cluster import KMeans
@@ -12,8 +12,8 @@ import os
 warnings.filterwarnings("ignore")
 
 
-# --- Helper Functions (Minimal modifications or as provided) ---
-def reshape_df(df: pl.DataFrame, n_cols: int, column: str = "V") -> pl.DataFrame:
+# --- Helper Functions (Converted from Polars to Pandas) ---
+def reshape_df(df: pd.DataFrame, n_cols: int, column: str = "V") -> pd.DataFrame:
     V = df[column].to_numpy()
     if V.size == 0:
         # Handle empty data
@@ -24,11 +24,12 @@ def reshape_df(df: pl.DataFrame, n_cols: int, column: str = "V") -> pl.DataFrame
         if n_cols > 0:
             reshaped_v_empty = np.array([]).reshape(0, n_cols)
             column_names_empty = [f"V{i}" for i in range(n_cols)]
-            empty_df = pl.DataFrame(reshaped_v_empty, schema=column_names_empty)
-            return empty_df.with_columns(pl.arange(0, empty_df.height).alias("index"))
+            empty_df = pd.DataFrame(reshaped_v_empty, columns=column_names_empty)
+            empty_df['index'] = pd.Series(dtype=np.int64)
+            return empty_df
         else:  # n_cols is 0 or invalid
             # Returning a truly empty DF or one with just index if schema is problematic
-            return pl.DataFrame({"index": pl.Series(dtype=pl.Int64)})
+            return pd.DataFrame({"index": pd.Series(dtype=np.int64)})
 
     if V.size > 0 and n_cols > 0 and V.size % n_cols != 0:
         print(
@@ -49,39 +50,36 @@ def reshape_df(df: pl.DataFrame, n_cols: int, column: str = "V") -> pl.DataFrame
         reshaped_v = np.array([]).reshape(0, 0)  # Essentially empty data
 
     column_names = [f"V{i}" for i in range(n_cols)]
-    reshaped_df = pl.DataFrame(reshaped_v, schema=column_names)
-    reshaped_df = reshaped_df.with_columns(
-        pl.arange(0, reshaped_df.height).alias("index")
-    )
+    reshaped_df = pd.DataFrame(reshaped_v, columns=column_names)
+    reshaped_df['index'] = np.arange(len(reshaped_df))
     return reshaped_df
 
 
 def umap_map_and_embed(
-    df: pl.DataFrame,
+    df: pd.DataFrame,
     n_neighbors: int = 15,
     min_dist: float = 0.1,
     n_components: int = 2,
     random_state: int = 42,
-) -> tuple[pl.DataFrame, umap.UMAP]:
+) -> tuple[pd.DataFrame, umap.UMAP]:
     # Assumes 'index' column is present in df
-    index_series = df.get_column("index")
-    df_no_id = df.drop("index")
+    index_series = df['index'].copy()
+    df_no_id = df.drop(columns=['index'])
 
     cluster_series = None
     if "Cluster" in df.columns:  # Check in original df
-        cluster_series = df.get_column("Cluster")
+        cluster_series = df["Cluster"].copy()
         if "Cluster" in df_no_id.columns:  # Drop from the copy if still there
-            df_no_id = df_no_id.drop("Cluster")
+            df_no_id = df_no_id.drop(columns=["Cluster"])
 
     data_for_umap = df_no_id.to_numpy()  # UMAP works best with NumPy arrays
 
-    if data_for_umap.shape[0] == 0:  # No data for UMAP
+    if len(data_for_umap) == 0:  # No data for UMAP
         print("Warning: Data for UMAP is empty. Returning empty UMAP DataFrame.")
         # Define schema for empty DataFrame
-        schema = {"UMAP1": pl.Float64, "UMAP2": pl.Float64, "index": index_series.dtype}
+        empty_umap_df = pd.DataFrame(columns=["UMAP1", "UMAP2", "index"])
         if cluster_series is not None:
-            schema["Cluster"] = cluster_series.dtype
-        empty_umap_df = pl.DataFrame(schema=schema)
+            empty_umap_df["Cluster"] = pd.Series(dtype=cluster_series.dtype)
         # Create mapper instance but do not fit/transform on empty data
         mapper = umap.UMAP(
             n_neighbors=n_neighbors,
@@ -100,28 +98,28 @@ def umap_map_and_embed(
     mapper = reducer.fit(data_for_umap)
     embedding = mapper.transform(data_for_umap)
 
-    umap_df = pl.DataFrame(embedding, schema=["UMAP1", "UMAP2"])
-    umap_df = umap_df.with_columns(index_series.alias("index"))
+    umap_df = pd.DataFrame(embedding, columns=["UMAP1", "UMAP2"])
+    umap_df["index"] = index_series.values
     if cluster_series is not None:
-        umap_df = umap_df.with_columns(cluster_series.alias("Cluster"))
+        umap_df["Cluster"] = cluster_series.values
     return umap_df, mapper
 
 
 def kmeans_clustering(
-    df: pl.DataFrame, n_clusters: int = 10, random_state: int = 42
-) -> pl.DataFrame:
+    df: pd.DataFrame, n_clusters: int = 10, random_state: int = 42
+) -> pd.DataFrame:
     # Input df is the result of umap_map_and_embed (contains UMAP1, UMAP2, index columns)
-    index_series = df.get_column("index")
+    index_series = df['index'].copy()
 
     # KMeans is performed on UMAP1, UMAP2
-    df_for_kmeans = df.select(["UMAP1", "UMAP2"])
+    df_for_kmeans = df[["UMAP1", "UMAP2"]]
     data_for_kmeans = df_for_kmeans.to_numpy()
 
-    if data_for_kmeans.shape[0] == 0:
+    if len(data_for_kmeans) == 0:
         print("Warning: Data for KMeans is empty. Returning empty cluster DataFrame.")
-        return pl.DataFrame(
+        return pd.DataFrame(
             {"Cluster": [], "index": []},
-            schema={"Cluster": pl.Int32, "index": index_series.dtype},
+            dtype={"Cluster": np.int32, "index": index_series.dtype},
         )
 
     # Adjust n_clusters if it's larger than the number of samples, as KMeans would error.
@@ -131,9 +129,9 @@ def kmeans_clustering(
             f"Warning: n_clusters ({n_clusters}) > number of samples ({data_for_kmeans.shape[0]}). Using n_clusters = {actual_n_clusters}."
         )
     if actual_n_clusters == 0:  # No samples to cluster
-        return pl.DataFrame(
+        return pd.DataFrame(
             {"Cluster": [], "index": []},
-            schema={"Cluster": pl.Int32, "index": index_series.dtype},
+            dtype={"Cluster": np.int32, "index": index_series.dtype},
         )
 
     kmeans = KMeans(
@@ -141,17 +139,17 @@ def kmeans_clustering(
     )
     labels = kmeans.fit_predict(data_for_kmeans)
 
-    cluster_df = pl.DataFrame({"Cluster": labels})
-    cluster_df = cluster_df.with_columns(index_series.alias("index"))
+    cluster_df = pd.DataFrame({"Cluster": labels})
+    cluster_df["index"] = index_series.values
     return cluster_df
 
 
 def sampling_by_cluster(
-    df_with_features_and_clusters: pl.DataFrame,
-    cluster_info_df: pl.DataFrame,
+    df_with_features_and_clusters: pd.DataFrame,
+    cluster_info_df: pd.DataFrame,
     n_target: int,
     n_clusters: int,
-) -> tuple[pl.DataFrame, pl.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     n_each = (
         n_target // n_clusters if n_clusters > 0 else n_target
     )  # Prevent division by zero
@@ -162,9 +160,7 @@ def sampling_by_cluster(
 
     for i in range(n_clusters):
         cluster_member_indices = (
-            cluster_info_df.filter(pl.col("Cluster") == i)
-            .get_column("index")
-            .to_numpy()
+            cluster_info_df[cluster_info_df["Cluster"] == i]["index"].to_numpy()
         )
 
         if len(cluster_member_indices) == 0:
@@ -186,23 +182,23 @@ def sampling_by_cluster(
             )
             all_sampled_indices_flat.extend(chosen_indices_for_cluster)
             sampled_dfs_list.append(
-                df_with_features_and_clusters.filter(
-                    pl.col("index").is_in(chosen_indices_for_cluster)
-                )
+                df_with_features_and_clusters[
+                    df_with_features_and_clusters["index"].isin(chosen_indices_for_cluster)
+                ]
             )
             sampled_clusters_info_list.append(
-                cluster_info_df.filter(
-                    pl.col("index").is_in(chosen_indices_for_cluster)
-                )
+                cluster_info_df[
+                    cluster_info_df["index"].isin(chosen_indices_for_cluster)
+                ]
             )
 
     # Handle remaining samples
-    current_total_sampled = sum(s_df.height for s_df in sampled_dfs_list)
+    current_total_sampled = sum(len(s_df) for s_df in sampled_dfs_list)
     remaining_needed = n_target - current_total_sampled
 
     if remaining_needed > 0:
         # From all clustered indices, get those not yet sampled
-        all_clustered_indices = cluster_info_df.get_column("index").to_numpy()
+        all_clustered_indices = cluster_info_df["index"].to_numpy()
         available_for_remaining = np.setdiff1d(
             all_clustered_indices, np.array(all_sampled_indices_flat)
         )
@@ -214,38 +210,40 @@ def sampling_by_cluster(
             )
 
             sampled_dfs_list.append(
-                df_with_features_and_clusters.filter(
-                    pl.col("index").is_in(additional_chosen_indices)
-                )
+                df_with_features_and_clusters[
+                    df_with_features_and_clusters["index"].isin(additional_chosen_indices)
+                ]
             )
             sampled_clusters_info_list.append(
-                cluster_info_df.filter(pl.col("index").is_in(additional_chosen_indices))
+                cluster_info_df[
+                    cluster_info_df["index"].isin(additional_chosen_indices)
+                ]
             )
 
     final_sampled_df = (
-        pl.concat(sampled_dfs_list)
+        pd.concat(sampled_dfs_list)
         if sampled_dfs_list
-        else df_with_features_and_clusters.clear()
+        else df_with_features_and_clusters.iloc[0:0]  # Empty DataFrame with same structure
     )
     final_sampled_clusters_info = (
-        pl.concat(sampled_clusters_info_list)
+        pd.concat(sampled_clusters_info_list)
         if sampled_clusters_info_list
-        else cluster_info_df.clear()
+        else cluster_info_df.iloc[0:0]  # Empty DataFrame with same structure
     )
 
     # If final sample count exceeds n_target, resample to n_target (randomly reduce)
-    if final_sampled_df.height > n_target and n_target > 0:
+    if len(final_sampled_df) > n_target and n_target > 0:
         final_sampled_df = final_sampled_df.sample(
-            n=n_target, seed=42
+            n=n_target, random_state=42
         )  # Fixed seed for reproducibility
         # Filter final_sampled_clusters_info to match
-        final_indices = final_sampled_df.get_column("index").to_list()
-        final_sampled_clusters_info = final_sampled_clusters_info.filter(
-            pl.col("index").is_in(final_indices)
-        )
+        final_indices = final_sampled_df["index"].tolist()
+        final_sampled_clusters_info = final_sampled_clusters_info[
+            final_sampled_clusters_info["index"].isin(final_indices)
+        ]
     elif n_target == 0:  # If n_target is 0, intend to return empty DFs
-        final_sampled_df = df_with_features_and_clusters.clear()
-        final_sampled_clusters_info = cluster_info_df.clear()
+        final_sampled_df = df_with_features_and_clusters.iloc[0:0]
+        final_sampled_clusters_info = cluster_info_df.iloc[0:0]
 
     return final_sampled_df, final_sampled_clusters_info
 
@@ -261,8 +259,8 @@ def _ensure_dir_exists(file_path: str):
 
 
 def plot_umap_data(
-    umap_coords_df: pl.DataFrame,  # DataFrame with UMAP1, UMAP2 columns
-    cluster_labels_series: pl.Series,  # Polars Series of cluster labels
+    umap_coords_df: pd.DataFrame,  # DataFrame with UMAP1, UMAP2 columns
+    cluster_labels_series: pd.Series,  # Pandas Series of cluster labels
     title: str,
     filename: str,
 ):
@@ -288,42 +286,39 @@ def plot_umap_data(
 
 
 def save_sampled_data_from_original(
-    original_long_df: pl.DataFrame,
-    sampled_reshaped_df: pl.DataFrame,  # This df must have an "index" column from reshape_df
+    original_long_df: pd.DataFrame,
+    sampled_reshaped_df: pd.DataFrame,  # This df must have an "index" column from reshape_df
     n_cols_reshape: int,
     output_path: str,
     dataset_label_for_log: str,
 ):
     """Retrieves segments from original_long_df based on indices in sampled_reshaped_df and saves to Parquet."""
-    if sampled_reshaped_df.is_empty():
+    if len(sampled_reshaped_df) == 0:
         print(
             f"Sampled reshaped DataFrame for {dataset_label_for_log} is empty. No data saved to {output_path}."
         )
-        # Optionally, save an empty Parquet file with schema
-        # _ensure_dir_exists(output_path)
-        # pl.DataFrame(schema=original_long_df.schema).write_parquet(output_path)
         return
 
     _ensure_dir_exists(output_path)
 
-    sampled_indices = sampled_reshaped_df.get_column("index").to_list()
+    sampled_indices = sampled_reshaped_df["index"].tolist()
 
     list_of_sampled_original_data = []
     if sampled_indices:
         for reshaped_idx in sorted(sampled_indices):
             start_original_row = reshaped_idx * n_cols_reshape
-            segment = original_long_df.slice(start_original_row, n_cols_reshape)
+            segment = original_long_df.iloc[start_original_row:start_original_row + n_cols_reshape]
             list_of_sampled_original_data.append(segment)
 
     if list_of_sampled_original_data:
-        df_final_sampled_original = pl.concat(
-            list_of_sampled_original_data, how="vertical"
+        df_final_sampled_original = pd.concat(
+            list_of_sampled_original_data, ignore_index=True
         )
         print(
             f"Final sampled original {dataset_label_for_log} data shape: {df_final_sampled_original.shape}"
         )
-        print(df_final_sampled_original.head(min(3, df_final_sampled_original.height)))
-        df_final_sampled_original.write_parquet(output_path)
+        print(df_final_sampled_original.head(min(3, len(df_final_sampled_original))))
+        df_final_sampled_original.to_parquet(output_path)
         print(f"Saved final sampled {dataset_label_for_log} data to {output_path}")
     else:
         print(
@@ -336,7 +331,6 @@ def main():
     # Original seed settings
     np.random.seed(42)
     random.seed(42)
-    pl.set_random_seed(42)  # Added for reproducibility of Polars operations
 
     parser = argparse.ArgumentParser(description="UMAP and KMeans clustering")
     parser.add_argument(
@@ -353,12 +347,12 @@ def main():
     if args.data == "test":
         print(f"--- Processing Test Data (Scenario: {args.data}) ---")
         try:
-            df_test_original = pl.read_parquet(f"data_{args.data}/test_cand.parquet")
+            df_test_original = pd.read_parquet(f"data_{args.data}/test_cand.parquet")
         except Exception as e:  # Handle general exceptions including FileNotFoundError
             print(f"Error loading test data (data_{args.data}/test_cand.parquet): {e}")
             return
 
-        if df_test_original.is_empty():
+        if len(df_test_original) == 0:
             print("Test data is empty. Exiting.")
             return
 
@@ -375,23 +369,21 @@ def main():
         )
         print(f"UMAP Test DataFrame shape: {umap_active.shape}")
         print(
-            umap_active.head(min(3, umap_active.height))
+            umap_active.head(min(3, len(umap_active)))
         )  # Similar to original train output
 
         # 3. KMeans
         cluster_active = kmeans_clustering(umap_active, n_clusters=10, random_state=42)
         print(f"Cluster Test DataFrame shape: {cluster_active.shape}")
-        print(cluster_active.head(min(3, cluster_active.height)))
+        print(cluster_active.head(min(3, len(cluster_active))))
 
         # 4. Plot UMAP (full test data)
         if (
-            not umap_active.is_empty() and not cluster_active.is_empty()
+            len(umap_active) > 0 and len(cluster_active) > 0
         ):  # Ensure data for plotting
             plot_umap_data(
-                umap_coords_df=umap_active.select(
-                    ["UMAP1", "UMAP2"]
-                ),  # Pass only UMAP coordinate columns
-                cluster_labels_series=cluster_active.get_column("Cluster"),
+                umap_coords_df=umap_active[["UMAP1", "UMAP2"]],  # Pass only UMAP coordinate columns
+                cluster_labels_series=cluster_active["Cluster"],
                 title=f"UMAP projection of test data ({args.data})",
                 filename=f"figs/umap_projection_{args.data}.png",  # Add "test_" prefix for distinction
             )
@@ -401,7 +393,7 @@ def main():
             )
 
         # 5. Define sampling target size for test data
-        num_reshaped_items = df_active_reshaped.height
+        num_reshaped_items = len(df_active_reshaped)
         # Example: 20% of reshaped items or a minimum of 100 (adjust as needed)
         n_target_active = num_reshaped_items // 10 if num_reshaped_items > 0 else 0
         print(
@@ -410,7 +402,7 @@ def main():
         n_clusters_sampling = 10  # Same as in KMeans
 
         # 6. Sample data
-        df_active_with_clusters = df_active_reshaped.join(
+        df_active_with_clusters = df_active_reshaped.merge(
             cluster_active, on="index", how="left"
         )
         sampled_active, sampled_clusters_active_df = sampling_by_cluster(
@@ -420,16 +412,16 @@ def main():
             n_clusters_sampling,
         )
         print(f"Sampled Test DataFrame shape: {sampled_active.shape}")
-        print(sampled_active.head(min(3, sampled_active.height)))
+        print(sampled_active.head(min(3, len(sampled_active))))
 
         # 7. Plot UMAP (sampled test data)
         if (
-            not sampled_active.is_empty()
+            len(sampled_active) > 0
             and "Cluster" in sampled_clusters_active_df.columns
-            and not sampled_clusters_active_df.is_empty()
+            and len(sampled_clusters_active_df) > 0
         ):
-            sampled_active_for_umap = sampled_active.join(
-                sampled_clusters_active_df.select(["index", "Cluster"]),
+            sampled_active_for_umap = sampled_active.merge(
+                sampled_clusters_active_df[["index", "Cluster"]],
                 on="index",
                 how="left",
             )
@@ -441,12 +433,12 @@ def main():
                 random_state=42,
             )
             if (
-                not umap_sampled_active.is_empty()
+                len(umap_sampled_active) > 0
                 and "Cluster" in umap_sampled_active.columns
             ):  # Also check umap result
                 plot_umap_data(
-                    umap_coords_df=umap_sampled_active.select(["UMAP1", "UMAP2"]),
-                    cluster_labels_series=umap_sampled_active.get_column("Cluster"),
+                    umap_coords_df=umap_sampled_active[["UMAP1", "UMAP2"]],
+                    cluster_labels_series=umap_sampled_active["Cluster"],
                     title=f"UMAP projection of sampled test data ({args.data})",
                     filename=f"figs/umap_projection_sampled_{args.data}.png",
                 )
@@ -472,8 +464,8 @@ def main():
     else:
         print(f"--- Processing Training & Validation Data (Scenario: {args.data}) ---")
         try:
-            df_train_original = pl.read_parquet(f"data_{args.data}/train_cand.parquet")
-            df_val_original = pl.read_parquet(f"data_{args.data}/val_cand.parquet")
+            df_train_original = pd.read_parquet(f"data_{args.data}/train_cand.parquet")
+            df_val_original = pd.read_parquet(f"data_{args.data}/val_cand.parquet")
         except Exception as e:
             print(f"Error loading train/val data for scenario {args.data}: {e}")
             return
@@ -487,18 +479,18 @@ def main():
         )
         print(f"UMAP Training DataFrame shape: {umap_train.shape}")
         print(
-            umap_train.head(min(3, umap_train.height))
+            umap_train.head(min(3, len(umap_train)))
         )  # Maintain original output format
 
         cluster_train = kmeans_clustering(umap_train, n_clusters=10, random_state=42)
         print(f"Cluster Training DataFrame shape: {cluster_train.shape}")
-        print(cluster_train.head(min(3, cluster_train.height)))
+        print(cluster_train.head(min(3, len(cluster_train))))
 
         # Plot UMAP (full training data) - use original filename
-        if not umap_train.is_empty() and not cluster_train.is_empty():
+        if len(umap_train) > 0 and len(cluster_train) > 0:
             plot_umap_data(
-                umap_coords_df=umap_train.select(["UMAP1", "UMAP2"]),
-                cluster_labels_series=cluster_train.get_column("Cluster"),
+                umap_coords_df=umap_train[["UMAP1", "UMAP2"]],
+                cluster_labels_series=cluster_train["Cluster"],
                 title=f"UMAP projection of training data ({args.data})",
                 filename=f"figs/umap_projection_{args.data}.png",  # Original filename
             )
@@ -541,21 +533,21 @@ def main():
 
         # --- Sample Training Data (original logic) ---
         print("--- Sampling Training Data ---")
-        df_train_with_clusters = df_train.join(cluster_train, on="index", how="left")
+        df_train_with_clusters = df_train.merge(cluster_train, on="index", how="left")
         sampled_train, sampled_clusters_train_df = sampling_by_cluster(
             df_train_with_clusters, cluster_train, n_target_train, n_clusters_sampling
         )
         print(f"Sampled Training DataFrame shape: {sampled_train.shape}")
-        print(sampled_train.head(min(3, sampled_train.height)))
+        print(sampled_train.head(min(3, len(sampled_train))))
 
         # Plot UMAP (sampled training data) - use original filename
         if (
-            not sampled_train.is_empty()
+            len(sampled_train) > 0
             and "Cluster" in sampled_clusters_train_df.columns
-            and not sampled_clusters_train_df.is_empty()
+            and len(sampled_clusters_train_df) > 0
         ):
-            sampled_train_for_umap = sampled_train.join(
-                sampled_clusters_train_df.select(["index", "Cluster"]),
+            sampled_train_for_umap = sampled_train.merge(
+                sampled_clusters_train_df[["index", "Cluster"]],
                 on="index",
                 how="left",
             )
@@ -567,12 +559,12 @@ def main():
                 random_state=42,
             )
             if (
-                not sampled_umap_train.is_empty()
+                len(sampled_umap_train) > 0
                 and "Cluster" in sampled_umap_train.columns
             ):  # Also check umap result
                 plot_umap_data(
-                    umap_coords_df=sampled_umap_train.select(["UMAP1", "UMAP2"]),
-                    cluster_labels_series=sampled_umap_train.get_column("Cluster"),
+                    umap_coords_df=sampled_umap_train[["UMAP1", "UMAP2"]],
+                    cluster_labels_series=sampled_umap_train["Cluster"],
                     title=f"UMAP projection of sampled training data ({args.data})",
                     filename=f"figs/umap_projection_sampled_{args.data}.png",  # Original filename
                 )
@@ -587,7 +579,7 @@ def main():
 
         # --- Sample Validation Data (original logic) ---
         print("--- Sampling Validation Data ---")
-        df_val_with_clusters = df_val.join(cluster_val, on="index", how="left")
+        df_val_with_clusters = df_val.merge(cluster_val, on="index", how="left")
         # Original: sampled_val, sampled_clusters_val_df = ... (sampled_clusters_val_df not used later)
         sampled_val, _ = sampling_by_cluster(
             df_val_with_clusters, cluster_val, n_target_val, n_clusters_sampling
