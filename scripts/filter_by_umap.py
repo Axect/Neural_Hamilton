@@ -540,20 +540,14 @@ def main():
         )
         print(f"Sampled Training DataFrame shape: {sampled_train.shape}")
         print(sampled_train.head(min(3, len(sampled_train))))
-
-        # Plot UMAP (sampled training data) - use original filename
+        
+        # Plot UMAP (sampled training data)
         if (
             len(sampled_train) > 0
-            and "Cluster" in sampled_clusters_train_df.columns
-            and len(sampled_clusters_train_df) > 0
+            and "Cluster" in sampled_train.columns
         ):
-            sampled_train_for_umap = sampled_train.merge(
-                sampled_clusters_train_df[["index", "Cluster"]],
-                on="index",
-                how="left",
-            )
             sampled_umap_train, _ = umap_map_and_embed(
-                sampled_train_for_umap,
+                sampled_train,
                 n_neighbors=10,
                 min_dist=0.001,
                 n_components=2,
@@ -562,20 +556,20 @@ def main():
             if (
                 len(sampled_umap_train) > 0
                 and "Cluster" in sampled_umap_train.columns
-            ):  # Also check umap result
+            ):
                 plot_umap_data(
                     umap_coords_df=sampled_umap_train[["UMAP1", "UMAP2"]],
                     cluster_labels_series=sampled_umap_train["Cluster"],
                     title=f"UMAP projection of sampled training data ({args.data})",
-                    filename=f"figs/umap_projection_sampled_{args.data}.png",  # Original filename
+                    filename=f"figs/umap_projection_sampled_{args.data}.png",
                 )
             else:
                 print(
-                    "UMAP on sampled training data resulted in empty or no cluster info. Skipping plot."
+                    "UMAP on sampled training data resulted in empty or no cluster info (after UMAP). Skipping plot."
                 )
         else:
             print(
-                "Skipping UMAP plot for sampled training data as it's empty or lacks cluster information."
+                "Skipping UMAP plot for sampled training data: sampled_train is empty or lacks 'Cluster' column."
             )
 
         # --- Sample Validation Data (original logic) ---
