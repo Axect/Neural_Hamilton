@@ -341,7 +341,8 @@ def main():
     )
     args = parser.parse_args()
 
-    n_cols = 100  # Original setting value
+    n_cols = 100
+    n_clusters = 100
 
     # --- "test" data processing path ---
     if args.data == "test":
@@ -373,7 +374,7 @@ def main():
         )  # Similar to original train output
 
         # 3. KMeans
-        cluster_active = kmeans_clustering(umap_active, n_clusters=10, random_state=42)
+        cluster_active = kmeans_clustering(umap_active, n_clusters=n_clusters, random_state=42)
         print(f"Cluster Test DataFrame shape: {cluster_active.shape}")
         print(cluster_active.head(min(3, len(cluster_active))))
 
@@ -395,11 +396,11 @@ def main():
         # 5. Define sampling target size for test data
         num_reshaped_items = len(df_active_reshaped)
         # Example: 20% of reshaped items or a minimum of 100 (adjust as needed)
-        n_target_active = num_reshaped_items // 10 if num_reshaped_items > 0 else 0
+        n_target_active = num_reshaped_items // n_clusters if num_reshaped_items > 0 else 0
         print(
             f"Target samples for test: {n_target_active} from {num_reshaped_items} reshaped items."
         )
-        n_clusters_sampling = 10  # Same as in KMeans
+        n_clusters_sampling = n_clusters  # Same as in KMeans
 
         # 6. Sample data
         df_active_with_clusters = df_active_reshaped.merge(
@@ -482,7 +483,7 @@ def main():
             umap_train.head(min(3, len(umap_train)))
         )  # Maintain original output format
 
-        cluster_train = kmeans_clustering(umap_train, n_clusters=10, random_state=42)
+        cluster_train = kmeans_clustering(umap_train, n_clusters=n_clusters, random_state=42)
         print(f"Cluster Training DataFrame shape: {cluster_train.shape}")
         print(cluster_train.head(min(3, len(cluster_train))))
 
@@ -507,7 +508,7 @@ def main():
         )
         print(f"UMAP Validation DataFrame shape: {umap_val.shape}")
 
-        cluster_val = kmeans_clustering(umap_val, n_clusters=10, random_state=42)
+        cluster_val = kmeans_clustering(umap_val, n_clusters=n_clusters, random_state=42)
         print(f"Cluster Validation DataFrame shape: {cluster_val.shape}")
 
         # No UMAP plot for full validation data in original code.
@@ -529,7 +530,7 @@ def main():
             )
             n_target_train = 1000
             n_target_val = 200
-        n_clusters_sampling = 10  # Value used in original code
+        n_clusters_sampling = n_clusters
 
         # --- Sample Training Data (original logic) ---
         print("--- Sampling Training Data ---")
