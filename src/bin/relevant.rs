@@ -23,11 +23,11 @@ macro_rules! yoshida_solve {
     }};
 }
 
-macro_rules! rk4_solve {
-    ($potential:expr, $initial_condition:expr) => {{
+macro_rules! ode_solve {
+    ($potential:expr, $initial_condition:expr, $integrator:expr) => {{
         let t_span = (0f64, 2f64);
         let dt = TSTEP;
-        let integrator = RK4;
+        let integrator = $integrator;
         let solver = BasicODESolver::new(integrator);
         let (t_vec, qp_vec) = solver
             .solve(&$potential, t_span, dt, $initial_condition)
@@ -85,19 +85,70 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Solve using RK4 method
     let rk4_data = match potential {
-            0 => rk4_solve!(SHO, &initial_condition),
-            1 => rk4_solve!(DoubleWell, &initial_condition),
-            2 => rk4_solve!(
+            0 => ode_solve!(SHO, &initial_condition, RK4),
+            1 => ode_solve!(DoubleWell, &initial_condition, RK4),
+            2 => ode_solve!(
                 Morse {
                     a: 3f64 * ((1f64 + 5f64.sqrt()) / 2f64).ln(),
                     D_e: 8f64 / (5f64.sqrt() - 1f64).powi(2),
                     r_e: 1f64 / 3f64
                 },
-                &initial_condition
+                &initial_condition,
+                RK4
             ),
-            3 => rk4_solve!(Pendulum { theta_L: PI / 3f64 }, &initial_condition),
-            4 => rk4_solve!(MirroredFreeFall, &initial_condition),
-            5 => rk4_solve!(SoftenedMirroredFreeFall, &initial_condition),
+            3 => ode_solve!(Pendulum { theta_L: PI / 3f64 }, &initial_condition, RK4),
+            4 => ode_solve!(MirroredFreeFall, &initial_condition, RK4),
+            5 => ode_solve!(SoftenedMirroredFreeFall, &initial_condition, RK4),
+            _ => unreachable!(),
+        };
+
+    // Solve using GL4 method
+    let gl4 = GL4 {
+        solver: ImplicitSolver::Broyden,
+        tol: 1e-6,
+        max_step_iter: 100,
+    };
+    let gl4_data = match potential {
+            0 => ode_solve!(SHO, &initial_condition, gl4),
+            1 => ode_solve!(DoubleWell, &initial_condition, gl4),
+            2 => ode_solve!(
+                Morse {
+                    a: 3f64 * ((1f64 + 5f64.sqrt()) / 2f64).ln(),
+                    D_e: 8f64 / (5f64.sqrt() - 1f64).powi(2),
+                    r_e: 1f64 / 3f64
+                },
+                &initial_condition,
+                gl4
+            ),
+            3 => ode_solve!(Pendulum { theta_L: PI / 3f64 }, &initial_condition, gl4),
+            4 => ode_solve!(MirroredFreeFall, &initial_condition, gl4),
+            5 => ode_solve!(SoftenedMirroredFreeFall, &initial_condition, gl4),
+            _ => unreachable!(),
+        };
+
+    // Solve using RKF78 method
+    let rkf78 = RKF78 {
+        tol: 1e-6,
+        safety_factor: 0.9,
+        min_step_size: 1e-6,
+        max_step_size: TSTEP * 10f64,
+        max_step_iter: 100,
+    };
+    let rkf78_data = match potential {
+            0 => ode_solve!(SHO, &initial_condition, rkf78),
+            1 => ode_solve!(DoubleWell, &initial_condition, rkf78),
+            2 => ode_solve!(
+                Morse {
+                    a: 3f64 * ((1f64 + 5f64.sqrt()) / 2f64).ln(),
+                    D_e: 8f64 / (5f64.sqrt() - 1f64).powi(2),
+                    r_e: 1f64 / 3f64
+                },
+                &initial_condition,
+                rkf78
+            ),
+            3 => ode_solve!(Pendulum { theta_L: PI / 3f64 }, &initial_condition, rkf78),
+            4 => ode_solve!(MirroredFreeFall, &initial_condition, rkf78),
+            5 => ode_solve!(SoftenedMirroredFreeFall, &initial_condition, rkf78),
             _ => unreachable!(),
         };
 
@@ -112,6 +163,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let p = data.p.clone();
     let q_rk4 = rk4_data.0.clone();
     let p_rk4 = rk4_data.1.clone();
+    let q_gl4 = gl4_data.0.clone();
+    let p_gl4 = gl4_data.1.clone();
+    let q_rkf78 = rkf78_data.0.clone();
+    let p_rkf78 = rkf78_data.1.clone();
 
     df.push("V", Series::new(V));
     df.push("t", Series::new(t));
@@ -119,6 +174,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     df.push("p", Series::new(p));
     df.push("q_rk4", Series::new(q_rk4));
     df.push("p_rk4", Series::new(p_rk4));
+    df.push("q_gl4", Series::new(q_gl4));
+    df.push("p_gl4", Series::new(p_gl4));
+    df.push("q_rkf78", Series::new(q_rkf78));
+    df.push("p_rkf78", Series::new(p_rkf78));
     df.print();
     let file_name = format!("data_analyze/{}.parquet", potential_name);
     df.write_parquet(file_name.as_str(), CompressionOptions::Uncompressed)?;
@@ -375,36 +434,13 @@ impl<V: Potential> YoshidaSolver<V> {
         q_vec[0] = initial_condition[0];
         p_vec[0] = initial_condition[1];
 
-        // Yoshida 8th-order symmetric composition coefficients (γ1…γ8)
-        const GAMMA: [f64; 8] = [
-            0.7416703643506129,  // γ1 = γ15
-            -0.4091008258000316, // γ2 = γ14
-            0.1907547102962384,  // γ3 = γ13
-            -0.5738624711160823, // γ4 = γ12
-            0.2990641813036559,  // γ5 = γ11
-            0.3346249182452982,  // γ6 = γ10
-            0.3152930923967666,  // γ7 = γ9
-            -0.7968879393529163, // γ8 (center)
-        ];
-
         for i in 1..t_vec.len() {
             let mut q = q_vec[i - 1];
             let mut p = p_vec[i - 1];
-            // Yoshida 8th-order method (forward)
-            for &g in &GAMMA {
-                // Yoshida 4th-order method
-                for j in 0..4 {
-                    q = q + YOSHIDA_COEFF[j] * p * g * dt;
-                    p = p + YOSHIDA_COEFF[j + 4] * (-potential.dV(q)) * g * dt;
-                }
-            }
-            // Yoshida 8th-order method (backward)
-            for &g in GAMMA[..7].iter().rev() {
-                // Yoshida 4th-order method
-                for j in 0..4 {
-                    q = q + YOSHIDA_COEFF[j] * p * g * dt;
-                    p = p + YOSHIDA_COEFF[j + 4] * (-potential.dV(q)) * g * dt;
-                }
+            // Yoshida 4th-order method
+            for j in 0..4 {
+                q = q + YOSHIDA_COEFF[j] * p * dt;
+                p = p + YOSHIDA_COEFF[j + 4] * (-potential.dV(q)) * dt;
             }
             q_vec[i] = q;
             p_vec[i] = p;

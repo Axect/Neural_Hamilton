@@ -2,6 +2,8 @@ use indicatif::ParallelProgressIterator;
 use peroxide::fuga::*;
 use rayon::prelude::*;
 
+const TSTEP: f64 = 1e-3;
+
 #[allow(non_snake_case)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let test_data = "data_test/test.parquet";
@@ -22,15 +24,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let V = test_V[i * 100..(i + 1) * 100].to_vec();
             let q_true = test_q[i * 100..(i + 1) * 100].to_vec();
             let p_true = test_p[i * 100..(i + 1) * 100].to_vec();
-            let initial_conditions = vec![0f64, 0f64];
+            let initial_condition = vec![0f64, 0f64];
             let ode = PotentialODE::new(&V)?;
-            let integrator = GL4 {
-                solver: ImplicitSolver::FixedPoint,
-                max_step_iter: 100,
-                tol: 1e-6,
-            };
+            let integrator = RKF78::new(1e-4, 0.9, 1e-6, TSTEP * 10f64, 100);
             let solver = BasicODESolver::new(integrator);
-            let (t_vec, qp_vec) = solver.solve(&ode, (0f64, 2f64), 1e-4, &initial_conditions)?;
+            let (t_vec, qp_vec) = solver.solve(&ode, (0f64, 2f64), TSTEP, &initial_condition)?;
             let (q_vec, p_vec): (Vec<f64>, Vec<f64>) = qp_vec.iter().map(|v| (v[0], v[1])).unzip();
 
             let cs_q: CubicHermiteSpline = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
@@ -57,10 +55,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Vec<f64>,
     ) = results
         .into_iter()
-        .map(|(t, x, p, loss_q, loss_p, loss)| {
+        .map(|(t, q, p, loss_q, loss_p, loss)| {
             (
                 t.into_iter(),
-                x.into_iter(),
+                q.into_iter(),
                 p.into_iter(),
                 loss_q.into_iter(),
                 loss_p.into_iter(),
@@ -96,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     dg.push("loss_p", Series::new(loss_p_total));
     dg.push("loss", Series::new(loss_total));
 
-    dg.write_parquet("data_analyze/gl4.parquet", CompressionOptions::Uncompressed)?;
+    dg.write_parquet("data_analyze/rkf78.parquet", CompressionOptions::Snappy)?;
     dg.print();
 
     Ok(())
@@ -110,7 +108,7 @@ pub struct PotentialODE {
 
 impl PotentialODE {
     pub fn new(potential: &[f64]) -> anyhow::Result<Self> {
-        let x = linspace(0, 1, potential.len());
+        let x = linspace(0f64, 1f64, potential.len());
         let cs = cubic_hermite_spline(&x, potential, Quadratic)?;
         let cs_deriv = cs.derivative();
 
