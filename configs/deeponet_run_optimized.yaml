@@ -1,5 +1,5 @@
-project: NeuralHamilton_v1.5_DeepONet
-device: cuda:1
+project: NeuralHamilton_v1.9_DeepONet
+device: cuda:0
 net: model.DeepONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
@@ -8,11 +8,11 @@ batch_size: 100
 seeds: [89]
 net_config:
   nodes: 512
-  layers: 5
-  branches: 32
+  layers: 6
+  branches: 64
 optimizer_config:
-  lr: 0.0014088923929828267
+  lr: 0.0018258906108760296
 scheduler_config:
   upper_bound: 300
   max_iter: 250
-  infimum_lr: 0.00000108482233910544
+  infimum_lr: 0.00000796906028736817
