@@ -421,11 +421,6 @@ def main():
             and "Cluster" in sampled_clusters_active_df.columns
             and len(sampled_clusters_active_df) > 0
         ):
-            sampled_active_for_umap = sampled_active.merge(
-                sampled_clusters_active_df[["index", "Cluster"]],
-                on="index",
-                how="left",
-            )
             umap_sampled_active, _ = umap_map_and_embed(
                 sampled_active_for_umap,
                 n_neighbors=10,
