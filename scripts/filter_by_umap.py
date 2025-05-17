@@ -422,7 +422,7 @@ def main():
             and len(sampled_clusters_active_df) > 0
         ):
             umap_sampled_active, _ = umap_map_and_embed(
-                sampled_active_for_umap,
+                sampled_active,
                 n_neighbors=10,
                 min_dist=0.001,
                 n_components=2,
