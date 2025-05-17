@@ -395,8 +395,8 @@ def main():
 
         # 5. Define sampling target size for test data
         num_reshaped_items = len(df_active_reshaped)
-        # Example: 20% of reshaped items or a minimum of 100 (adjust as needed)
-        n_target_active = num_reshaped_items // n_clusters if num_reshaped_items > 0 else 0
+        # Example: 10% of reshaped items
+        n_target_active = num_reshaped_items // 10 if num_reshaped_items > 0 else 0
         print(
             f"Target samples for test: {n_target_active} from {num_reshaped_items} reshaped items."
         )
