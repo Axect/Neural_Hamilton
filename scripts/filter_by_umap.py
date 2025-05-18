@@ -301,7 +301,7 @@ def sampling_by_cluster(
 def sampling_by_cluster_area_weighted(
     df_with_features_and_clusters: pd.DataFrame, # index, UMAP1, UMAP2, Cluster 및 원본 feature 포함
     n_target: int,
-    min_samples_per_cluster: int = 10 # 가중치 적용 후 클러스터당 최소 샘플 수
+    min_samples_per_cluster: int = 25 # 가중치 적용 후 클러스터당 최소 샘플 수
 ) -> tuple[pd.DataFrame, pd.DataFrame]: # 두 번째 반환값은 샘플링된 데이터의 클러스터 정보 (여기선 그냥 샘플링된 df 반환)
 
     if n_target <= 0:
@@ -602,7 +602,7 @@ def main():
         sampled_active, sampled_clusters_active_df = sampling_by_cluster_area_weighted(
             df_with_features_and_clusters=df_active_with_clusters_and_coords, # UMAP 좌표와 클러스터 ID, 원본 특성 모두 포함
             n_target=n_target_active,
-            min_samples_per_cluster=10 # 클러스터당 최소 1개는 샘플링
+            min_samples_per_cluster=25 # 클러스터당 최소 1개는 샘플링
         )
 
         if not sampled_active.empty and "Cluster" in sampled_active.columns:
