@@ -355,7 +355,7 @@ def plot_umap_data(
         else:
             print(f"Warning: UMAP coordinate data is empty or invalid for plotting '{title}'. Skipping scatter plot.")
 
-        ax.set_title(title, fontsize=10)
+        #ax.set_title(title)
         ax.set_xlabel("UMAP1")
         ax.set_ylabel("UMAP2")
         ax.grid(True, linestyle='--', alpha=0.5)
@@ -388,7 +388,7 @@ def plot_cluster_point_counts_histogram(
         # Create a bar chart for point counts per cluster ID
         ax.bar(point_counts.index, point_counts.values, color='steelblue', alpha=0.8)
 
-        ax.set_title(title, fontsize=10)
+        #ax.set_title(title)
         ax.set_xlabel("Cluster ID")
         ax.set_ylabel("Number of Points")
         ax.grid(True, axis='y', linestyle='--', alpha=0.5)
