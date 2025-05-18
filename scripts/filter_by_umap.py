@@ -342,13 +342,13 @@ def plot_umap_data(
                     umap_coords_df["UMAP2"].to_numpy(),
                     s=5,
                     linewidths=0,
-                    alpha=0.7,
+                    alpha=0.75,
                     color='gray' # Default color if no clusters
                 )
                 if cluster_labels_series.empty:
-                     print(f"Info: Cluster labels are empty for UMAP plot '{title}'. Plotting without colors.")
+                    print(f"Info: Cluster labels are empty for UMAP plot '{title}'. Plotting without colors.")
                 elif len(cluster_labels_series) != len(umap_coords_df):
-                     print(f"Warning: Mismatch in length between UMAP data and cluster labels for '{title}'. Plotting without colors.")
+                    print(f"Warning: Mismatch in length between UMAP data and cluster labels for '{title}'. Plotting without colors.")
                 elif cluster_labels_series.isna().any():
                     print(f"Warning: Cluster labels contain NaN values for UMAP plot '{title}'. Plotting without colors.")
 
@@ -360,7 +360,7 @@ def plot_umap_data(
         ax.set_ylabel("UMAP2")
         ax.grid(True, linestyle='--', alpha=0.5)
         try:
-            fig.savefig(filename, dpi=300, bbox_inches="tight") # Reduced DPI for faster save, 600 is high
+            fig.savefig(filename, dpi=600, bbox_inches="tight") # Reduced DPI for faster save, 600 is high
             print(f"Saved UMAP plot: {filename}")
         except Exception as e:
             print(f"Error saving UMAP plot {filename}: {e}")
@@ -400,7 +400,7 @@ def plot_cluster_point_counts_histogram(
 
 
         try:
-            fig.savefig(filename, dpi=300, bbox_inches="tight")
+            fig.savefig(filename, dpi=600, bbox_inches="tight")
             print(f"Saved cluster point counts histogram: {filename}")
         except Exception as e:
             print(f"Error saving histogram {filename}: {e}")
