@@ -1,8 +1,9 @@
 import umap
 import matplotlib.pyplot as plt
 import scienceplots
-import fireducks.pandas as pd # Assuming fireducks.pandas is a pandas-compatible library
+import fireducks.pandas as pd
 import numpy as np
+from scipy.spatial import ConvexHull
 import random
 from sklearn.cluster import KMeans
 import argparse
@@ -97,6 +98,37 @@ def umap_map_and_embed(
     if cluster_series is not None:
         umap_df["Cluster"] = cluster_series.values
     return umap_df, mapper
+
+
+def get_cluster_area(points_in_cluster: np.ndarray) -> float:
+    """
+    주어진 2D UMAP 좌표 포인트들의 convex hull 면적을 계산합니다.
+    points_in_cluster: 클러스터 내 포인트들의 (n_points, 2) 형태의 numpy 배열
+    """
+    if points_in_cluster.shape[0] < 3:
+        # Convex hull은 최소 3개의 점이 필요합니다.
+        # 점이 3개 미만이면 면적을 0으로 처리하거나,
+        # 바운딩 박스 면적 등 다른 대안을 사용하거나, 매우 작은 값을 반환할 수 있습니다.
+        # 여기서는 매우 작은 값을 반환하여 0으로 나누는 오류를 방지하고 최소한의 가중치를 갖도록 합니다.
+        if points_in_cluster.shape[0] > 0:
+            min_coords = np.min(points_in_cluster, axis=0)
+            max_coords = np.max(points_in_cluster, axis=0)
+            width = max_coords[0] - min_coords[0]
+            height = max_coords[1] - min_coords[1]
+            # 아주 작은 면적이라도 있도록 처리
+            return max(1e-9, width * height)
+        return 1e-9 # 포인트가 아예 없는 경우는 없겠지만, 방어적으로 처리
+
+    try:
+        hull = ConvexHull(points_in_cluster)
+        return hull.volume  # 2D에서 .volume이 면적을 반환
+    except Exception: # QhullError (예: 모든 점이 일직선상에 있는 경우)
+        # 위에서 처리한 바운딩 박스와 유사하게 처리
+        min_coords = np.min(points_in_cluster, axis=0)
+        max_coords = np.max(points_in_cluster, axis=0)
+        width = max_coords[0] - min_coords[0]
+        height = max_coords[1] - min_coords[1]
+        return max(1e-9, width * height)
 
 
 def kmeans_clustering(
@@ -266,6 +298,138 @@ def sampling_by_cluster(
     return final_sampled_df, final_sampled_clusters_info
 
 
+def sampling_by_cluster_area_weighted(
+    df_with_features_and_clusters: pd.DataFrame, # index, UMAP1, UMAP2, Cluster 및 원본 feature 포함
+    n_target: int,
+    min_samples_per_cluster: int = 10 # 가중치 적용 후 클러스터당 최소 샘플 수
+) -> tuple[pd.DataFrame, pd.DataFrame]: # 두 번째 반환값은 샘플링된 데이터의 클러스터 정보 (여기선 그냥 샘플링된 df 반환)
+
+    if n_target <= 0:
+        return df_with_features_and_clusters.iloc[0:0], df_with_features_and_clusters.iloc[0:0][['index', 'Cluster']]
+
+    if df_with_features_and_clusters.empty or \
+       not {'index', 'Cluster', 'UMAP1', 'UMAP2'}.issubset(df_with_features_and_clusters.columns):
+        print("Warning: df_with_features_and_clusters is empty or missing required columns for area-weighted sampling.")
+        # 기존 랜덤 샘플링으로 fallback 또는 빈 DataFrame 반환
+        if n_target > 0 and not df_with_features_and_clusters.empty:
+            actual_n_target = min(n_target, len(df_with_features_and_clusters))
+            sampled_df = df_with_features_and_clusters.sample(n=actual_n_target, random_state=42)
+            # 샘플된 df에서 cluster_info_df와 유사한 정보 추출
+            sampled_cluster_info = sampled_df[['index', 'Cluster']] if 'Cluster' in sampled_df else pd.DataFrame(columns=['index', 'Cluster'])
+            return sampled_df, sampled_cluster_info
+        return df_with_features_and_clusters.iloc[0:0], pd.DataFrame(columns=['index', 'Cluster'])
+
+    unique_cluster_ids = sorted(df_with_features_and_clusters['Cluster'].unique())
+    num_actual_clusters = len(unique_cluster_ids)
+
+    if num_actual_clusters == 0:
+        return df_with_features_and_clusters.iloc[0:0], pd.DataFrame(columns=['index', 'Cluster'])
+
+    cluster_areas = {}
+    cluster_point_counts = {}
+    for cluster_id in unique_cluster_ids:
+        points = df_with_features_and_clusters[
+            df_with_features_and_clusters['Cluster'] == cluster_id
+        ][['UMAP1', 'UMAP2']].to_numpy()
+        cluster_areas[cluster_id] = get_cluster_area(points)
+        cluster_point_counts[cluster_id] = len(points)
+
+    total_area = sum(cluster_areas.values())
+
+    # 각 클러스터에 할당될 샘플 수 계산
+    samples_to_allocate = {}
+    if total_area < 1e-6 * num_actual_clusters: # 모든 면적이 거의 0에 가까운 경우 -> 포인트 수 기반으로 변경
+        print("Warning: Total cluster area is near zero. Using point count proportions for sampling.")
+        total_points = sum(cluster_point_counts.values())
+        if total_points == 0: # 모든 클러스터에 포인트가 없는 극단적 경우
+             return df_with_features_and_clusters.iloc[0:0], pd.DataFrame(columns=['index', 'Cluster'])
+        for cluster_id in unique_cluster_ids:
+            weight = cluster_point_counts[cluster_id] / total_points if total_points > 0 else (1/num_actual_clusters)
+            samples_to_allocate[cluster_id] = int(round(weight * n_target))
+    else: # 면적 기반 가중치
+        for cluster_id in unique_cluster_ids:
+            weight = cluster_areas[cluster_id] / total_area if total_area > 0 else (1/num_actual_clusters)
+            samples_to_allocate[cluster_id] = int(round(weight * n_target))
+
+    # 할당된 샘플 수 조정 (최소/최대 및 총합 n_target 맞추기)
+    # 1. 각 클러스터의 최대 샘플 수는 해당 클러스터의 실제 포인트 수를 넘을 수 없음
+    # 2. 각 클러스터의 최소 샘플 수는 min_samples_per_cluster 이상이어야 함 (단, 실제 포인트 수보다는 작거나 같아야 함)
+    for cluster_id in unique_cluster_ids:
+        samples_to_allocate[cluster_id] = min(samples_to_allocate[cluster_id], cluster_point_counts[cluster_id])
+        samples_to_allocate[cluster_id] = max(samples_to_allocate[cluster_id],
+                                             min(min_samples_per_cluster, cluster_point_counts[cluster_id]))
+        samples_to_allocate[cluster_id] = max(0, samples_to_allocate[cluster_id]) # 음수 방지
+
+
+    # 3. 총합이 n_target이 되도록 조정
+    current_total_allocated = sum(samples_to_allocate.values())
+    diff = n_target - current_total_allocated
+
+    # 우선순위: 면적이 넓은 클러스터 (또는 원래 가중치가 높았던 클러스터)
+    # 여기서는 면적 기준으로 정렬하여 차이 분배
+    sorted_clusters_by_area_desc = sorted(unique_cluster_ids, key=lambda cid: cluster_areas[cid], reverse=True)
+
+    if diff > 0: # 샘플이 부족한 경우, 면적이 넓은 클러스터부터 추가 할당
+        for cluster_id in sorted_clusters_by_area_desc:
+            can_add = cluster_point_counts[cluster_id] - samples_to_allocate[cluster_id]
+            add_amount = min(diff, can_add)
+            samples_to_allocate[cluster_id] += add_amount
+            diff -= add_amount
+            if diff <= 0:
+                break
+    elif diff < 0: # 샘플이 초과된 경우, 면적이 넓은 (그러나 최소 샘플 수보다는 많이 할당된) 클러스터부터 제거
+        diff = abs(diff)
+        for cluster_id in sorted_clusters_by_area_desc: # 면적이 넓은 순으로 제거 (덜 중요한 샘플일 가능성)
+            can_remove = samples_to_allocate[cluster_id] - min(min_samples_per_cluster, cluster_point_counts[cluster_id])
+            remove_amount = min(diff, can_remove)
+            samples_to_allocate[cluster_id] -= remove_amount
+            diff -= remove_amount
+            if diff <= 0:
+                break
+    
+    # 최종 할당량 다시 점검 (조정 후 실제 포인트 수를 넘거나 음수가 되지 않도록)
+    final_samples_per_cluster = {}
+    for cluster_id in unique_cluster_ids:
+        final_samples_per_cluster[cluster_id] = max(0, min(samples_to_allocate[cluster_id], cluster_point_counts[cluster_id]))
+
+    # 샘플링 실행
+    sampled_dfs_list = []
+    for cluster_id in unique_cluster_ids:
+        num_to_sample = final_samples_per_cluster[cluster_id]
+        if num_to_sample > 0:
+            cluster_data = df_with_features_and_clusters[df_with_features_and_clusters['Cluster'] == cluster_id]
+            sampled_dfs_list.append(
+                cluster_data.sample(n=num_to_sample, random_state=42, replace=False) # replace=False 중요
+            )
+
+    final_sampled_df = pd.concat(sampled_dfs_list, ignore_index=True) if sampled_dfs_list else df_with_features_and_clusters.iloc[0:0]
+
+    # 최종적으로 n_target 개수를 정확히 맞추기 위한 추가 샘플링/제거 (만약 위 로직으로도 안 맞으면)
+    current_len = len(final_sampled_df)
+    if current_len > n_target and n_target > 0 :
+        final_sampled_df = final_sampled_df.sample(n=n_target, random_state=42).reset_index(drop=True)
+    elif 0 < current_len < n_target:
+        needed_more = n_target - current_len
+        all_indices = df_with_features_and_clusters['index'].tolist()
+        sampled_indices = final_sampled_df['index'].tolist()
+        available_indices = list(set(all_indices) - set(sampled_indices))
+        
+        if available_indices:
+            num_to_add_from_pool = min(needed_more, len(available_indices))
+            if num_to_add_from_pool > 0:
+                additional_samples = df_with_features_and_clusters[
+                    df_with_features_and_clusters['index'].isin(
+                        np.random.choice(available_indices, num_to_add_from_pool, replace=False)
+                    )
+                ]
+                final_sampled_df = pd.concat([final_sampled_df, additional_samples], ignore_index=True)
+
+    # 샘플링된 데이터에 대한 클러스터 정보 반환 (기존 sampling_by_cluster 함수의 두 번째 반환값 형식과 유사하게)
+    sampled_cluster_info_df = final_sampled_df[['index', 'Cluster']] if 'index' in final_sampled_df and 'Cluster' in final_sampled_df else pd.DataFrame(columns=['index', 'Cluster'])
+
+    return final_sampled_df, sampled_cluster_info_df
+
+
 # --- New Reusable Functions ---
 def _ensure_dir_exists(file_path: str):
     directory = os.path.dirname(file_path)
@@ -428,9 +592,17 @@ def main():
         else:
             print("Skipping UMAP plot for full test data: UMAP or cluster data is empty.")
         
-        df_active_with_clusters = df_active_reshaped.merge(cluster_active, on="index", how="left")
-        sampled_active, sampled_clusters_active_df = sampling_by_cluster(
-            df_active_with_clusters, cluster_active, n_target_active, n_clusters_sampling=n_clusters_active
+        #df_active_with_clusters = df_active_reshaped.merge(cluster_active, on="index", how="left")
+        #sampled_active, sampled_clusters_active_df = sampling_by_cluster_area_weighted(
+        #    df_active_with_clusters, cluster_active, n_target_active, n_clusters_sampling=n_clusters_active
+        #)
+
+        df_active_with_umap_coords = df_active_reshaped.merge(umap_active[['index', 'UMAP1', 'UMAP2']], on="index", how="left")
+        df_active_with_clusters_and_coords = df_active_with_umap_coords.merge(cluster_active[['index', 'Cluster']], on="index", how="left")
+        sampled_active, sampled_clusters_active_df = sampling_by_cluster_area_weighted(
+            df_with_features_and_clusters=df_active_with_clusters_and_coords, # UMAP 좌표와 클러스터 ID, 원본 특성 모두 포함
+            n_target=n_target_active,
+            min_samples_per_cluster=10 # 클러스터당 최소 1개는 샘플링
         )
 
         if not sampled_active.empty and "Cluster" in sampled_active.columns:
@@ -544,14 +716,21 @@ def main():
             
             # Sample Training Data
             print("--- Sampling Training Data ---")
-            df_train_with_clusters = df_train.merge(cluster_train, on="index", how="left" if not cluster_train.empty else "left") # ensure merge works if cluster_train is empty
-            if 'Cluster' not in df_train_with_clusters.columns and not cluster_train.empty : # If merge failed to add Cluster but cluster_train was not empty
-                 print("Warning: Cluster column not found after merging for training data. Sampling might be affected.")
-                 # Add a dummy cluster column if it's missing to prevent error in sampling_by_cluster, though this is not ideal.
-                 # df_train_with_clusters['Cluster'] = 0 
+            #df_train_with_clusters = df_train.merge(cluster_train, on="index", how="left" if not cluster_train.empty else "left") # ensure merge works if cluster_train is empty
+            # UMAP 좌표 병합
+            df_train_with_umap_coords = df_train.merge(umap_train[['index', 'UMAP1', 'UMAP2']], on='index', how='left')
+            df_train_for_sampling = df_train_with_umap_coords.merge(cluster_train[['index', 'Cluster']], on='index', how='left')
+            #if 'Cluster' not in df_train_with_clusters.columns and not cluster_train.empty : # If merge failed to add Cluster but cluster_train was not empty
+            #     print("Warning: Cluster column not found after merging for training data. Sampling might be affected.")
+            #     # Add a dummy cluster column if it's missing to prevent error in sampling_by_cluster, though this is not ideal.
+            #     # df_train_with_clusters['Cluster'] = 0 
 
-            sampled_train, _ = sampling_by_cluster( # sampled_clusters_train_df not used explicitly later
-                df_train_with_clusters, cluster_train, n_target_train, n_clusters_sampling=n_clusters_train
+            #sampled_train, _ = sampling_by_cluster( # sampled_clusters_train_df not used explicitly later
+            #    df_train_with_clusters, cluster_train, n_target_train, n_clusters_sampling=n_clusters_train
+            #)
+            sampled_train, _ = sampling_by_cluster_area_weighted(
+                df_train_for_sampling,
+                n_target_train
             )
             
             if not sampled_train.empty and "Cluster" in sampled_train.columns: # Check if 'Cluster' from merge is in sampled_train
@@ -621,13 +800,22 @@ def main():
 
             # Sample Validation Data
             print("--- Sampling Validation Data ---")
-            df_val_with_clusters = df_val.merge(cluster_val, on="index", how="left" if not cluster_val.empty else "left")
-            if 'Cluster' not in df_val_with_clusters.columns and not cluster_val.empty:
-                 print("Warning: Cluster column not found after merging for validation data.")
-                 # df_val_with_clusters['Cluster'] = 0
+            #df_val_with_clusters = df_val.merge(cluster_val, on="index", how="left" if not cluster_val.empty else "left")
+            #if 'Cluster' not in df_val_with_clusters.columns and not cluster_val.empty:
+            #     print("Warning: Cluster column not found after merging for validation data.")
+            #     # df_val_with_clusters['Cluster'] = 0
 
-            sampled_val, _ = sampling_by_cluster(
-                df_val_with_clusters, cluster_val, n_target_val, n_clusters_sampling=n_clusters_val
+            #sampled_val, _ = sampling_by_cluster(
+            #    df_val_with_clusters, cluster_val, n_target_val, n_clusters_sampling=n_clusters_val
+            #)
+            # UMAP 좌표 병합
+            df_val_with_umap_coords = df_val.merge(umap_val[['index', 'UMAP1', 'UMAP2']], on='index', how='left')
+            df_val_for_sampling = df_val_with_umap_coords.merge(cluster_val[['index', 'Cluster']], on='index', how='left')
+            
+            # sampled_val, _ = sampling_by_cluster(...) # 기존
+            sampled_val, _ = sampling_by_cluster_area_weighted(
+                df_val_for_sampling,
+                n_target_val
             )
             print(f"Sampled Validation DataFrame shape: {sampled_val.shape if not sampled_val.empty else 'Empty'}")
 
