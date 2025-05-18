@@ -1,4 +1,4 @@
-project: NeuralHamilton_v1.9_MambONet
+project: NeuralHamilton_v1.10_MambONet
 device: cuda:0
 net: model.MambONet
 optimizer: torch.optim.adamw.AdamW
@@ -8,13 +8,13 @@ batch_size: 100
 seeds: [89]
 net_config:
   d_model: 128
-  num_layers1: 6
+  num_layers1: 5
   n_head: 16
-  num_layers2: 4
+  num_layers2: 3
   d_ff: 1024
 optimizer_config:
-  lr: 0.0009007121373486997
+  lr: 0.0008576920766023444
 scheduler_config:
-  upper_bound: 350
+  upper_bound: 400
   max_iter: 250
-  infimum_lr: 0.0000000199425412699 
+  infimum_lr: 0.00000001126475390015
