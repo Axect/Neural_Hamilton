@@ -28,6 +28,7 @@ torch.set_float32_matmul_precision("medium")
 
 
 def load_relevant_data(potential: str):
+    # 기존 데이터 로드 (GL4, Y4, RK4)
     file_name = f"./data_analyze/{potential}.parquet"
     df = pl.read_parquet(file_name)
     V = df["V"].to_numpy()
@@ -58,13 +59,23 @@ def load_relevant_data(potential: str):
         torch.tensor(q_gl4, dtype=torch.float32).unsqueeze(0),
         torch.tensor(p_gl4, dtype=torch.float32).unsqueeze(0),
     )
-    return ds_gl4, ds, ds_rk4  # GL4, Y4, RK4
-
-
-def load_precise_data():
-    y4_ds = load_data("./data_precise/test.parquet")
-    y8_ds = load_data("./data_precise/compare.parquet")
-    return y4_ds, y8_ds
+    
+    # True 데이터 로드 (Julia에서 생성한 고차 심플렉틱 적분기 결과)
+    true_file_name = f"./data_true/{potential}.parquet"
+    if os.path.exists(true_file_name):
+        df_true = pl.read_parquet(true_file_name)
+        q_true = df_true["q_true"].to_numpy()
+        p_true = df_true["p_true"].to_numpy()
+        ds_true = TensorDataset(
+            torch.tensor(V, dtype=torch.float32).unsqueeze(0),
+            torch.tensor(t, dtype=torch.float32).unsqueeze(0),
+            torch.tensor(q_true, dtype=torch.float32).unsqueeze(0),
+            torch.tensor(p_true, dtype=torch.float32).unsqueeze(0),
+        )
+        return ds_true, ds_gl4, ds, ds_rk4  # True, GL4, Y4, RK4
+    else:
+        print(f"Warning: True data file {true_file_name} not found. Using GL4 as reference.")
+        return ds_gl4, ds_gl4, ds, ds_rk4  # GL4, GL4, Y4, RK4 (GL4를 True 대신 사용)
 
 
 # ┌──────────────────────────────────────────────────────────┐
@@ -520,24 +531,26 @@ def main():
             "sawtooth": "Sawtooth",
         }
         results = [load_relevant_data(name) for name in potentials.keys()]
-        ds_tests, ds_y4s, ds_rk4s = zip(*results)
+        ds_trues, ds_gl4s, ds_y4s, ds_rk4s = zip(*results)
         tests_name = list(potentials.values())
 
-        for i in range(len(ds_tests)):
+        for i in range(len(ds_trues)):
             print()
             print(f"Test {tests_name[i]}:")
-            ds_test = ds_tests[i]
+            ds_true = ds_trues[i]
+            ds_gl4 = ds_gl4s[i]
             ds_y4 = ds_y4s[i]
             ds_rk4 = ds_rk4s[i]
             test_name = tests_name[i]
 
             # 데이터로더 생성
-            dl_test = DataLoader(ds_test, batch_size=1)
+            dl_true = DataLoader(ds_true, batch_size=1)
+            dl_gl4 = DataLoader(ds_gl4, batch_size=1)
             dl_y4 = DataLoader(ds_y4, batch_size=1)
             dl_rk4 = DataLoader(ds_rk4, batch_size=1)
 
             # 테스트 결과 계산
-            test_results = TestResults(model, dl_test, device, variational)
+            test_results = TestResults(model, dl_true, device, variational)
             test_results.print_results()
 
             # 결과 저장 디렉토리 생성
@@ -554,13 +567,13 @@ def main():
             # 모든 방법에 대한 비교 그래프 생성
             for batch_data in zip(dl_test, dl_y4, dl_rk4):
                 # 데이터 추출 및 형태 조정
-                (_, _, q_gl4, p_gl4) = batch_data[0]
-                (_, _, q_y4, p_y4) = batch_data[1]
-                (_, _, q_rk4, p_rk4) = batch_data[2]
+                (_, _, q_true, p_true) = batch_data[0]
+                (_, _, q_y4, p_y4) = batch_data[2]
+                (_, _, q_rk4, p_rk4) = batch_data[3]
 
                 # NumPy 배열로 변환
-                q_gl4 = q_gl4.numpy().reshape(-1)
-                p_gl4 = p_gl4.numpy().reshape(-1)
+                q_true = q_true.numpy().reshape(-1)
+                p_true = p_true.numpy().reshape(-1)
                 q_y4 = q_y4.numpy().reshape(-1)
                 p_y4 = p_y4.numpy().reshape(-1)
                 q_rk4 = q_rk4.numpy().reshape(-1)
@@ -569,16 +582,16 @@ def main():
                 p_test = test_results.p_preds
 
                 # 손실 계산
-                loss_q_test = np.mean(np.square(q_gl4 - q_test))
-                loss_p_test = np.mean(np.square(p_gl4 - p_test))
+                loss_q_test = np.mean(np.square(q_true - q_test))
+                loss_p_test = np.mean(np.square(p_true - p_test))
                 loss_test = 0.5 * (loss_q_test + loss_p_test)
 
-                loss_q_y4 = np.mean(np.square(q_gl4 - q_y4))
-                loss_p_y4 = np.mean(np.square(p_gl4 - p_y4))
+                loss_q_y4 = np.mean(np.square(q_true - q_y4))
+                loss_p_y4 = np.mean(np.square(p_true - p_y4))
                 loss_y4 = 0.5 * (loss_q_y4 + loss_p_y4)
 
-                loss_q_rk4 = np.mean(np.square(q_gl4 - q_rk4))
-                loss_p_rk4 = np.mean(np.square(p_gl4 - p_rk4))
+                loss_q_rk4 = np.mean(np.square(q_true - q_rk4))
+                loss_p_rk4 = np.mean(np.square(p_true - p_rk4))
                 loss_rk4 = 0.5 * (loss_q_rk4 + loss_p_rk4)
 
                 # 손실 출력
@@ -595,12 +608,12 @@ def main():
                 with plt.style.context(["science", "nature"]):
                     fig, ax = plt.subplots()
 
-                    # GL4를 True로 취급 (회색 굵은 선)
+                    # True plot
                     ax.plot(
                         t,
-                        q_gl4,
+                        q_true,
                         color="gray",
-                        label=r"$q$ (GL4)",
+                        label=r"$q$ (KL8)",
                         alpha=0.5,
                         linewidth=1.75,
                         zorder=0,
@@ -648,7 +661,7 @@ def main():
                     ax.text(
                         0.05,
                         0.9,
-                        f"Test Loss: {loss_q_test:.4e}",
+                        f"Model Loss: {loss_q_test:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
@@ -685,9 +698,9 @@ def main():
                     # GL4를 True로 취급 (회색 굵은 선)
                     ax.plot(
                         t,
-                        p_gl4,
+                        p_true,
                         color="gray",
-                        label=r"$p$ (GL4)",
+                        label=r"$p$ (KL8)",
                         alpha=0.5,
                         linewidth=1.75,
                         zorder=0,
@@ -735,7 +748,7 @@ def main():
                     ax.text(
                         0.05,
                         0.1,
-                        f"Test Loss: {loss_p_test:.4e}",
+                        f"Model Loss: {loss_p_test:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
@@ -771,10 +784,10 @@ def main():
 
                     # GL4를 True로 취급 (회색 굵은 선)
                     ax.plot(
-                        q_gl4,
-                        p_gl4,
+                        q_true,
+                        p_true,
                         color="gray",
-                        label=r"$(q,p)$ (GL4)",
+                        label=r"$(q,p)$ (KL8)",
                         alpha=0.5,
                         linewidth=1.75,
                         zorder=0,
@@ -822,7 +835,7 @@ def main():
                     ax.text(
                         0.05,
                         0.5,
-                        f"Test Loss: {loss_test:.4e}",
+                        f"Model Loss: {loss_test:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
