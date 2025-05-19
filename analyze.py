@@ -815,7 +815,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # Adjust legend
             handles, labels = ax.get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
-            ax.legend(by_label.values(), by_label.keys())
+            ax.legend(by_label.values(), by_label.keys(), loc='best', fontsize=5)
 
             fig.savefig(
                 f"{fig_dir}/{idx:02}_q_comparison.png", dpi=600, bbox_inches="tight"
@@ -900,7 +900,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # Adjust legend
             handles, labels = ax.get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
-            ax.legend(by_label.values(), by_label.keys())
+            ax.legend(by_label.values(), by_label.keys(), loc='best', fontsize=5)
 
             fig.savefig(
                 f"{fig_dir}/{idx:02}_p_comparison.png", dpi=600, bbox_inches="tight"
@@ -985,7 +985,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # Adjust legend
             handles, labels = ax.get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
-            ax.legend(by_label.values(), by_label.keys())
+            ax.legend(by_label.values(), by_label.keys(), loc='best', fontsize=5)
 
             fig.savefig(
                 f"{fig_dir}/{idx:02}_phase_comparison.png", dpi=600, bbox_inches="tight"
