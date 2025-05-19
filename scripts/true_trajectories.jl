@@ -7,6 +7,7 @@ using Printf
 using PCHIPInterpolation
 using ForwardDiff
 using ProgressMeter
+using Base.Threads
 
 const NSENSORS = 100
 const PI = π
@@ -346,21 +347,29 @@ function run_simulation_reference()
     potentials = load_test_potentials(file_path)
     @printf "Loaded %d potentials\n" length(potentials)
 
-    all_V = []
-    all_t = []
-    all_q_true = []
-    all_p_true = []
+    n_total = length(potentials) * NSENSORS
+    all_V = Vector{Float64}(undef, n_total)
+    all_t = Vector{Float64}(undef, n_total)
+    all_q_true = Vector{Float64}(undef, n_total)
+    all_p_true = Vector{Float64}(undef, n_total)
 
-    pb = Progress(length(potentials), desc="Obtain: ", showvalues=true)
+    pb = Progress(length(potentials), desc="Obtain: ", showspeed=true)
 
-    for V_values in potentials
+    # Parallelize the simulation
+    Threads.@threads for i in 1:length(potentials)
+        V_values = potentials[i]
         q_values, p_values, t_uniform = run_simulation_kl8(V_values)
-
-        append!(all_V, V_values)
-        append!(all_t, t_uniform)
-        append!(all_q_true, q_values)
-        append!(all_p_true, p_values)
-
+        
+        # Store results in the preallocated arrays
+        start_idx = (i-1) * NSENSORS + 1
+        end_idx = i * NSENSORS
+        
+        all_V[start_idx:end_idx] = V_values
+        all_t[start_idx:end_idx] = t_uniform
+        all_q_true[start_idx:end_idx] = q_values
+        all_p_true[start_idx:end_idx] = p_values
+        
+        # Update progress bar
         next!(pb)
     end
 
