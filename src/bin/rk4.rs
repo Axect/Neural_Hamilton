@@ -2,7 +2,7 @@ use indicatif::ParallelProgressIterator;
 use peroxide::fuga::*;
 use rayon::prelude::*;
 
-const TSTEP: f64 = 1e-3;
+const TSTEP: f64 = 2e-2;
 
 #[allow(non_snake_case)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,45 +46,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let (t_total, q_total, p_total, loss_q_total, loss_p_total, loss_total): (
-        Vec<f64>,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<f64>,
-        Vec<f64>,
-    ) = results
-        .into_iter()
-        .map(|(t, q, p, loss_q, loss_p, loss)| {
-            (
-                t.into_iter(),
-                q.into_iter(),
-                p.into_iter(),
-                loss_q.into_iter(),
-                loss_p.into_iter(),
-                loss.into_iter(),
-            )
-        })
-        .fold(
-            (
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ),
-            |(mut t_acc, mut q_acc, mut p_acc, mut loss_q_acc, mut loss_p_acc, mut loss_acc),
-             (t, x, p, loss_q, loss_p, loss)| {
-                t_acc.extend(t);
-                q_acc.extend(x);
-                p_acc.extend(p);
-                loss_q_acc.extend(loss_q);
-                loss_p_acc.extend(loss_p);
-                loss_acc.extend(loss);
-                (t_acc, q_acc, p_acc, loss_q_acc, loss_p_acc, loss_acc)
-            },
-        );
+    // Collect results
+    let mut t_total = vec![];
+    let mut q_total = vec![];
+    let mut p_total = vec![];
+    let mut loss_q_total = vec![];
+    let mut loss_p_total = vec![];
+    let mut loss_total = vec![];
+    for (t_vec, q_vec, p_vec, loss_q, loss_p, loss) in results {
+        t_total.extend(t_vec);
+        q_total.extend(q_vec);
+        p_total.extend(p_vec);
+        loss_q_total.extend(loss_q);
+        loss_p_total.extend(loss_p);
+        loss_total.extend(loss);
+    }
 
     let mut dg = DataFrame::new(vec![]);
     dg.push("t", Series::new(t_total));

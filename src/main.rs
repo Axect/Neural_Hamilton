@@ -128,10 +128,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         4 => {
             // Test
-            let n = 4000 * 10; // For UMAP filtering
+            let n = 8000 * 10; // For UMAP filtering
             let folder = "data_test";
             let order = SolverOrder::Yoshida4th;
-            let seed = 789;
+            let seed = 8407;
 
             println!("\nGenerate test data (Order: {:?})...", order);
             let ds_test_gen = Dataset::generate(n, seed, order)?;

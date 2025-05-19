@@ -5,7 +5,7 @@ use std::f64::consts::PI;
 
 const NSENSORS: usize = 100;
 const BOUNDARY: f64 = 0f64;
-const TSTEP: f64 = 1e-3;
+const TSTEP: f64 = 2e-2;
 
 // ┌─────────────────────────────────────────────────────────┐
 //  Solver Macros
