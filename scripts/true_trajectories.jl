@@ -5,6 +5,8 @@ using Parquet
 using LinearAlgebra
 using Parameters
 using Printf
+using PCHIPInterpolation
+using ForwardDiff
 
 const NSENSORS = 100
 const PI = π
@@ -211,6 +213,73 @@ function hamiltonian_sawtooth_q(p_momentum, q, params, t) # dq/dt
 end
 
 # ┌─────────────────────────────────────────────────────────┐
+#  Test 데이터 로드 및 참조 데이터 생성 (새로운 부분)
+# └─────────────────────────────────────────────────────────┘
+
+# Parquet 파일에서 V 데이터 읽기
+function load_test_potentials(file_path)
+    df = Parquet.read_parquet(file_path)
+    
+    # V 필드 추출 및 NSENSORS 크기 청크로 나누기
+    V_values = df.V
+    num_potentials = div(length(V_values), NSENSORS)
+    
+    potentials = []
+    for i in 1:num_potentials
+        start_idx = (i-1) * NSENSORS + 1
+        end_idx = i * NSENSORS
+        push!(potentials, V_values[start_idx:end_idx])
+    end
+    
+    return potentials
+end
+
+# 주어진 포텐셜에 대해 시뮬레이션 실행
+function run_simulation_kl8(V_values)
+    # 구간과 시간 설정
+    tspan = (0.0, 2.0)
+    dt = 1e-5  # 매우 작은 timestep으로 정확도 보장 (physical 보다 더 작게)
+    
+    # 균일한 q 좌표 (0.0 ~ 1.0)
+    q_range = range(0.0, 1.0, length=NSENSORS)
+    
+    # 포텐셜의 미분을 계산하기 위한 스플라인 생성
+    V_spline = Interpolator(q_range, V_values)
+    dV_spline(q) = ForwardDiff.derivative(V_spline, q)
+    
+    # Hamiltonian 시스템 정의
+    function hamiltonian_dp(p, q, params, t)
+        q_val = clamp(q, 0.0, 1.0)  # 경계를 벗어나는 경우 대비
+        return -dV_spline(q_val)  # 음의 포텐셜 미분
+    end
+    
+    function hamiltonian_dq(p, q, params, t)
+        return p  # 질량 m=1
+    end
+    
+    # 초기 조건
+    q0 = 0.0
+    p0 = 0.0
+    
+    # 미분 방정식 문제 정의
+    prob = DynamicalODEProblem(hamiltonian_dp, hamiltonian_dq, p0, q0, tspan, nothing)
+    
+    # Kahan-Li 8차 심플렉틱 적분기로 해결
+    # DifferentialEquations.jl의 KahanLi8 적분기는 8차 심플렉틱 메소드
+    sol = solve(prob, KahanLi8(), dt=dt, adaptive=false)
+    
+    # 균일한 시간 간격으로 샘플링
+    t_uniform = range(tspan[1], tspan[2], length=NSENSORS)
+    solution = sol(t_uniform)
+    
+    # 결과 추출
+    p_values = [solution[1, i] for i in 1:NSENSORS]
+    q_values = [solution[2, i] for i in 1:NSENSORS]
+    
+    return q_values, p_values, t_uniform
+end
+
+# ┌─────────────────────────────────────────────────────────┐
 #  시뮬레이션 실행 및 저장
 # └─────────────────────────────────────────────────────────┘
 
@@ -224,12 +293,8 @@ function run_simulation(potential_name, p_fn_ham, q_fn_ham, initial_condition, p
     # q_fn_ham is the function for dq/dt
     prob = DynamicalODEProblem(p_fn_ham, q_fn_ham, p_initial, q_initial, tspan, params)
 
-    dt = 1e-4 # 매우 작은 timestep으로 정확도 보장
-    # SymplecticEuler is a first-order symplectic integrator.
-    # For better accuracy, consider higher-order symplectic integrators like:
-    # VerletLeapfrog(), Ruth3(), McAte4(), CalvoSanz4()
-    # E.g., sol = solve(prob, McAte4(), dt=dt, adaptive=false)
-    sol = solve(prob, SymplecticEuler(), dt=dt, adaptive=false)
+    dt = 1e-4 
+    sol = solve(prob, KahanLi8(), dt=dt, adaptive=false)
 
     # 균일한 시간 간격으로 샘플링
     t_uniform = range(tspan[1], tspan[2], length=NSENSORS)
@@ -308,5 +373,46 @@ function run_all_simulations()
     println("All simulations completed!")
 end
 
+function run_simulation_reference()
+    file_path = "data_test/test.parquet"
+
+    @printf "Loading test potentials from %s...\n" file_path
+    potentials = load_test_potentials(file_path)
+    @printf "Loaded %d potentials\n" length(potentials)
+
+    all_V = []
+    all_t = []
+    all_q_true = []
+    all_p_true = []
+
+    for (i, V_values) in enumerate(potentials)
+        q_values, p_values, t_uniform = run_simulation_kl8(V_values)
+
+        append!(all_V, V_values)
+        append!(all_t, t_uniform)
+        append!(all_q_true, q_values)
+        append!(all_p_true, p_values)
+    end
+
+    # 결과를 DataFrame으로 변환
+    df = DataFrame(
+        V = all_V,
+        t = all_t,
+        q_true = all_q_true,
+        p_true = all_p_true
+    )
+
+    # Parquet 파일로 저장
+    output_file = "data_true/test_kl8.parquet"
+    @printf "Saving to %s...\n" output_file
+    Parquet.write_parquet(output_file, df)
+
+    @printf "Saved to %s\n" output_file
+
+    println("All simulations completed!")
+end
+
 # 모든 시뮬레이션 실행
 run_all_simulations()
+# 참조 시뮬레이션 실행
+run_simulation_reference()
