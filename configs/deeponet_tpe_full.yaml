@@ -34,7 +34,7 @@ search_space:
     lr:
       type: float
       min: 1.e-4
-      max: 5.e-2
+      max: 1.e-2
       log: true
   scheduler_config:
     upper_bound:
