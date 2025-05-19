@@ -644,6 +644,16 @@ def plot_comparison_histograms(results_dict, fig_dir):
     # Create log bins
     logbins = np.logspace(loss_min_log, loss_max_log, 100)
 
+    # Save parquet
+    df_losses = pl.DataFrame(
+        {
+            "model_loss": model_losses,
+            "y4_loss": y4_losses,
+            "rk4_loss": rk4_losses,
+        }
+    )
+    df_losses.write_parquet(f"{fig_dir}/losses.parquet")
+
     # Plot histograms
     with plt.style.context(["science", "nature"]):
         # Model histogram
