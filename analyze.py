@@ -526,6 +526,7 @@ def calculate_comparison_results(model, device, dl_true, dl_y4, dl_rk4, variatio
     
     test_results_dict = {
         "model": {"q": [], "p": [], "loss_q": [], "loss_p": [], "loss": []},
+        "true": {"q": [], "p": []},
         "y4": {"q": [], "p": [], "loss_q": [], "loss_p": [], "loss": []},
         "rk4": {"q": [], "p": [], "loss_q": [], "loss_p": [], "loss": []},
     }
@@ -570,6 +571,9 @@ def calculate_comparison_results(model, device, dl_true, dl_y4, dl_rk4, variatio
         test_results_dict["model"]["loss_q"].extend(loss_q_model.cpu().numpy())
         test_results_dict["model"]["loss_p"].extend(loss_p_model.cpu().numpy())
         test_results_dict["model"]["loss"].extend(loss_model.cpu().numpy())
+
+        test_results_dict["true"]["q"].extend(q_true.cpu().numpy())
+        test_results_dict["true"]["p"].extend(p_true.cpu().numpy())
         
         test_results_dict["y4"]["q"].extend(q_y4.cpu().numpy())
         test_results_dict["y4"]["p"].extend(p_y4.cpu().numpy())
@@ -589,7 +593,7 @@ def calculate_comparison_results(model, device, dl_true, dl_y4, dl_rk4, variatio
     print(f"Y4 Loss: {np.mean(test_results_dict['y4']['loss']):.4e}")
     print(f"RK4 Loss: {np.mean(test_results_dict['rk4']['loss']):.4e}")
     
-    return test_results_dict, V, t, q_true, p_true
+    return test_results_dict, V, t
 
 
 def plot_comparison_histograms(results_dict, fig_dir):
@@ -660,7 +664,7 @@ def plot_comparison_histograms(results_dict, fig_dir):
         plt.close(fig)
 
 
-def plot_detailed_comparisons(results_dict, V, t, q_true, p_true, fig_dir, indices=None):
+def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
     """
     Generate comparison plots for selected potentials
     """
@@ -680,8 +684,8 @@ def plot_detailed_comparisons(results_dict, V, t, q_true, p_true, fig_dir, indic
         
         # Current potential data
         V_i = V[idx].cpu().numpy()
-        q_true_i = q_true[idx].cpu().numpy()
-        p_true_i = p_true[idx].cpu().numpy()
+        q_true_i = results_dict["true"]["q"][idx]
+        p_true_i = results_dict["true"]["p"][idx]
         q_model_i = results_dict["model"]["q"][idx]
         p_model_i = results_dict["model"]["p"][idx]
         q_y4_i = results_dict["y4"]["q"][idx]
@@ -1221,8 +1225,9 @@ def main():
                 
                 # Compare model with reference data
                 console.print("[bold green]Analyzing model performance...[/bold green]")
-                results_dict, V, t, q_true, p_true = calculate_comparison_results(
-                    model, device, dl_true, dl_y4, dl_rk4, variational)
+                results_dict, V, t = calculate_comparison_results(
+                    model, device, dl_true, dl_y4, dl_rk4, variational
+                )
                 
                 # Visualize results
                 console.print("[bold green]Generating histograms...[/bold green]")
@@ -1241,11 +1246,11 @@ def main():
                     indices.append(worst_idx)
                 
                 # Generate comparison plots (all methods)
-                plot_detailed_comparisons(results_dict, V, t, q_true, p_true, fig_dir, indices)
+                plot_detailed_comparisons(results_dict, V, t, fig_dir, indices)
                 
                 # Generate KL8 vs Model only plots
                 console.print("[bold green]Generating KL8 vs Model plots...[/bold green]")
-                plot_kl8_model_only(results_dict, V, t, q_true, p_true, fig_dir, indices)
+                plot_kl8_model_only(results_dict, V, t, fig_dir, indices)
                 
                 console.print("[bold green]Analysis complete![/bold green]")
                 
