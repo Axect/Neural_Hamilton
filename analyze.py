@@ -78,7 +78,7 @@ def load_test_data_with_true():
     p_y4 = df_y4["p"].to_numpy()
     
     # Load KahanLi8 reference data
-    true_file_name = "./data_test_true/test_true_kl8.parquet"
+    true_file_name = "./data_true/test_kl8.parquet"
     df_true = pl.read_parquet(true_file_name)
     q_true = df_true["q_true"].to_numpy()
     p_true = df_true["p_true"].to_numpy()
