@@ -538,14 +538,12 @@ def main():
             print()
             print(f"Test {tests_name[i]}:")
             ds_true = ds_trues[i]
-            ds_gl4 = ds_gl4s[i]
             ds_y4 = ds_y4s[i]
             ds_rk4 = ds_rk4s[i]
             test_name = tests_name[i]
 
             # 데이터로더 생성
             dl_true = DataLoader(ds_true, batch_size=1)
-            dl_gl4 = DataLoader(ds_gl4, batch_size=1)
             dl_y4 = DataLoader(ds_y4, batch_size=1)
             dl_rk4 = DataLoader(ds_rk4, batch_size=1)
 
@@ -565,7 +563,7 @@ def main():
             test_results.plot_phase(f"{fig_dir}/{i:02}_{test_name}_3_phase_plot", 0)
 
             # 모든 방법에 대한 비교 그래프 생성
-            for batch_data in zip(dl_test, dl_y4, dl_rk4):
+            for batch_data in zip(dl_true, dl_y4, dl_rk4):
                 # 데이터 추출 및 형태 조정
                 (_, _, q_true, p_true) = batch_data[0]
                 (_, _, q_y4, p_y4) = batch_data[2]
