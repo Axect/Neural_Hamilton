@@ -238,7 +238,7 @@ end
 function run_simulation_kl8(V_values)
     # 구간과 시간 설정
     tspan = (0.0, 2.0)
-    dt = 1e-5  # 매우 작은 timestep으로 정확도 보장 (physical 보다 더 작게)
+    dt = 1e-4  # 매우 작은 timestep으로 정확도 보장
     
     # 균일한 q 좌표 (0.0 ~ 1.0)
     q_range = range(0.0, 1.0, length=NSENSORS)
