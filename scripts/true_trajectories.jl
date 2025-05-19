@@ -382,8 +382,6 @@ function run_simulation_reference()
         p_true = all_p_true
     )
 
-    println(df)
-
     # Save as Parquet file
     output_file = "data_true/test_kl8.parquet"
     @printf "Saving to %s...\n" output_file
