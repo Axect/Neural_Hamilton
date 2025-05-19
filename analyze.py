@@ -633,7 +633,6 @@ def plot_comparison_histograms(results_dict, fig_dir):
         ax.set_xlabel("Loss (vs KahanLi8)")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
-        ax.set_title("Model Loss Histogram")
         fig.savefig(f"{fig_dir}/00_1_Loss_model_hist.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
 
@@ -644,7 +643,6 @@ def plot_comparison_histograms(results_dict, fig_dir):
         ax.set_xlabel("Loss (vs KahanLi8)")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
-        ax.set_title("Y4 Loss Histogram")
         fig.savefig(f"{fig_dir}/00_2_Loss_y4_hist.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
 
@@ -655,7 +653,6 @@ def plot_comparison_histograms(results_dict, fig_dir):
         ax.set_xlabel("Loss (vs KahanLi8)")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
-        ax.set_title("RK4 Loss Histogram")
         fig.savefig(f"{fig_dir}/00_3_Loss_rk4_hist.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
 
@@ -674,7 +671,6 @@ def plot_comparison_histograms(results_dict, fig_dir):
         ax.set_xlabel("Loss (vs KahanLi8)")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
-        ax.set_title("Loss Comparison Histogram")
         ax.legend()
         fig.savefig(
             f"{fig_dir}/00_4_Loss_comparison_hist.png", dpi=600, bbox_inches="tight"
@@ -1041,7 +1037,6 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$V(q)$")
             ax.autoscale(tight=True)
-            ax.set_title("Potential Function")
             fig.savefig(
                 f"{fig_dir}/{idx:02}_kl8_potential.png", dpi=600, bbox_inches="tight"
             )
@@ -1076,7 +1071,6 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
-            ax.set_title("Position vs Time")
 
             # Display loss info
             ax.text(
@@ -1122,7 +1116,6 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$p(t)$")
             ax.autoscale(tight=True)
-            ax.set_title("Momentum vs Time")
 
             # Display loss info
             ax.text(
@@ -1168,7 +1161,6 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$p$")
             ax.autoscale(tight=True)
-            ax.set_title("Phase Space")
 
             # Display loss info
             ax.text(
