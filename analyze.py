@@ -707,30 +707,18 @@ def main():
         test_results.plot_p(f"{fig_dir}/{worst_idx:02}_2_p_plot", worst_idx)
         test_results.plot_phase(f"{fig_dir}/{worst_idx:02}_3_phase_plot", worst_idx)
     elif test_option == "physical":
-        ds_test_sho, ds_rk4_sho = load_relevant_data("sho")
-        ds_test_double_well, ds_rk4_double_well = load_relevant_data("double_well")
-        ds_test_morse, ds_rk4_morse = load_relevant_data("morse")
-        ds_test_pendulum, ds_rk4_pendulum = load_relevant_data("pendulum")
-        ds_test_mff, ds_rk4_mff = load_relevant_data("mff")
-        ds_test_smff, ds_rk4_smff = load_relevant_data("smff")
-
-        ds_tests = [
-            ds_test_sho,
-            ds_test_double_well,
-            ds_test_morse,
-            ds_test_pendulum,
-            ds_test_mff,
-            ds_test_smff,
-        ]
-        ds_rk4s = [
-            ds_rk4_sho,
-            ds_rk4_double_well,
-            ds_rk4_morse,
-            ds_rk4_pendulum,
-            ds_rk4_mff,
-            ds_rk4_smff,
-        ]
-        tests_name = ["SHO", "DoubleWell", "Morse", "Pendulum", "MFF", "SMFF"]
+        Potentials = {
+            "sho": "SHO", 
+            "double_well": "DoubleWell", 
+            "morse": "Morse", 
+            "pendulum": "Pendulum", 
+            "mff": "MFF", 
+            "smff": "SMFF",
+            "sawtooth": "Sawtooth",
+        }
+        results = [load_relevant_data(name) for name in potential.keys()]
+        ds_tests, ds_rk4s = zip(*results)
+        tests_name = list(Potentials.values())
 
         for i in range(len(ds_tests)):
             print()

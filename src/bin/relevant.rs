@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use dialoguer::Select;
 use peroxide::fuga::*;
 use std::f64::consts::PI;
@@ -16,7 +17,12 @@ macro_rules! yoshida_solve {
             let (q_vec, p_vec) = $potential.analytic_trajectory(t_span, NSENSORS).unwrap();
             let q_uniform = linspace(-BOUNDARY, 1f64 + BOUNDARY, NSENSORS);
             let V = $potential.V_map(&q_uniform);
-            Ok(Data { V, t: linspace(t_span.0, t_span.1, NSENSORS), q: q_vec, p: p_vec })
+            Ok(Data {
+                V,
+                t: linspace(t_span.0, t_span.1, NSENSORS),
+                q: q_vec,
+                p: p_vec,
+            })
         } else {
             YoshidaSolver::new($potential).solve((0f64, 2f64), TSTEP, $initial_condition)
         }
@@ -42,20 +48,118 @@ macro_rules! ode_solve {
     }};
 }
 
+#[allow(non_snake_case)]
+macro_rules! register_potentials {
+    (
+        $(
+            $idx:expr => {
+                name: $name:expr,
+                display: $display:expr,
+                potential: $potential:expr
+            }
+        ),*
+    ) => {
+        // For UI
+        fn get_potential_names() -> Vec<&'static str> {
+            vec![$($display),*]
+        }
+
+        // For file name
+        fn get_potential_file_name(index: usize) -> &'static str {
+            match index {
+                $($idx => $name,)*
+                _ => unreachable!(),
+            }
+        }
+
+        /// Yoshida 4th order
+        #[allow(non_snake_case)]
+        fn solve_yoshida(potential_idx: usize, initial_condition: &[f64]) -> Result<Data, anyhow::Error> {
+            match potential_idx {
+                $($idx => yoshida_solve!($potential, initial_condition),)*
+                _ => unreachable!(),
+            }
+        }
+
+        /// RK4
+        #[allow(non_snake_case)]
+        fn solve_rk4(potential_idx: usize, initial_condition: &[f64]) -> (Vec<f64>, Vec<f64>) {
+            match potential_idx {
+                $($idx => ode_solve!($potential, initial_condition, RK4),)*
+                _ => unreachable!(),
+            }
+        }
+
+        /// GL4
+        #[allow(non_snake_case)]
+        fn solve_gl4(potential_idx: usize, initial_condition: &[f64], gl4: GL4) -> (Vec<f64>, Vec<f64>) {
+            match potential_idx {
+                $($idx => ode_solve!($potential, initial_condition, gl4),)*
+                _ => unreachable!(),
+            }
+        }
+
+        /// RKF78
+        #[allow(non_snake_case)]
+        fn solve_rkf78(potential_idx: usize, initial_condition: &[f64], rkf78: RKF78) -> (Vec<f64>, Vec<f64>) {
+            match potential_idx {
+                $($idx => ode_solve!($potential, initial_condition, rkf78),)*
+                _ => unreachable!(),
+            }
+        }
+    };
+}
+
+register_potentials! {
+    0 => {
+        name: "sho",
+        display: "SHO",
+        potential: SHO
+    },
+    1 => {
+        name: "double_well",
+        display: "DoubleWell",
+        potential: DoubleWell
+    },
+    2 => {
+        name: "morse",
+        display: "Morse",
+        potential: Morse {
+            a: 3f64 * ((1f64 + 5f64.sqrt()) / 2f64).ln(),
+            D_e: 8f64 / (5f64.sqrt() - 1f64).powi(2),
+            r_e: 1f64 / 3f64
+        }
+    },
+    3 => {
+        name: "pendulum",
+        display: "Pendulum",
+        potential: Pendulum { theta_L: PI / 3f64 }
+    },
+    4 => {
+        name: "mff",
+        display: "MirroredFreeFall",
+        potential: MirroredFreeFall
+    },
+    5 => {
+        name: "smff",
+        display: "SoftenedMirroredFreeFall",
+        potential: SoftenedMirroredFreeFall
+    },
+    6 => {
+        name: "sawtooth",
+        display: "Sawtooth",
+        potential: Sawtooth { lambda: 0.3 }
+    }
+    // Add more potentials here
+}
+
 // ┌─────────────────────────────────────────────────────────┐
 //  Main function
 // └─────────────────────────────────────────────────────────┘
 #[allow(non_snake_case)]
 fn main() -> Result<(), Box<dyn Error>> {
     // Set up potential selection
-    let potentials = vec![
-        "SHO",
-        "DoubleWell",
-        "Morse",
-        "Pendulum",
-        "MirroredFreeFall",
-        "SoftenedMirroredFreeFall",
-    ];
+    let potentials = get_potential_names();
     let potential = Select::new()
         .with_prompt("Choose potential")
         .items(&potentials)
@@ -65,68 +169,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Define initial conditions
     let initial_condition = [0f64, 0f64];
 
-    // Solve using Yoshida method
-    let data = match potential {
-            0 => yoshida_solve!(SHO, &initial_condition),
-            1 => yoshida_solve!(DoubleWell, &initial_condition),
-            2 => yoshida_solve!(
-                Morse {
-                    a: 3f64 * ((1f64 + 5f64.sqrt()) / 2f64).ln(),
-                    D_e: 8f64 / (5f64.sqrt() - 1f64).powi(2),
-                    r_e: 1f64 / 3f64
-                },
-                &initial_condition
-            ),
-            3 => yoshida_solve!(Pendulum { theta_L: PI / 3f64 }, &initial_condition),
-            4 => yoshida_solve!(MirroredFreeFall, &initial_condition),
-            5 => yoshida_solve!(SoftenedMirroredFreeFall, &initial_condition),
-            _ => unreachable!(),
-        }?;
+    // Yoshida 4th order
+    let data = solve_yoshida(potential, &initial_condition)?;
 
-    // Solve using RK4 method
-    let rk4_data = match potential {
-            0 => ode_solve!(SHO, &initial_condition, RK4),
-            1 => ode_solve!(DoubleWell, &initial_condition, RK4),
-            2 => ode_solve!(
-                Morse {
-                    a: 3f64 * ((1f64 + 5f64.sqrt()) / 2f64).ln(),
-                    D_e: 8f64 / (5f64.sqrt() - 1f64).powi(2),
-                    r_e: 1f64 / 3f64
-                },
-                &initial_condition,
-                RK4
-            ),
-            3 => ode_solve!(Pendulum { theta_L: PI / 3f64 }, &initial_condition, RK4),
-            4 => ode_solve!(MirroredFreeFall, &initial_condition, RK4),
-            5 => ode_solve!(SoftenedMirroredFreeFall, &initial_condition, RK4),
-            _ => unreachable!(),
-        };
-
-    // Solve using GL4 method
+    // Declare integrators - GL4 & RKF78
     let gl4 = GL4 {
         solver: ImplicitSolver::Broyden,
         tol: 1e-6,
         max_step_iter: 100,
     };
-    let gl4_data = match potential {
-            0 => ode_solve!(SHO, &initial_condition, gl4),
-            1 => ode_solve!(DoubleWell, &initial_condition, gl4),
-            2 => ode_solve!(
-                Morse {
-                    a: 3f64 * ((1f64 + 5f64.sqrt()) / 2f64).ln(),
-                    D_e: 8f64 / (5f64.sqrt() - 1f64).powi(2),
-                    r_e: 1f64 / 3f64
-                },
-                &initial_condition,
-                gl4
-            ),
-            3 => ode_solve!(Pendulum { theta_L: PI / 3f64 }, &initial_condition, gl4),
-            4 => ode_solve!(MirroredFreeFall, &initial_condition, gl4),
-            5 => ode_solve!(SoftenedMirroredFreeFall, &initial_condition, gl4),
-            _ => unreachable!(),
-        };
-
-    // Solve using RKF78 method
     let rkf78 = RKF78 {
         tol: 1e-6,
         safety_factor: 0.9,
@@ -134,27 +185,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         max_step_size: TSTEP * 10f64,
         max_step_iter: 100,
     };
-    let rkf78_data = match potential {
-            0 => ode_solve!(SHO, &initial_condition, rkf78),
-            1 => ode_solve!(DoubleWell, &initial_condition, rkf78),
-            2 => ode_solve!(
-                Morse {
-                    a: 3f64 * ((1f64 + 5f64.sqrt()) / 2f64).ln(),
-                    D_e: 8f64 / (5f64.sqrt() - 1f64).powi(2),
-                    r_e: 1f64 / 3f64
-                },
-                &initial_condition,
-                rkf78
-            ),
-            3 => ode_solve!(Pendulum { theta_L: PI / 3f64 }, &initial_condition, rkf78),
-            4 => ode_solve!(MirroredFreeFall, &initial_condition, rkf78),
-            5 => ode_solve!(SoftenedMirroredFreeFall, &initial_condition, rkf78),
-            _ => unreachable!(),
-        };
 
-    let potentials = vec!["sho", "double_well", "morse", "pendulum", "mff", "smff"];
-    let potential_name = potentials[potential];
+    // Solve with various methods
+    let rk4_data = solve_rk4(potential, &initial_condition);
+    let gl4_data = solve_gl4(potential, &initial_condition, gl4);
+    let rkf78_data = solve_rkf78(potential, &initial_condition, rkf78);
 
+    let potential_name = get_potential_file_name(potential);
+
+    // DataFrame
     let mut df = DataFrame::new(vec![]);
 
     let V = data.V.clone();
@@ -242,6 +281,7 @@ impl_ode_problem!(Morse);
 impl_ode_problem!(Pendulum);
 impl_ode_problem!(MirroredFreeFall);
 impl_ode_problem!(SoftenedMirroredFreeFall);
+impl_ode_problem!(Sawtooth);
 
 // ┌─────────────────────────────────────────────────────────┐
 //  Potential Structs Definition
@@ -263,6 +303,10 @@ pub struct Pendulum {
 
 pub struct MirroredFreeFall;
 pub struct SoftenedMirroredFreeFall;
+
+pub struct Sawtooth {
+    lambda: f64,
+}
 
 // ┌─────────────────────────────────────────────────────────┐
 //  Potential Implementations
@@ -370,6 +414,31 @@ impl Potential for SoftenedMirroredFreeFall {
         let a = 4f64 * (0.5 * alpha).tanh();
         a * (1f64 / (alpha * (q - 0.5)).tanh()
             - alpha * (q - 0.5) / (alpha * (q - 0.5)).sinh().powi(2))
+    }
+
+    fn analytic_solution(&self, _t: f64) -> Option<(f64, f64)> {
+        None
+    }
+}
+
+// Sawtooth Ratchet Potential
+impl Potential for Sawtooth {
+    fn V(&self, q: f64) -> f64 {
+        let lambda = self.lambda;
+        if q < lambda {
+            2f64 * (1f64 - q / lambda)
+        } else {
+            2f64 * (1f64 - (1f64 - q) / (1f64 - lambda))
+        }
+    }
+
+    fn dV(&self, q: f64) -> f64 {
+        let lambda = self.lambda;
+        if q < lambda {
+            -2f64 / lambda
+        } else {
+            2f64 / (1f64 - lambda)
+        }
     }
 
     fn analytic_solution(&self, _t: f64) -> Option<(f64, f64)> {
