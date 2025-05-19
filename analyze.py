@@ -598,7 +598,7 @@ def main():
                 print(f"RK4 Loss: {loss_rk4:.4e}")
 
                 # 시간 배열 생성
-                t = np.linspace(0, 2, len(q_gl4))
+                t = np.linspace(0, 2, len(q_true))
                 cmap = plt.get_cmap("gist_heat")
                 colors = cmap(np.linspace(0, 0.75, len(t)))
 
