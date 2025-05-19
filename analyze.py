@@ -925,6 +925,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             handles, labels = ax.get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
             ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
 
             fig.savefig(
                 f"{fig_dir}/{idx:02}_p_comparison.png", dpi=600, bbox_inches="tight"
@@ -1010,6 +1011,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             handles, labels = ax.get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
             ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
 
             fig.savefig(
                 f"{fig_dir}/{idx:02}_phase_comparison.png", dpi=600, bbox_inches="tight"
@@ -1105,7 +1107,11 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
                 fontsize=5,
             )
 
-            ax.legend()
+            # Adjust legend
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
             fig.savefig(
                 f"{fig_dir}/{idx:02}_kl8_q_only.png", dpi=600, bbox_inches="tight"
             )
@@ -1150,7 +1156,11 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
                 fontsize=5,
             )
 
-            ax.legend()
+            # Adjust legend
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
             fig.savefig(
                 f"{fig_dir}/{idx:02}_kl8_p_only.png", dpi=600, bbox_inches="tight"
             )
@@ -1195,7 +1205,11 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
                 fontsize=5,
             )
 
-            ax.legend()
+            # Adjust legend
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
             fig.savefig(
                 f"{fig_dir}/{idx:02}_kl8_phase_only.png", dpi=600, bbox_inches="tight"
             )
@@ -1461,9 +1475,13 @@ def main():
                         fontsize=5,
                     )
 
+                    # Adjust legend
                     handles, labels = ax.get_legend_handles_labels()
                     by_label = dict(zip(labels, handles))
-                    ax.legend(by_label.values(), by_label.keys())
+                    ax.legend(
+                        by_label.values(), by_label.keys(), loc="best", fontsize=5
+                    )
+                    fig.tight_layout()
 
                     fig.savefig(
                         f"{fig_dir}/{i:02}_{test_name}_compare_q_plot.png",
@@ -1542,9 +1560,13 @@ def main():
                         fontsize=5,
                     )
 
+                    # Adjust legend
                     handles, labels = ax.get_legend_handles_labels()
                     by_label = dict(zip(labels, handles))
-                    ax.legend(by_label.values(), by_label.keys())
+                    ax.legend(
+                        by_label.values(), by_label.keys(), loc="best", fontsize=5
+                    )
+                    fig.tight_layout()
 
                     fig.savefig(
                         f"{fig_dir}/{i:02}_{test_name}_compare_p_plot.png",
@@ -1623,9 +1645,13 @@ def main():
                         fontsize=5,
                     )
 
+                    # Adjust legend
                     handles, labels = ax.get_legend_handles_labels()
                     by_label = dict(zip(labels, handles))
-                    ax.legend(by_label.values(), by_label.keys())
+                    ax.legend(
+                        by_label.values(), by_label.keys(), loc="best", fontsize=5
+                    )
+                    fig.tight_layout()
 
                     fig.savefig(
                         f"{fig_dir}/{i:02}_{test_name}_compare_phase_plot.png",
