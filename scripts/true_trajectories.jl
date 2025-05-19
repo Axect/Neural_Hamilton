@@ -1,6 +1,5 @@
 using DifferentialEquations
 using DataFrames
-using CSV
 using Parquet
 using LinearAlgebra
 using Parameters
@@ -12,7 +11,7 @@ const NSENSORS = 100
 const PI = π
 
 # ┌─────────────────────────────────────────────────────────┐
-#  포텐셜 정의
+#  Potential Definitions
 # └─────────────────────────────────────────────────────────┘
 
 # Simple Harmonic Oscillator
@@ -30,12 +29,6 @@ function V_DoubleWell(q)
 end
 
 function dV_DoubleWell(q)
-    # Derivative: (625/4) * (q-0.2)*(q-0.8)*(2*q-1.0)
-    # = (625/4) * (q^2 - q + 0.16) * (2q - 1.0)
-    # = (625/4) * (2q^3 - q^2 - 2q^2 + q + 0.32q - 0.16)
-    # = (625/4) * (2q^3 - 3q^2 + 1.32q - 0.16)
-    # = 625/2 * q^3 - 1875/4 * q^2 + (625 * 1.32)/4 * q - (625 * 0.16)/4
-    # = 625/2 * q^3 - 1875/4 * q^2 + 825/4 * q - 25.0
     return 625.0 / 2.0 * q^3 - 1875.0 / 4.0 * q^2 + 825.0 / 4.0 * q - 25.0
 end
 
@@ -66,12 +59,7 @@ end
 
 function dV_Pendulum(q, p::PendulumParams)
     g = 2.0 / (1.0 - cos(p.theta_L))
-    # Derivative of cos(A*(q-C)) is -A*sin(A*(q-C))
-    # Derivative of (1 - cos(2*theta_L*(q-0.5))) is -(-2*theta_L*sin(2*theta_L*(q-0.5)))
-    # = 2*theta_L*sin(2*theta_L*(q-0.5))
-    # The original code has sin(theta_L * (2.0 * q - 1.0)) which is sin(2.0 * theta_L * (q - 0.5))
-    # So it should be g * 2.0 * p.theta_L * sin(2.0 * p.theta_L * (q-0.5))
-    return g * 2.0 * p.theta_L * sin(2.0 * p.theta_L * (q - 0.5)) # Corrected argument for sin
+    return g * 2.0 * p.theta_L * sin(2.0 * p.theta_L * (q - 0.5))
 end
 
 # Mirrored Free Fall
@@ -86,13 +74,9 @@ end
 # Softened Mirrored Free Fall
 function V_SoftenedMirroredFreeFall(q)
     alpha = 20.0
-    # To ensure V(0.5) = 0, we need a modification if q=0.5 causes tanh(0) in denominator
-    # However, limit q->0.5 of (q-0.5)/tanh(alpha*(q-0.5)) is 1/alpha
-    # So V(0.5) = a / alpha
-    # The function is defined well for q != 0.5
     if q == 0.5
-        a = 4.0 * tanh(0.5 * alpha) # This 'a' is just a scaling factor
-        return a / alpha # Using L'Hopital's rule lim x->0 x/tanh(ax) = 1/a
+        a = 4.0 * tanh(0.5 * alpha)
+        return a / alpha
     end
     a = 4.0 * tanh(0.5 * alpha)
     return a * (q - 0.5) / tanh(alpha * (q - 0.5))
@@ -101,13 +85,11 @@ end
 function dV_SoftenedMirroredFreeFall(q)
     alpha = 20.0
     a = 4.0 * tanh(0.5 * alpha)
-    if q == 0.5 # Derivative at q=0.5 should be 0 for a softened potential minimum
+    if q == 0.5
         return 0.0
     end
     tanh_val = tanh(alpha * (q - 0.5))
     sinh_val = sinh(alpha * (q - 0.5))
-    # Derivative of x/tanh(ax) is (tanh(ax) - ax*sech^2(ax))/tanh^2(ax)
-    # = 1/tanh(ax) - ax / sinh^2(ax)
     return a * (1.0 / tanh_val - alpha * (q - 0.5) / (sinh_val^2))
 end
 
@@ -127,10 +109,8 @@ end
 
 function dV_Sawtooth(q, p::SawtoothParams)
     lambda = p.lambda
-    if q == lambda # Handle the point of discontinuity if necessary for some solvers
-        # For fixed step, it might step over. Taking one side or an average might be options
-        # Or rely on solver to handle it. Here, we stick to the definition.
-        return NaN # Or an average, or one-sided derivative
+    if q == lambda
+        return NaN
     end
     if q < lambda
         return -2.0 / lambda
@@ -140,11 +120,8 @@ function dV_Sawtooth(q, p::SawtoothParams)
 end
 
 # ┌─────────────────────────────────────────────────────────┐
-#  Hamiltonian 시스템 정의
+#  Hamiltonian System Definitions
 # └─────────────────────────────────────────────────────────┘
-
-# dp/dt = -dV/dq
-# dq/dt = p (assuming mass m=1)
 
 # SHO
 function hamiltonian_sho_p(p_momentum, q, params, t) # dp/dt
@@ -197,14 +174,7 @@ end
 # Sawtooth
 function hamiltonian_sawtooth_p(p_momentum, q, params, t) # dp/dt
     val_dV = dV_Sawtooth(q, params)
-    if isnan(val_dV) # A simple way to handle NaN from exact discontinuity
-        # This can happen if q lands exactly on lambda with certain dt choices.
-        # A robust way would be to use event handling for discontinuities
-        # or ensure dV_Sawtooth returns a one-sided derivative or average.
-        # For now, if NaN, try to use previous or next point's logic (crude).
-        # A better fix is to ensure dV_Sawtooth always returns a number.
-        # For SymplecticEuler with fixed dt, it's less likely to hit exactly.
-        # We will assume dV_Sawtooth returns a valid number or the solver handles it.
+    if isnan(val_dV)
     end
     return -val_dV
 end
@@ -213,14 +183,14 @@ function hamiltonian_sawtooth_q(p_momentum, q, params, t) # dq/dt
 end
 
 # ┌─────────────────────────────────────────────────────────┐
-#  Test 데이터 로드 및 참조 데이터 생성 (새로운 부분)
+#  Loading Test Data and Generating Reference Data
 # └─────────────────────────────────────────────────────────┘
 
-# Parquet 파일에서 V 데이터 읽기
+# Read V data from Parquet file
 function load_test_potentials(file_path)
     df = Parquet.read_parquet(file_path)
     
-    # V 필드 추출 및 NSENSORS 크기 청크로 나누기
+    # Extract V field and divide into NSENSORS-sized chunks
     V_values = df.V
     num_potentials = div(length(V_values), NSENSORS)
     
@@ -234,45 +204,44 @@ function load_test_potentials(file_path)
     return potentials
 end
 
-# 주어진 포텐셜에 대해 시뮬레이션 실행
+# Run simulation for given potential
 function run_simulation_kl8(V_values)
-    # 구간과 시간 설정
+    # Set interval and time
     tspan = (0.0, 2.0)
-    dt = 1e-4  # 매우 작은 timestep으로 정확도 보장
+    dt = 1e-4  # Very small timestep to ensure accuracy
     
-    # 균일한 q 좌표 (0.0 ~ 1.0)
+    # Uniform q coordinates (0.0 ~ 1.0)
     q_range = range(0.0, 1.0, length=NSENSORS)
     
-    # 포텐셜의 미분을 계산하기 위한 스플라인 생성
+    # Create spline for potential derivative calculation
     V_spline = Interpolator(q_range, V_values)
     dV_spline(q) = ForwardDiff.derivative(V_spline, q)
     
-    # Hamiltonian 시스템 정의
+    # Define Hamiltonian system
     function hamiltonian_dp(p, q, params, t)
-        q_val = clamp(q, 0.0, 1.0)  # 경계를 벗어나는 경우 대비
-        return -dV_spline(q_val)  # 음의 포텐셜 미분
+        q_val = clamp(q, 0.0, 1.0)  # Handle boundary cases
+        return -dV_spline(q_val)  # Negative potential derivative
     end
     
     function hamiltonian_dq(p, q, params, t)
-        return p  # 질량 m=1
+        return p  # Mass m=1
     end
     
-    # 초기 조건
+    # Initial conditions
     q0 = 0.0
     p0 = 0.0
     
-    # 미분 방정식 문제 정의
+    # Define differential equation problem
     prob = DynamicalODEProblem(hamiltonian_dp, hamiltonian_dq, p0, q0, tspan, nothing)
     
-    # Kahan-Li 8차 심플렉틱 적분기로 해결
-    # DifferentialEquations.jl의 KahanLi8 적분기는 8차 심플렉틱 메소드
+    # Solve with Kahan-Li 8th order symplectic integrator
     sol = solve(prob, KahanLi8(), dt=dt, adaptive=false)
     
-    # 균일한 시간 간격으로 샘플링
+    # Sample at uniform time intervals
     t_uniform = range(tspan[1], tspan[2], length=NSENSORS)
     solution = sol(t_uniform)
     
-    # 결과 추출
+    # Extract results
     p_values = [solution[1, i] for i in 1:NSENSORS]
     q_values = [solution[2, i] for i in 1:NSENSORS]
     
@@ -280,7 +249,7 @@ function run_simulation_kl8(V_values)
 end
 
 # ┌─────────────────────────────────────────────────────────┐
-#  시뮬레이션 실행 및 저장
+#  Run Simulation and Save
 # └─────────────────────────────────────────────────────────┘
 
 function run_simulation(potential_name, p_fn_ham, q_fn_ham, initial_condition, params, tspan)
@@ -289,29 +258,27 @@ function run_simulation(potential_name, p_fn_ham, q_fn_ham, initial_condition, p
     p_initial = initial_condition[2]
 
     # DynamicalODEProblem(dp/dt_func, dq/dt_func, p_initial, q_initial, tspan, params)
-    # p_fn_ham is the function for dp/dt
-    # q_fn_ham is the function for dq/dt
     prob = DynamicalODEProblem(p_fn_ham, q_fn_ham, p_initial, q_initial, tspan, params)
 
     dt = 1e-4 
     sol = solve(prob, KahanLi8(), dt=dt, adaptive=false)
 
-    # 균일한 시간 간격으로 샘플링
+    # Sample at uniform time intervals
     t_uniform = range(tspan[1], tspan[2], length=NSENSORS)
     solution = sol(t_uniform)
 
-    # 결과 추출 - DynamicalODEProblem(dp/dt, dq/dt, p0, q0, ...) 로 설정했으므로,
-    # solution.u 각 요소는 [p, q] 형태를 가집니다.
-    # 따라서 solution[1, i]는 i번째 시간 스텝에서의 p (운동량)
-    # solution[2, i]는 i번째 시간 스텝에서의 q (위치)
+    # Extract results - DynamicalODEProblem(dp/dt, dq/dt, p0, q0, ...) format,
+    # so each element of solution.u has [p, q] format.
+    # solution[1, i] is p (momentum) at time step i
+    # solution[2, i] is q (position) at time step i
     p_values = [solution[1, i] for i in 1:NSENSORS]
     q_values = [solution[2, i] for i in 1:NSENSORS]
 
-    # 포텐셜 값 계산 (q 범위에 따라)
-    q_range_for_V = range(0.0, 1.0, length=NSENSORS) # 원본 코드와 맞춤 (0.0 to 1.0)
+    # Calculate potential values (based on q range)
+    q_range_for_V = range(0.0, 1.0, length=NSENSORS) # Match original code (0.0 to 1.0)
     V_values = zeros(NSENSORS)
 
-    # 포텐셜 별로 V 값 계산
+    # Calculate V values for each potential
     if potential_name == "sho"
         V_values = [V_SHO(q_v) for q_v in q_range_for_V]
     elseif potential_name == "double_well"
@@ -331,7 +298,7 @@ function run_simulation(potential_name, p_fn_ham, q_fn_ham, initial_condition, p
         V_values = [V_Sawtooth(q_v, sawtooth_params_local) for q_v in q_range_for_V]
     end
 
-    # 결과를 DataFrame으로 변환
+    # Convert results to DataFrame
     df = DataFrame(
         V = V_values,      # Potential shape over a fixed q_range [0,1]
         t = collect(t_uniform), # Time points of the simulation
@@ -343,10 +310,10 @@ function run_simulation(potential_name, p_fn_ham, q_fn_ham, initial_condition, p
 end
 
 function run_all_simulations()
-    # 데이터 저장 디렉토리 생성
+    # Create data storage directory
     mkpath("data_true")
 
-    # 모든 포텐셜에 대해 시뮬레이션 실행
+    # Run simulations for all potentials
     # potentials = [ (name, dp/dt_func, dq/dt_func, [q0, p0], params_struct), ... ]
     potentials = [
         ("sho", hamiltonian_sho_p, hamiltonian_sho_q, [0.0, 0.0], nothing),
@@ -360,11 +327,9 @@ function run_all_simulations()
 
     for (name, p_fn, q_fn, init_cond, params_obj) in potentials
         @printf "Running simulation for %s...\n" name
-        # init_cond is [q0, p0]
-        # run_simulation expects (potential_name, p_fn_ham, q_fn_ham, initial_condition, params, tspan)
         df = run_simulation(name, p_fn, q_fn, init_cond, params_obj, (0.0, 2.0))
 
-        # Parquet 파일로 저장
+        # Save as Parquet file
         output_file = "data_true/$(name).parquet"
         Parquet.write_parquet(output_file, df)
         @printf "Saved to %s\n" output_file
@@ -394,7 +359,7 @@ function run_simulation_reference()
         append!(all_p_true, p_values)
     end
 
-    # 결과를 DataFrame으로 변환
+    # Convert results to DataFrame
     df = DataFrame(
         V = all_V,
         t = all_t,
@@ -402,7 +367,7 @@ function run_simulation_reference()
         p_true = all_p_true
     )
 
-    # Parquet 파일로 저장
+    # Save as Parquet file
     output_file = "data_true/test_kl8.parquet"
     @printf "Saving to %s...\n" output_file
     Parquet.write_parquet(output_file, df)
@@ -412,7 +377,7 @@ function run_simulation_reference()
     println("All simulations completed!")
 end
 
-# 모든 시뮬레이션 실행
+# Run all simulations
 run_all_simulations()
-# 참조 시뮬레이션 실행
+# Run reference simulation
 run_simulation_reference()
