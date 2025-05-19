@@ -58,17 +58,7 @@ def load_relevant_data(potential: str):
         torch.tensor(q_gl4, dtype=torch.float32).unsqueeze(0),
         torch.tensor(p_gl4, dtype=torch.float32).unsqueeze(0),
     )
-
-    q_rkf78 = df[f"q_rkf78"].to_numpy()
-    p_rkf78 = df[f"p_rkf78"].to_numpy()
-    ds_rkf78 = TensorDataset(
-        torch.tensor(V, dtype=torch.float32).unsqueeze(0),
-        torch.tensor(t, dtype=torch.float32).unsqueeze(0),
-        torch.tensor(q_rkf78, dtype=torch.float32).unsqueeze(0),
-        torch.tensor(p_rkf78, dtype=torch.float32).unsqueeze(0),
-    )
-
-    return ds, ds_rk4, ds_gl4, ds_rkf78
+    return ds_gl4, ds, ds_rk4  # GL4, Y4, RK4
 
 
 def load_precise_data():
@@ -206,83 +196,6 @@ class TestResults:
                 t_total_vec.append(time.time() - t_start)
         self.t_total_time_vec_rk4 = np.array(t_total_vec)
 
-    def run_precise_test(self):
-        y4_ds, y8_ds = load_precise_data()
-        y4_dl = DataLoader(y4_ds, batch_size=100)
-        y8_dl = DataLoader(y8_ds, batch_size=100)
-        y8_model_loss_q_vec = []
-        y8_model_loss_p_vec = []
-        y8_model_loss_vec = []
-        y8_y4_loss_q_vec = []
-        y8_y4_loss_p_vec = []
-        y8_y4_loss_vec = []
-        precise_V_vec = []
-        precise_model_q_preds = []
-        precise_model_p_preds = []
-        precise_y8_q = []
-        precise_y8_p = []
-        precise_y4_q = []
-        precise_y4_p = []
-
-        self.model.eval()
-        with torch.no_grad():
-            for (V, t, q, p), (_, _, q8, p8) in zip(y4_dl, y8_dl):
-                V, t, q, p = (
-                    V.to(self.device),
-                    t.to(self.device),
-                    q.to(self.device),
-                    p.to(self.device),
-                )
-                q8, p8 = (
-                    q8.to(self.device),
-                    p8.to(self.device),
-                )
-                if not self.variational:
-                    self.reparameterize = False
-                    q_pred, p_pred = self.model(V, t)
-                else:
-                    q_pred, p_pred, _, _ = self.model(V, t)
-                loss_q_vec = F.mse_loss(q_pred, q8, reduction="none")
-                loss_p_vec = F.mse_loss(p_pred, p8, reduction="none")
-                loss_vec = 0.5 * (loss_q_vec + loss_p_vec)
-                loss_q = loss_q_vec.mean(dim=1)
-                loss_p = loss_p_vec.mean(dim=1)
-                loss = loss_vec.mean(dim=1)
-                loss_y4_q = F.mse_loss(q, q8, reduction="none")
-                loss_y4_p = F.mse_loss(p, p8, reduction="none")
-                loss_y4_vec = 0.5 * (loss_y4_q + loss_y4_p)
-                loss_y4_q = loss_y4_q.mean(dim=1)
-                loss_y4_p = loss_y4_p.mean(dim=1)
-                loss_y4 = loss_y4_vec.mean(dim=1)
-                y8_model_loss_q_vec.extend(loss_q.cpu().numpy())
-                y8_model_loss_p_vec.extend(loss_p.cpu().numpy())
-                y8_model_loss_vec.extend(loss.cpu().numpy())
-                y8_y4_loss_q_vec.extend(loss_y4_q.cpu().numpy())
-                y8_y4_loss_p_vec.extend(loss_y4_p.cpu().numpy())
-                y8_y4_loss_vec.extend(loss_y4.cpu().numpy())
-                precise_V_vec.extend(V.cpu().numpy())
-                precise_model_q_preds.extend(q_pred.cpu().numpy())
-                precise_model_p_preds.extend(p_pred.cpu().numpy())
-                precise_y8_q.extend(q8.cpu().numpy())
-                precise_y8_p.extend(p8.cpu().numpy())
-                precise_y4_q.extend(q.cpu().numpy())
-                precise_y4_p.extend(p.cpu().numpy())
-
-        self.y8_model_loss_q_vec = np.array(y8_model_loss_q_vec)
-        self.y8_model_loss_p_vec = np.array(y8_model_loss_p_vec)
-        self.y8_model_loss_vec = np.array(y8_model_loss_vec)
-        self.y8_y4_loss_q_vec = np.array(y8_y4_loss_q_vec)
-        self.y8_y4_loss_p_vec = np.array(y8_y4_loss_p_vec)
-        self.y8_y4_loss_vec = np.array(y8_y4_loss_vec)
-        self.precise_V_vec = np.array(precise_V_vec)
-        self.precise_model_q_preds = np.array(precise_model_q_preds)
-        self.precise_model_p_preds = np.array(precise_model_p_preds)
-        self.precise_y8_q = np.array(precise_y8_q)
-        self.precise_y8_p = np.array(precise_y8_p)
-        self.precise_y4_q = np.array(precise_y4_q)
-        self.precise_y4_p = np.array(precise_y4_p)
-
-
     def print_results(self):
         print(f"Shape: {self.total_loss_vec.shape}")
         print(f"Total Loss: {self.total_loss_vec.mean():.4e}")
@@ -341,121 +254,43 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def precise_hist_loss(self, name: str):
-        losses = self.y8_model_loss_vec
-        df_losses = pl.DataFrame({"loss": losses})
-        df_losses.write_parquet(f"{name}.parquet")
-        loss_min_log = np.log10(losses.min())
-        loss_max_log = np.log10(losses.max())
-        if loss_min_log < 0:
-            loss_min_log *= 1.01
-        else:
-            loss_min_log *= 0.99
-        if loss_max_log < 0:
-            loss_max_log *= 0.99
-        else:
-            loss_max_log *= 1.01
-        with plt.style.context(["science", "nature"]):
-            fig, ax = plt.subplots()
-            logbins = np.logspace(loss_min_log, loss_max_log, 100)
-            ax.hist(losses, bins=logbins)
-            ax.axvline(losses.mean(), color="red", linestyle="--")
-            ax.set_xlabel("Total Loss")
-            ax.set_ylabel("Count")
-            ax.set_xscale("log")
-            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
-            plt.close(fig)
-
-    def precise_hist_loss_y4(self, name: str):
-        losses = self.y8_y4_loss_vec
-        df_losses = pl.DataFrame({"loss": losses})
-        df_losses.write_parquet(f"{name}.parquet")
-        loss_min_log = np.log10(losses.min())
-        loss_max_log = np.log10(losses.max())
-        if loss_min_log < 0:
-            loss_min_log *= 1.01
-        else:
-            loss_min_log *= 0.99
-        if loss_max_log < 0:
-            loss_max_log *= 0.99
-        else:
-            loss_max_log *= 1.01
-        with plt.style.context(["science", "nature"]):
-            fig, ax = plt.subplots()
-            logbins = np.logspace(loss_min_log, loss_max_log, 100)
-            ax.hist(losses, bins=logbins)
-            ax.axvline(losses.mean(), color="red", linestyle="--")
-            ax.set_xlabel("Total Loss")
-            ax.set_ylabel("Count")
-            ax.set_xscale("log")
-            fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
-            plt.close(fig)
-
-    def plot_V(self, name: str, index: int, precise=False):
+    def plot_V(self, name: str, index: int):
         q = np.linspace(0, 1, 100)
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            if precise:
-                ax.plot(q, self.precise_V_vec[index])
-            else:
-                ax.plot(q, self.V_vec[index])
+            ax.plot(q, self.V_vec[index])
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$V(q)$")
             ax.autoscale(tight=True)
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_q(self, name: str, index: int, precise=False):
-        if precise:
-            t = np.linspace(0, 2, len(self.precise_y8_q[index]))
-            loss_q = self.y8_model_loss_q_vec[index]
-        else:
-            t = np.linspace(0, 2, len(self.q_preds[index]))
-            loss_q = self.total_loss_q_vec[index]
+    def plot_q(self, name: str, index: int):
+        t = np.linspace(0, 2, len(self.q_preds[index]))
+        loss_q = self.total_loss_q_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            if precise:
-                ax.plot(
-                    t,
-                    self.precise_y8_q[index],
-                    color="gray",
-                    label=r"$q_\text{Y8}$",
-                    alpha=0.5,
-                    linewidth=1.75,
-                    zorder=0,
-                )
-                ax.scatter(
-                    t,
-                    self.precise_model_q_preds[index],
-                    color=colors,
-                    marker=".",
-                    s=9,
-                    label=r"$\hat{q}$",
-                    zorder=1,
-                    edgecolors="none",
-                )
-            else:
-                ax.plot(
-                    t,
-                    self.q_targets[index],
-                    color="gray",
-                    label=r"$q$",
-                    alpha=0.5,
-                    linewidth=1.75,
-                    zorder=0,
-                )
-                ax.scatter(
-                    t,
-                    self.q_preds[index],
-                    color=colors,
-                    marker=".",
-                    s=9,
-                    label=r"$\hat{q}$",
-                    zorder=1,
-                    edgecolors="none",
-                )
+            ax.plot(
+                t,
+                self.q_targets[index],
+                color="gray",
+                label=r"$q$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                t,
+                self.q_preds[index],
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$\hat{q}$",
+                zorder=1,
+                edgecolors="none",
+            )
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
@@ -466,57 +301,32 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_p(self, name: str, index: int, precise=False):
-        if precise:
-            t = np.linspace(0, 2, len(self.precise_y8_p[index]))
-            loss_p = self.y8_model_loss_p_vec[index]
-        else:
-            t = np.linspace(0, 2, len(self.p_preds[index]))
-            loss_p = self.total_loss_p_vec[index]
+    def plot_p(self, name: str, index: int):
+        t = np.linspace(0, 2, len(self.p_preds[index]))
+        loss_p = self.total_loss_p_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            if precise:
-                ax.plot(
-                    t,
-                    self.precise_y8_p[index],
-                    color="gray",
-                    label=r"$p_\text{Y8}$",
-                    alpha=0.5,
-                    linewidth=1.75,
-                    zorder=0,
-                )
-                ax.scatter(
-                    t,
-                    self.precise_model_p_preds[index],
-                    color=colors,
-                    marker=".",
-                    s=9,
-                    label=r"$\hat{p}$",
-                    zorder=1,
-                    edgecolors="none",
-                )
-            else:
-                ax.plot(
-                    t,
-                    self.p_targets[index],
-                    color="gray",
-                    label=r"$p$",
-                    alpha=0.5,
-                    linewidth=1.75,
-                    zorder=0,
-                )
-                ax.scatter(
-                    t,
-                    self.p_preds[index],
-                    color=colors,
-                    marker=".",
-                    s=9,
-                    label=r"$\hat{p}$",
-                    zorder=1,
-                    edgecolors="none",
-                )
+            ax.plot(
+                t,
+                self.p_targets[index],
+                color="gray",
+                label=r"$p$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                t,
+                self.p_preds[index],
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$\hat{p}$",
+                zorder=1,
+                edgecolors="none",
+            )
             ax.set_xlabel(r"$t$")
             ax.set_ylabel(r"$p(t)$")
             ax.autoscale(tight=True)
@@ -527,57 +337,32 @@ class TestResults:
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
-    def plot_phase(self, name: str, index: int, precise=False):
-        if precise:
-            t = np.linspace(0, 2, len(self.precise_y8_q[index]))
-            loss = self.y8_model_loss_vec[index]
-        else:
-            t = np.linspace(0, 2, len(self.p_preds[index]))
-            loss = self.total_loss_vec[index]
+    def plot_phase(self, name: str, index: int):
+        t = np.linspace(0, 2, len(self.p_preds[index]))
+        loss = self.total_loss_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            if precise:
-                ax.plot(
-                    self.precise_y8_q[index],
-                    self.precise_y8_p[index],
-                    color="gray",
-                    label=r"$(q_\text{Y8},p_\text{Y8})$",
-                    alpha=0.5,
-                    linewidth=1.75,
-                    zorder=0,
-                )
-                ax.scatter(
-                    self.precise_model_q_preds[index],
-                    self.precise_model_p_preds[index],
-                    color=colors,
-                    marker=".",
-                    s=9,
-                    label=r"$(\hat{q}, \hat{p})$",
-                    zorder=1,
-                    edgecolors="none",
-                )
-            else:
-                ax.plot(
-                    self.q_targets[index],
-                    self.p_targets[index],
-                    color="gray",
-                    label=r"$(q,p)$",
-                    alpha=0.5,
-                    linewidth=1.75,
-                    zorder=0,
-                )
-                ax.scatter(
-                    self.q_preds[index],
-                    self.p_preds[index],
-                    color=colors,
-                    marker=".",
-                    s=9,
-                    label=r"$(\hat{q}, \hat{p})$",
-                    zorder=1,
-                    edgecolors="none",
-                )
+            ax.plot(
+                self.q_targets[index],
+                self.p_targets[index],
+                color="gray",
+                label=r"$(q,p)$",
+                alpha=0.5,
+                linewidth=1.75,
+                zorder=0,
+            )
+            ax.scatter(
+                self.q_preds[index],
+                self.p_preds[index],
+                color=colors,
+                marker=".",
+                s=9,
+                label=r"$(\hat{q}, \hat{p})$",
+                zorder=1,
+                edgecolors="none",
+            )
             ax.set_xlabel(r"$q$")
             ax.set_ylabel(r"$p$")
             ax.autoscale(tight=True)
@@ -726,285 +511,347 @@ def main():
         test_results.plot_phase(f"{fig_dir}/{worst_idx:02}_3_phase_plot", worst_idx)
     elif test_option == "physical":
         potentials = {
-            "sho": "SHO", 
-            "double_well": "DoubleWell", 
-            "morse": "Morse", 
-            "pendulum": "Pendulum", 
-            "mff": "MFF", 
+            "sho": "SHO",
+            "double_well": "DoubleWell",
+            "morse": "Morse",
+            "pendulum": "Pendulum",
+            "mff": "MFF",
             "smff": "SMFF",
             "sawtooth": "Sawtooth",
         }
         results = [load_relevant_data(name) for name in potentials.keys()]
-        ds_tests, ds_rk4s, ds_gl4s, ds_rkf78s = zip(*results)
+        ds_tests, ds_y4s, ds_rk4s = zip(*results)
         tests_name = list(potentials.values())
-        
+
         for i in range(len(ds_tests)):
             print()
             print(f"Test {tests_name[i]}:")
             ds_test = ds_tests[i]
+            ds_y4 = ds_y4s[i]
             ds_rk4 = ds_rk4s[i]
-            ds_gl4 = ds_gl4s[i]
-            ds_rkf78 = ds_rkf78s[i]
             test_name = tests_name[i]
-            
+
             # 데이터로더 생성
             dl_test = DataLoader(ds_test, batch_size=1)
+            dl_y4 = DataLoader(ds_y4, batch_size=1)
             dl_rk4 = DataLoader(ds_rk4, batch_size=1)
-            dl_gl4 = DataLoader(ds_gl4, batch_size=1)
-            dl_rkf78 = DataLoader(ds_rkf78, batch_size=1)
-            
+
             # 테스트 결과 계산
             test_results = TestResults(model, dl_test, device, variational)
             test_results.print_results()
-            
+
             # 결과 저장 디렉토리 생성
             fig_dir = f"figs/{project}/{test_name}"
             if not os.path.exists(fig_dir):
                 os.makedirs(fig_dir)
-            
+
             # 기본 플롯 생성
             test_results.plot_V(f"{fig_dir}/{i:02}_{test_name}_0_V_plot", 0)
             test_results.plot_q(f"{fig_dir}/{i:02}_{test_name}_1_q_plot", 0)
             test_results.plot_p(f"{fig_dir}/{i:02}_{test_name}_2_p_plot", 0)
             test_results.plot_phase(f"{fig_dir}/{i:02}_{test_name}_3_phase_plot", 0)
-            
+
             # 모든 방법에 대한 비교 그래프 생성
-            for batch_data in zip(dl_test, dl_rk4, dl_gl4, dl_rkf78):
+            for batch_data in zip(dl_test, dl_y4, dl_rk4):
                 # 데이터 추출 및 형태 조정
-                (_, _, q_test, p_test) = batch_data[0]
-                (_, _, q_rk4, p_rk4) = batch_data[1]
-                (_, _, q_gl4, p_gl4) = batch_data[2]  # GL4를 True로 취급
-                (_, _, q_rkf78, p_rkf78) = batch_data[3]
-                
+                (_, _, q_gl4, p_gl4) = batch_data[0]
+                (_, _, q_y4, p_y4) = batch_data[1]
+                (_, _, q_rk4, p_rk4) = batch_data[2]
+
                 # NumPy 배열로 변환
-                q_test = q_test.numpy().reshape(-1)
-                p_test = p_test.numpy().reshape(-1)
-                q_rk4 = q_rk4.numpy().reshape(-1)
-                p_rk4 = p_rk4.numpy().reshape(-1)
                 q_gl4 = q_gl4.numpy().reshape(-1)
                 p_gl4 = p_gl4.numpy().reshape(-1)
-                q_rkf78 = q_rkf78.numpy().reshape(-1)
-                p_rkf78 = p_rkf78.numpy().reshape(-1)
-                
+                q_y4 = q_y4.numpy().reshape(-1)
+                p_y4 = p_y4.numpy().reshape(-1)
+                q_rk4 = q_rk4.numpy().reshape(-1)
+                p_rk4 = p_rk4.numpy().reshape(-1)
+                q_test = test_results.q_preds
+                p_test = test_results.p_preds
+
                 # 손실 계산
                 loss_q_test = np.mean(np.square(q_gl4 - q_test))
                 loss_p_test = np.mean(np.square(p_gl4 - p_test))
                 loss_test = 0.5 * (loss_q_test + loss_p_test)
-                
+
+                loss_q_y4 = np.mean(np.square(q_gl4 - q_y4))
+                loss_p_y4 = np.mean(np.square(p_gl4 - p_y4))
+                loss_y4 = 0.5 * (loss_q_y4 + loss_p_y4)
+
                 loss_q_rk4 = np.mean(np.square(q_gl4 - q_rk4))
                 loss_p_rk4 = np.mean(np.square(p_gl4 - p_rk4))
                 loss_rk4 = 0.5 * (loss_q_rk4 + loss_p_rk4)
-                
-                loss_q_rkf78 = np.mean(np.square(q_gl4 - q_rkf78))
-                loss_p_rkf78 = np.mean(np.square(p_gl4 - p_rkf78))
-                loss_rkf78 = 0.5 * (loss_q_rkf78 + loss_p_rkf78)
-                
+
                 # 손실 출력
                 print(f"Test Loss: {loss_test:.4e}")
+                print(f"Y4 Loss: {loss_y4:.4e}")
                 print(f"RK4 Loss: {loss_rk4:.4e}")
-                print(f"RKF78 Loss: {loss_rkf78:.4e}")
-                
+
                 # 시간 배열 생성
                 t = np.linspace(0, 2, len(q_gl4))
                 cmap = plt.get_cmap("gist_heat")
                 colors = cmap(np.linspace(0, 0.75, len(t)))
-                
+
                 # q 그래프 생성
                 with plt.style.context(["science", "nature"]):
                     fig, ax = plt.subplots()
-                    
+
                     # GL4를 True로 취급 (회색 굵은 선)
                     ax.plot(
-                        t, q_gl4, color="gray", label=r"$q$ (GL4)", 
-                        alpha=0.7, linewidth=2.5, zorder=0,
+                        t,
+                        q_gl4,
+                        color="gray",
+                        label=r"$q$ (GL4)",
+                        alpha=0.7,
+                        linewidth=2.5,
+                        zorder=0,
                     )
-                    
+
                     # 나머지 데이터셋 (실선, 점선, 점실선)
                     ax.plot(
-                        t, q_test, color="red", linestyle="-", 
-                        label=r"$q$ (Test)", alpha=0.8, linewidth=1.2, zorder=1,
+                        t,
+                        q_y4,
+                        color="blue",
+                        linestyle="-",
+                        label=r"$q$ (Y4)",
+                        alpha=0.8,
+                        linewidth=1.2,
+                        zorder=1,
+                        alpha=0.6,
                     )
                     ax.plot(
-                        t, q_rk4, color="blue", linestyle="--", 
-                        label=r"$q$ (RK4)", alpha=0.8, linewidth=1.2, zorder=1,
+                        t,
+                        q_rk4,
+                        color="green",
+                        linestyle="--",
+                        label=r"$q$ (RK4)",
+                        alpha=0.8,
+                        linewidth=1.2,
+                        zorder=1,
+                        alpha=0.6,
                     )
-                    ax.plot(
-                        t, q_rkf78, color="green", linestyle="-.", 
-                        label=r"$q$ (RKF78)", alpha=0.8, linewidth=1.2, zorder=1,
-                    )
-                    
+
                     # 예측값은 점으로 표시
                     ax.scatter(
-                        t, q_test, color="red", marker=".", s=9, 
-                        label=r"$\hat{q}$ (Test)", zorder=2, edgecolors="none", alpha=0.6,
+                        t,
+                        q_test,
+                        color=colors,
+                        marker=".",
+                        s=9,
+                        label=r"$\hat{q}$",
+                        zorder=2,
+                        edgecolors="none",
                     )
-                    ax.scatter(
-                        t, q_rk4, color="blue", marker=".", s=9, 
-                        label=r"$\hat{q}$ (RK4)", zorder=2, edgecolors="none", alpha=0.6,
-                    )
-                    ax.scatter(
-                        t, q_rkf78, color="green", marker=".", s=9, 
-                        label=r"$\hat{q}$ (RKF78)", zorder=2, edgecolors="none", alpha=0.6,
-                    )
-                    
+
                     ax.set_xlabel(r"$t$")
                     ax.set_ylabel(r"$q(t)$")
                     ax.autoscale(tight=True)
-                    
+
                     # 손실 표시
                     ax.text(
-                        0.05, 0.9, f"Test Loss: {loss_q_test:.4e}",
-                        transform=ax.transAxes, fontsize=5,
+                        0.05,
+                        0.9,
+                        f"Test Loss: {loss_q_test:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
                     )
                     ax.text(
-                        0.05, 0.85, f"RK4 Loss: {loss_q_rk4:.4e}",
-                        transform=ax.transAxes, fontsize=5,
+                        0.05,
+                        0.85,
+                        f"Y4 Loss: {loss_q_y4:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
                     )
                     ax.text(
-                        0.05, 0.8, f"RKF78 Loss: {loss_q_rkf78:.4e}",
-                        transform=ax.transAxes, fontsize=5,
+                        0.05,
+                        0.8,
+                        f"RK4 Loss: {loss_q_rk4:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
                     )
-                    
+
                     # 범례는 선과 점을 합쳐서 표시하지 않도록 핸들 조정
                     handles, labels = ax.get_legend_handles_labels()
                     by_label = dict(zip(labels, handles))
                     ax.legend(by_label.values(), by_label.keys())
-                    
+
                     fig.savefig(
                         f"{fig_dir}/{i:02}_{test_name}_compare_q_plot.png",
-                        dpi=600, bbox_inches="tight",
+                        dpi=600,
+                        bbox_inches="tight",
                     )
                     plt.close(fig)
-                    
+
                     # p 그래프 생성
                     fig, ax = plt.subplots()
-                    
+
                     # GL4를 True로 취급 (회색 굵은 선)
                     ax.plot(
-                        t, p_gl4, color="gray", label=r"$p$ (GL4)", 
-                        alpha=0.7, linewidth=2.5, zorder=0,
+                        t,
+                        p_gl4,
+                        color="gray",
+                        label=r"$p$ (GL4)",
+                        alpha=0.7,
+                        linewidth=2.5,
+                        zorder=0,
                     )
-                    
+
                     # 나머지 데이터셋 (실선, 점선, 점실선)
                     ax.plot(
-                        t, p_test, color="red", linestyle="-", 
-                        label=r"$p$ (Test)", alpha=0.8, linewidth=1.2, zorder=1,
+                        t,
+                        p_y4,
+                        color="blue",
+                        linestyle="-",
+                        label=r"$p$ (Y4)",
+                        alpha=0.8,
+                        linewidth=1.2,
+                        zorder=1,
                     )
                     ax.plot(
-                        t, p_rk4, color="blue", linestyle="--", 
-                        label=r"$p$ (RK4)", alpha=0.8, linewidth=1.2, zorder=1,
+                        t,
+                        p_rk4,
+                        color="green",
+                        linestyle="--",
+                        label=r"$p$ (RK4)",
+                        alpha=0.8,
+                        linewidth=1.2,
+                        zorder=1,
                     )
-                    ax.plot(
-                        t, p_rkf78, color="green", linestyle="-.", 
-                        label=r"$p$ (RKF78)", alpha=0.8, linewidth=1.2, zorder=1,
-                    )
-                    
+
                     # 예측값은 점으로 표시
                     ax.scatter(
-                        t, p_test, color="red", marker=".", s=9, 
-                        label=r"$\hat{p}$ (Test)", zorder=2, edgecolors="none", alpha=0.6,
+                        t,
+                        p_test,
+                        color=colors,
+                        marker=".",
+                        s=9,
+                        label=r"$\hat{p}$",
+                        zorder=2,
+                        edgecolors="none",
                     )
-                    ax.scatter(
-                        t, p_rk4, color="blue", marker=".", s=9, 
-                        label=r"$\hat{p}$ (RK4)", zorder=2, edgecolors="none", alpha=0.6,
-                    )
-                    ax.scatter(
-                        t, p_rkf78, color="green", marker=".", s=9, 
-                        label=r"$\hat{p}$ (RKF78)", zorder=2, edgecolors="none", alpha=0.6,
-                    )
-                    
+
                     ax.set_xlabel(r"$t$")
                     ax.set_ylabel(r"$p(t)$")
                     ax.autoscale(tight=True)
-                    
+
                     # 손실 표시
                     ax.text(
-                        0.05, 0.1, f"Test Loss: {loss_p_test:.4e}",
-                        transform=ax.transAxes, fontsize=5,
+                        0.05,
+                        0.1,
+                        f"Test Loss: {loss_p_test:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
                     )
                     ax.text(
-                        0.05, 0.15, f"RK4 Loss: {loss_p_rk4:.4e}",
-                        transform=ax.transAxes, fontsize=5,
+                        0.05,
+                        0.05,
+                        f"Y4 Loss: {loss_p_y4:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
                     )
                     ax.text(
-                        0.05, 0.2, f"RKF78 Loss: {loss_p_rkf78:.4e}",
-                        transform=ax.transAxes, fontsize=5,
+                        0.05,
+                        0.0,
+                        f"RK4 Loss: {loss_p_rk4:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
                     )
-                    
+
                     # 범례는 선과 점을 합쳐서 표시하지 않도록 핸들 조정
                     handles, labels = ax.get_legend_handles_labels()
                     by_label = dict(zip(labels, handles))
                     ax.legend(by_label.values(), by_label.keys())
-                    
+
                     fig.savefig(
                         f"{fig_dir}/{i:02}_{test_name}_compare_p_plot.png",
-                        dpi=600, bbox_inches="tight",
+                        dpi=600,
+                        bbox_inches="tight",
                     )
                     plt.close(fig)
-                    
+
                     # 위상 그래프 생성
                     fig, ax = plt.subplots()
-                    
+
                     # GL4를 True로 취급 (회색 굵은 선)
                     ax.plot(
-                        q_gl4, p_gl4, color="gray", label=r"$(q,p)$ (GL4)", 
-                        alpha=0.7, linewidth=2.5, zorder=0,
+                        q_gl4,
+                        p_gl4,
+                        color="gray",
+                        label=r"$(q,p)$ (GL4)",
+                        alpha=0.7,
+                        linewidth=2.5,
+                        zorder=0,
                     )
-                    
+
                     # 나머지 데이터셋 (실선, 점선, 점실선)
                     ax.plot(
-                        q_test, p_test, color="red", linestyle="-", 
-                        label=r"$(q,p)$ (Test)", alpha=0.8, linewidth=1.2, zorder=1,
+                        q_y4,
+                        p_y4,
+                        color="blue",
+                        linestyle="-",
+                        label=r"$(q,p)$ (Y4)",
+                        alpha=0.8,
+                        linewidth=1.2,
+                        zorder=1,
                     )
                     ax.plot(
-                        q_rk4, p_rk4, color="blue", linestyle="--", 
-                        label=r"$(q,p)$ (RK4)", alpha=0.8, linewidth=1.2, zorder=1,
+                        q_rk4,
+                        p_rk4,
+                        color="green",
+                        linestyle="--",
+                        label=r"$(q,p)$ (RK4)",
+                        alpha=0.8,
+                        linewidth=1.2,
+                        zorder=1,
                     )
-                    ax.plot(
-                        q_rkf78, p_rkf78, color="green", linestyle="-.", 
-                        label=r"$(q,p)$ (RKF78)", alpha=0.8, linewidth=1.2, zorder=1,
-                    )
-                    
+
                     # 예측값은 점으로 표시
                     ax.scatter(
-                        q_test, p_test, color="red", marker=".", s=9, 
-                        label=r"$(\hat{q},\hat{p})$ (Test)", zorder=2, edgecolors="none", alpha=0.6,
+                        q_test,
+                        p_test,
+                        color=colors,
+                        marker=".",
+                        s=9,
+                        label=r"$(\hat{q}, \hat{p})$",
+                        zorder=2,
+                        edgecolors="none",
                     )
-                    ax.scatter(
-                        q_rk4, p_rk4, color="blue", marker=".", s=9, 
-                        label=r"$(\hat{q},\hat{p})$ (RK4)", zorder=2, edgecolors="none", alpha=0.6,
-                    )
-                    ax.scatter(
-                        q_rkf78, p_rkf78, color="green", marker=".", s=9, 
-                        label=r"$(\hat{q},\hat{p})$ (RKF78)", zorder=2, edgecolors="none", alpha=0.6,
-                    )
-                    
+
                     ax.set_xlabel(r"$q$")
                     ax.set_ylabel(r"$p$")
                     ax.autoscale(tight=True)
-                    
+
                     # 손실 표시
                     ax.text(
-                        0.05, 0.5, f"Test Loss: {loss_test:.4e}",
-                        transform=ax.transAxes, fontsize=5,
+                        0.05,
+                        0.5,
+                        f"Test Loss: {loss_test:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
                     )
                     ax.text(
-                        0.05, 0.45, f"RK4 Loss: {loss_rk4:.4e}",
-                        transform=ax.transAxes, fontsize=5,
+                        0.05,
+                        0.45,
+                        f"Y4 Loss: {loss_y4:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
                     )
                     ax.text(
-                        0.05, 0.4, f"RKF78 Loss: {loss_rkf78:.4e}",
-                        transform=ax.transAxes, fontsize=5,
+                        0.05,
+                        0.4,
+                        f"RK4 Loss: {loss_rk4:.4e}",
+                        transform=ax.transAxes,
+                        fontsize=5,
                     )
-                    
+
                     # 범례는 선과 점을 합쳐서 표시하지 않도록 핸들 조정
                     handles, labels = ax.get_legend_handles_labels()
                     by_label = dict(zip(labels, handles))
                     ax.legend(by_label.values(), by_label.keys())
-                    
+
                     fig.savefig(
                         f"{fig_dir}/{i:02}_{test_name}_compare_phase_plot.png",
-                        dpi=600, bbox_inches="tight",
+                        dpi=600,
+                        bbox_inches="tight",
                     )
                     plt.close(fig)
     elif test_option == "precise":
@@ -1065,10 +912,18 @@ def main():
                 ax.set_ylabel(r"$q(t)$")
                 ax.autoscale(tight=True)
                 ax.text(
-                    0.05, 0.9, f"Loss: {losses_q[index]:.4e}", transform=ax.transAxes, fontsize=5
+                    0.05,
+                    0.9,
+                    f"Loss: {losses_q[index]:.4e}",
+                    transform=ax.transAxes,
+                    fontsize=5,
                 )
                 ax.legend()
-                fig.savefig(f"{fig_dir}/{index:02}_1_Y4_q_plot.png", dpi=600, bbox_inches="tight")
+                fig.savefig(
+                    f"{fig_dir}/{index:02}_1_Y4_q_plot.png",
+                    dpi=600,
+                    bbox_inches="tight",
+                )
                 plt.close(fig)
             # Plot Y4 results (p)
             with plt.style.context(["science", "nature"]):
@@ -1096,10 +951,18 @@ def main():
                 ax.set_ylabel(r"$p(t)$")
                 ax.autoscale(tight=True)
                 ax.text(
-                    0.05, 0.1, f"Loss: {losses_p[index]:.4e}", transform=ax.transAxes, fontsize=5
+                    0.05,
+                    0.1,
+                    f"Loss: {losses_p[index]:.4e}",
+                    transform=ax.transAxes,
+                    fontsize=5,
                 )
                 ax.legend()
-                fig.savefig(f"{fig_dir}/{index:02}_2_Y4_p_plot.png", dpi=600, bbox_inches="tight")
+                fig.savefig(
+                    f"{fig_dir}/{index:02}_2_Y4_p_plot.png",
+                    dpi=600,
+                    bbox_inches="tight",
+                )
                 plt.close(fig)
             # Plot Y4 results (phase)
             with plt.style.context(["science", "nature"]):
@@ -1127,10 +990,18 @@ def main():
                 ax.set_ylabel(r"$p$")
                 ax.autoscale(tight=True)
                 ax.text(
-                    0.05, 0.5, f"Loss: {losses[index]:.4e}", transform=ax.transAxes, fontsize=5
+                    0.05,
+                    0.5,
+                    f"Loss: {losses[index]:.4e}",
+                    transform=ax.transAxes,
+                    fontsize=5,
                 )
                 ax.legend()
-                fig.savefig(f"{fig_dir}/{index:02}_3_Y4_phase_plot.png", dpi=600, bbox_inches="tight")
+                fig.savefig(
+                    f"{fig_dir}/{index:02}_3_Y4_phase_plot.png",
+                    dpi=600,
+                    bbox_inches="tight",
+                )
                 plt.close(fig)
 
         # Plot the worst result
@@ -1182,10 +1053,18 @@ def main():
             ax.set_ylabel(r"$q(t)$")
             ax.autoscale(tight=True)
             ax.text(
-                0.05, 0.9, f"Loss: {losses_q[worst_idx]:.4e}", transform=ax.transAxes, fontsize=5
+                0.05,
+                0.9,
+                f"Loss: {losses_q[worst_idx]:.4e}",
+                transform=ax.transAxes,
+                fontsize=5,
             )
             ax.legend()
-            fig.savefig(f"{fig_dir}/{worst_idx:02}_1_Y4_q_plot.png", dpi=600, bbox_inches="tight")
+            fig.savefig(
+                f"{fig_dir}/{worst_idx:02}_1_Y4_q_plot.png",
+                dpi=600,
+                bbox_inches="tight",
+            )
             plt.close(fig)
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
@@ -1212,10 +1091,18 @@ def main():
             ax.set_ylabel(r"$p(t)$")
             ax.autoscale(tight=True)
             ax.text(
-                0.05, 0.1, f"Loss: {losses_p[worst_idx]:.4e}", transform=ax.transAxes, fontsize=5
-                )
+                0.05,
+                0.1,
+                f"Loss: {losses_p[worst_idx]:.4e}",
+                transform=ax.transAxes,
+                fontsize=5,
+            )
             ax.legend()
-            fig.savefig(f"{fig_dir}/{worst_idx:02}_2_Y4_p_plot.png", dpi=600, bbox_inches="tight")
+            fig.savefig(
+                f"{fig_dir}/{worst_idx:02}_2_Y4_p_plot.png",
+                dpi=600,
+                bbox_inches="tight",
+            )
             plt.close(fig)
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
@@ -1242,11 +1129,20 @@ def main():
             ax.set_ylabel(r"$p$")
             ax.autoscale(tight=True)
             ax.text(
-                0.05, 0.5, f"Loss: {losses[worst_idx]:.4e}", transform=ax.transAxes, fontsize=5
+                0.05,
+                0.5,
+                f"Loss: {losses[worst_idx]:.4e}",
+                transform=ax.transAxes,
+                fontsize=5,
             )
             ax.legend()
-            fig.savefig(f"{fig_dir}/{worst_idx:02}_3_Y4_phase_plot.png", dpi=600, bbox_inches="tight")
+            fig.savefig(
+                f"{fig_dir}/{worst_idx:02}_3_Y4_phase_plot.png",
+                dpi=600,
+                bbox_inches="tight",
+            )
             plt.close(fig)
+
 
 if __name__ == "__main__":
     console = Console()
