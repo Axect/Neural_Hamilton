@@ -50,7 +50,25 @@ def load_relevant_data(potential: str):
         torch.tensor(p_rk4, dtype=torch.float32).unsqueeze(0),
     )
 
-    return ds, ds_rk4
+    q_gl4 = df[f"q_gl4"].to_numpy()
+    p_gl4 = df[f"p_gl4"].to_numpy()
+    ds_gl4 = TensorDataset(
+        torch.tensor(V, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(t, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(q_gl4, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(p_gl4, dtype=torch.float32).unsqueeze(0),
+    )
+
+    q_rkf78 = df[f"q_rkf78"].to_numpy()
+    p_rkf78 = df[f"p_rkf78"].to_numpy()
+    ds_rkf78 = TensorDataset(
+        torch.tensor(V, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(t, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(q_rkf78, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(p_rkf78, dtype=torch.float32).unsqueeze(0),
+    )
+
+    return ds, ds_rk4, ds_gl4, ds_rkf78
 
 
 def load_precise_data():
@@ -717,161 +735,276 @@ def main():
             "sawtooth": "Sawtooth",
         }
         results = [load_relevant_data(name) for name in potentials.keys()]
-        ds_tests, ds_rk4s = zip(*results)
+        ds_tests, ds_rk4s, ds_gl4s, ds_rkf78s = zip(*results)
         tests_name = list(potentials.values())
-
+        
         for i in range(len(ds_tests)):
             print()
             print(f"Test {tests_name[i]}:")
             ds_test = ds_tests[i]
             ds_rk4 = ds_rk4s[i]
+            ds_gl4 = ds_gl4s[i]
+            ds_rkf78 = ds_rkf78s[i]
             test_name = tests_name[i]
-
+            
+            # 데이터로더 생성
             dl_test = DataLoader(ds_test, batch_size=1)
             dl_rk4 = DataLoader(ds_rk4, batch_size=1)
-
+            dl_gl4 = DataLoader(ds_gl4, batch_size=1)
+            dl_rkf78 = DataLoader(ds_rkf78, batch_size=1)
+            
+            # 테스트 결과 계산
             test_results = TestResults(model, dl_test, device, variational)
             test_results.print_results()
-
+            
+            # 결과 저장 디렉토리 생성
             fig_dir = f"figs/{project}/{test_name}"
             if not os.path.exists(fig_dir):
                 os.makedirs(fig_dir)
-
-            test_results.plot_V(
-                f"{fig_dir}/{i:02}_{test_name}_0_V_plot", 0
-            )
+            
+            # 기본 플롯 생성
+            test_results.plot_V(f"{fig_dir}/{i:02}_{test_name}_0_V_plot", 0)
             test_results.plot_q(f"{fig_dir}/{i:02}_{test_name}_1_q_plot", 0)
             test_results.plot_p(f"{fig_dir}/{i:02}_{test_name}_2_p_plot", 0)
-            test_results.plot_phase(
-                f"{fig_dir}/{i:02}_{test_name}_3_phase_plot", 0
-            )
-
-            # RK4
-            for (_, _, q, p), (_, _, q_hat, p_hat) in zip(dl_test, dl_rk4):
-                q = q.numpy().reshape(-1)
-                p = p.numpy().reshape(-1)
-                q_hat = q_hat.numpy().reshape(-1)
-                p_hat = p_hat.numpy().reshape(-1)
-                loss_q = np.mean(np.square(q - q_hat))
-                loss_p = np.mean(np.square(p - p_hat))
-                loss = 0.5 * (loss_q + loss_p)
-                print(f"RK4 Loss: {loss:.4e}")
-
-                t = np.linspace(0, 2, len(q))
+            test_results.plot_phase(f"{fig_dir}/{i:02}_{test_name}_3_phase_plot", 0)
+            
+            # 모든 방법에 대한 비교 그래프 생성
+            for batch_data in zip(dl_test, dl_rk4, dl_gl4, dl_rkf78):
+                # 데이터 추출 및 형태 조정
+                (_, _, q_test, p_test) = batch_data[0]
+                (_, _, q_rk4, p_rk4) = batch_data[1]
+                (_, _, q_gl4, p_gl4) = batch_data[2]  # GL4를 True로 취급
+                (_, _, q_rkf78, p_rkf78) = batch_data[3]
+                
+                # NumPy 배열로 변환
+                q_test = q_test.numpy().reshape(-1)
+                p_test = p_test.numpy().reshape(-1)
+                q_rk4 = q_rk4.numpy().reshape(-1)
+                p_rk4 = p_rk4.numpy().reshape(-1)
+                q_gl4 = q_gl4.numpy().reshape(-1)
+                p_gl4 = p_gl4.numpy().reshape(-1)
+                q_rkf78 = q_rkf78.numpy().reshape(-1)
+                p_rkf78 = p_rkf78.numpy().reshape(-1)
+                
+                # 손실 계산
+                loss_q_test = np.mean(np.square(q_gl4 - q_test))
+                loss_p_test = np.mean(np.square(p_gl4 - p_test))
+                loss_test = 0.5 * (loss_q_test + loss_p_test)
+                
+                loss_q_rk4 = np.mean(np.square(q_gl4 - q_rk4))
+                loss_p_rk4 = np.mean(np.square(p_gl4 - p_rk4))
+                loss_rk4 = 0.5 * (loss_q_rk4 + loss_p_rk4)
+                
+                loss_q_rkf78 = np.mean(np.square(q_gl4 - q_rkf78))
+                loss_p_rkf78 = np.mean(np.square(p_gl4 - p_rkf78))
+                loss_rkf78 = 0.5 * (loss_q_rkf78 + loss_p_rkf78)
+                
+                # 손실 출력
+                print(f"Test Loss: {loss_test:.4e}")
+                print(f"RK4 Loss: {loss_rk4:.4e}")
+                print(f"RKF78 Loss: {loss_rkf78:.4e}")
+                
+                # 시간 배열 생성
+                t = np.linspace(0, 2, len(q_gl4))
                 cmap = plt.get_cmap("gist_heat")
                 colors = cmap(np.linspace(0, 0.75, len(t)))
+                
+                # q 그래프 생성
                 with plt.style.context(["science", "nature"]):
                     fig, ax = plt.subplots()
+                    
+                    # GL4를 True로 취급 (회색 굵은 선)
                     ax.plot(
-                        t,
-                        q,
-                        color="gray",
-                        label=r"$q$",
-                        alpha=0.5,
-                        linewidth=1.75,
-                        zorder=0,
+                        t, q_gl4, color="gray", label=r"$q$ (GL4)", 
+                        alpha=0.7, linewidth=2.5, zorder=0,
+                    )
+                    
+                    # 나머지 데이터셋 (실선, 점선, 점실선)
+                    ax.plot(
+                        t, q_test, color="red", linestyle="-", 
+                        label=r"$q$ (Test)", alpha=0.8, linewidth=1.2, zorder=1,
+                    )
+                    ax.plot(
+                        t, q_rk4, color="blue", linestyle="--", 
+                        label=r"$q$ (RK4)", alpha=0.8, linewidth=1.2, zorder=1,
+                    )
+                    ax.plot(
+                        t, q_rkf78, color="green", linestyle="-.", 
+                        label=r"$q$ (RKF78)", alpha=0.8, linewidth=1.2, zorder=1,
+                    )
+                    
+                    # 예측값은 점으로 표시
+                    ax.scatter(
+                        t, q_test, color="red", marker=".", s=9, 
+                        label=r"$\hat{q}$ (Test)", zorder=2, edgecolors="none", alpha=0.6,
                     )
                     ax.scatter(
-                        t,
-                        q_hat,
-                        color=colors,
-                        marker=".",
-                        s=9,
-                        label=r"$\hat{q}$",
-                        zorder=1,
-                        edgecolors="none",
+                        t, q_rk4, color="blue", marker=".", s=9, 
+                        label=r"$\hat{q}$ (RK4)", zorder=2, edgecolors="none", alpha=0.6,
                     )
+                    ax.scatter(
+                        t, q_rkf78, color="green", marker=".", s=9, 
+                        label=r"$\hat{q}$ (RKF78)", zorder=2, edgecolors="none", alpha=0.6,
+                    )
+                    
                     ax.set_xlabel(r"$t$")
                     ax.set_ylabel(r"$q(t)$")
                     ax.autoscale(tight=True)
+                    
+                    # 손실 표시
                     ax.text(
-                        0.05,
-                        0.9,
-                        f"Loss: {loss_q:.4e}",
-                        transform=ax.transAxes,
-                        fontsize=5,
+                        0.05, 0.9, f"Test Loss: {loss_q_test:.4e}",
+                        transform=ax.transAxes, fontsize=5,
                     )
-                    ax.legend()
+                    ax.text(
+                        0.05, 0.85, f"RK4 Loss: {loss_q_rk4:.4e}",
+                        transform=ax.transAxes, fontsize=5,
+                    )
+                    ax.text(
+                        0.05, 0.8, f"RKF78 Loss: {loss_q_rkf78:.4e}",
+                        transform=ax.transAxes, fontsize=5,
+                    )
+                    
+                    # 범례는 선과 점을 합쳐서 표시하지 않도록 핸들 조정
+                    handles, labels = ax.get_legend_handles_labels()
+                    by_label = dict(zip(labels, handles))
+                    ax.legend(by_label.values(), by_label.keys())
+                    
                     fig.savefig(
-                        f"{fig_dir}/{i:02}_{test_name}_RK4_0_q_plot.png",
-                        dpi=600,
-                        bbox_inches="tight",
+                        f"{fig_dir}/{i:02}_{test_name}_compare_q_plot.png",
+                        dpi=600, bbox_inches="tight",
                     )
                     plt.close(fig)
-
+                    
+                    # p 그래프 생성
                     fig, ax = plt.subplots()
+                    
+                    # GL4를 True로 취급 (회색 굵은 선)
                     ax.plot(
-                        t,
-                        p,
-                        color="gray",
-                        label=r"$p$",
-                        alpha=0.5,
-                        linewidth=1.75,
-                        zorder=0,
+                        t, p_gl4, color="gray", label=r"$p$ (GL4)", 
+                        alpha=0.7, linewidth=2.5, zorder=0,
+                    )
+                    
+                    # 나머지 데이터셋 (실선, 점선, 점실선)
+                    ax.plot(
+                        t, p_test, color="red", linestyle="-", 
+                        label=r"$p$ (Test)", alpha=0.8, linewidth=1.2, zorder=1,
+                    )
+                    ax.plot(
+                        t, p_rk4, color="blue", linestyle="--", 
+                        label=r"$p$ (RK4)", alpha=0.8, linewidth=1.2, zorder=1,
+                    )
+                    ax.plot(
+                        t, p_rkf78, color="green", linestyle="-.", 
+                        label=r"$p$ (RKF78)", alpha=0.8, linewidth=1.2, zorder=1,
+                    )
+                    
+                    # 예측값은 점으로 표시
+                    ax.scatter(
+                        t, p_test, color="red", marker=".", s=9, 
+                        label=r"$\hat{p}$ (Test)", zorder=2, edgecolors="none", alpha=0.6,
                     )
                     ax.scatter(
-                        t,
-                        p_hat,
-                        color=colors,
-                        marker=".",
-                        s=9,
-                        label=r"$\hat{p}$",
-                        zorder=1,
-                        edgecolors="none",
+                        t, p_rk4, color="blue", marker=".", s=9, 
+                        label=r"$\hat{p}$ (RK4)", zorder=2, edgecolors="none", alpha=0.6,
                     )
+                    ax.scatter(
+                        t, p_rkf78, color="green", marker=".", s=9, 
+                        label=r"$\hat{p}$ (RKF78)", zorder=2, edgecolors="none", alpha=0.6,
+                    )
+                    
                     ax.set_xlabel(r"$t$")
                     ax.set_ylabel(r"$p(t)$")
                     ax.autoscale(tight=True)
+                    
+                    # 손실 표시
                     ax.text(
-                        0.05,
-                        0.1,
-                        f"Loss: {loss_p:.4e}",
-                        transform=ax.transAxes,
-                        fontsize=5,
+                        0.05, 0.1, f"Test Loss: {loss_p_test:.4e}",
+                        transform=ax.transAxes, fontsize=5,
                     )
-                    ax.legend()
+                    ax.text(
+                        0.05, 0.15, f"RK4 Loss: {loss_p_rk4:.4e}",
+                        transform=ax.transAxes, fontsize=5,
+                    )
+                    ax.text(
+                        0.05, 0.2, f"RKF78 Loss: {loss_p_rkf78:.4e}",
+                        transform=ax.transAxes, fontsize=5,
+                    )
+                    
+                    # 범례는 선과 점을 합쳐서 표시하지 않도록 핸들 조정
+                    handles, labels = ax.get_legend_handles_labels()
+                    by_label = dict(zip(labels, handles))
+                    ax.legend(by_label.values(), by_label.keys())
+                    
                     fig.savefig(
-                        f"{fig_dir}/{i:02}_{test_name}_RK4_1_p_plot.png",
-                        dpi=600,
-                        bbox_inches="tight",
+                        f"{fig_dir}/{i:02}_{test_name}_compare_p_plot.png",
+                        dpi=600, bbox_inches="tight",
                     )
                     plt.close(fig)
-
+                    
+                    # 위상 그래프 생성
                     fig, ax = plt.subplots()
+                    
+                    # GL4를 True로 취급 (회색 굵은 선)
                     ax.plot(
-                        q,
-                        p,
-                        color="gray",
-                        label=r"$(q,p)$",
-                        alpha=0.5,
-                        linewidth=1.75,
-                        zorder=0,
+                        q_gl4, p_gl4, color="gray", label=r"$(q,p)$ (GL4)", 
+                        alpha=0.7, linewidth=2.5, zorder=0,
+                    )
+                    
+                    # 나머지 데이터셋 (실선, 점선, 점실선)
+                    ax.plot(
+                        q_test, p_test, color="red", linestyle="-", 
+                        label=r"$(q,p)$ (Test)", alpha=0.8, linewidth=1.2, zorder=1,
+                    )
+                    ax.plot(
+                        q_rk4, p_rk4, color="blue", linestyle="--", 
+                        label=r"$(q,p)$ (RK4)", alpha=0.8, linewidth=1.2, zorder=1,
+                    )
+                    ax.plot(
+                        q_rkf78, p_rkf78, color="green", linestyle="-.", 
+                        label=r"$(q,p)$ (RKF78)", alpha=0.8, linewidth=1.2, zorder=1,
+                    )
+                    
+                    # 예측값은 점으로 표시
+                    ax.scatter(
+                        q_test, p_test, color="red", marker=".", s=9, 
+                        label=r"$(\hat{q},\hat{p})$ (Test)", zorder=2, edgecolors="none", alpha=0.6,
                     )
                     ax.scatter(
-                        q_hat,
-                        p_hat,
-                        color=colors,
-                        marker=".",
-                        s=9,
-                        label=r"$(\hat{q}, \hat{p})$",
-                        zorder=1,
-                        edgecolors="none",
+                        q_rk4, p_rk4, color="blue", marker=".", s=9, 
+                        label=r"$(\hat{q},\hat{p})$ (RK4)", zorder=2, edgecolors="none", alpha=0.6,
                     )
+                    ax.scatter(
+                        q_rkf78, p_rkf78, color="green", marker=".", s=9, 
+                        label=r"$(\hat{q},\hat{p})$ (RKF78)", zorder=2, edgecolors="none", alpha=0.6,
+                    )
+                    
                     ax.set_xlabel(r"$q$")
                     ax.set_ylabel(r"$p$")
                     ax.autoscale(tight=True)
+                    
+                    # 손실 표시
                     ax.text(
-                        0.05,
-                        0.5,
-                        f"Loss: {loss:.4e}",
-                        transform=ax.transAxes,
-                        fontsize=5,
+                        0.05, 0.5, f"Test Loss: {loss_test:.4e}",
+                        transform=ax.transAxes, fontsize=5,
                     )
-                    ax.legend()
+                    ax.text(
+                        0.05, 0.45, f"RK4 Loss: {loss_rk4:.4e}",
+                        transform=ax.transAxes, fontsize=5,
+                    )
+                    ax.text(
+                        0.05, 0.4, f"RKF78 Loss: {loss_rkf78:.4e}",
+                        transform=ax.transAxes, fontsize=5,
+                    )
+                    
+                    # 범례는 선과 점을 합쳐서 표시하지 않도록 핸들 조정
+                    handles, labels = ax.get_legend_handles_labels()
+                    by_label = dict(zip(labels, handles))
+                    ax.legend(by_label.values(), by_label.keys())
+                    
                     fig.savefig(
-                        f"{fig_dir}/{i:02}_{test_name}_RK4_2_phase_plot.png",
-                        dpi=600,
-                        bbox_inches="tight",
+                        f"{fig_dir}/{i:02}_{test_name}_compare_phase_plot.png",
+                        dpi=600, bbox_inches="tight",
                     )
                     plt.close(fig)
     elif test_option == "precise":
