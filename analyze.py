@@ -358,7 +358,11 @@ class TestResults:
             ax.text(
                 0.05, 0.9, f"Loss: {loss_q:.4e}", transform=ax.transAxes, fontsize=5
             )
-            ax.legend()
+            # Adjust legend
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
@@ -394,7 +398,11 @@ class TestResults:
             ax.text(
                 0.05, 0.1, f"Loss: {loss_p:.4e}", transform=ax.transAxes, fontsize=5
             )
-            ax.legend()
+            # Adjust legend
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
@@ -428,7 +436,11 @@ class TestResults:
             ax.set_ylabel(r"$p$")
             ax.autoscale(tight=True)
             ax.text(0.05, 0.5, f"Loss: {loss:.4e}", transform=ax.transAxes, fontsize=5)
-            ax.legend()
+            # Adjust legend
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
@@ -477,7 +489,11 @@ class TestResults:
             ax.text(
                 0.03, 0.9, f"Loss: {loss_q:.4e}", transform=ax.transAxes, fontsize=5
             )
-            ax.legend()
+            # Adjust legend
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
@@ -514,7 +530,11 @@ class TestResults:
             ax.text(
                 0.03, 0.1, f"Loss: {loss_p:.4e}", transform=ax.transAxes, fontsize=5
             )
-            ax.legend()
+            # Adjust legend
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
             fig.savefig(f"{name}.png", dpi=600, bbox_inches="tight")
             plt.close(fig)
 
@@ -671,7 +691,11 @@ def plot_comparison_histograms(results_dict, fig_dir):
         ax.set_xlabel("Loss (vs KahanLi8)")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
-        ax.legend()
+        # Adjust legend
+        handles, labels = ax.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+        fig.tight_layout()
         fig.savefig(
             f"{fig_dir}/00_4_Loss_comparison_hist.png", dpi=600, bbox_inches="tight"
         )
@@ -815,8 +839,8 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # Adjust legend
             handles, labels = ax.get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
-            ax.legend(by_label.values(), by_label.keys(), loc='best', fontsize=5)
-
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
+            fig.tight_layout()
             fig.savefig(
                 f"{fig_dir}/{idx:02}_q_comparison.png", dpi=600, bbox_inches="tight"
             )
@@ -900,7 +924,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # Adjust legend
             handles, labels = ax.get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
-            ax.legend(by_label.values(), by_label.keys(), loc='best', fontsize=5)
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
 
             fig.savefig(
                 f"{fig_dir}/{idx:02}_p_comparison.png", dpi=600, bbox_inches="tight"
@@ -985,7 +1009,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # Adjust legend
             handles, labels = ax.get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
-            ax.legend(by_label.values(), by_label.keys(), loc='best', fontsize=5)
+            ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=5)
 
             fig.savefig(
                 f"{fig_dir}/{idx:02}_phase_comparison.png", dpi=600, bbox_inches="tight"
