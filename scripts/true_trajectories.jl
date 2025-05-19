@@ -6,6 +6,7 @@ using Parameters
 using Printf
 using PCHIPInterpolation
 using ForwardDiff
+using ProgressMeter
 
 const NSENSORS = 100
 const PI = π
@@ -350,13 +351,17 @@ function run_simulation_reference()
     all_q_true = []
     all_p_true = []
 
-    for (i, V_values) in enumerate(potentials)
+    pb = Progress(length(potentials), desc="Obtain: ", showvalues=true)
+
+    for V_values in potentials
         q_values, p_values, t_uniform = run_simulation_kl8(V_values)
 
         append!(all_V, V_values)
         append!(all_t, t_uniform)
         append!(all_q_true, q_values)
         append!(all_p_true, p_values)
+
+        next!(pb)
     end
 
     # Convert results to DataFrame
@@ -367,6 +372,8 @@ function run_simulation_reference()
         p_true = all_p_true
     )
 
+    println(df)
+
     # Save as Parquet file
     output_file = "data_true/test_kl8.parquet"
     @printf "Saving to %s...\n" output_file
@@ -374,7 +381,7 @@ function run_simulation_reference()
 
     @printf "Saved to %s\n" output_file
 
-    println("All simulations completed!")
+    @printf "Reference simulation completed!\n"
 end
 
 # Run all simulations
