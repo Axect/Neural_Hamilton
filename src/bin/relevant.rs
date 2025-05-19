@@ -148,7 +148,7 @@ register_potentials! {
     6 => {
         name: "sawtooth",
         display: "Sawtooth",
-        potential: Sawtooth { lambda: 0.3 }
+        potential: Sawtooth { lambda: 0.25 }
     }
     // Add more potentials here
 }
