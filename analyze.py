@@ -707,7 +707,7 @@ def main():
         test_results.plot_p(f"{fig_dir}/{worst_idx:02}_2_p_plot", worst_idx)
         test_results.plot_phase(f"{fig_dir}/{worst_idx:02}_3_phase_plot", worst_idx)
     elif test_option == "physical":
-        Potentials = {
+        potentials = {
             "sho": "SHO", 
             "double_well": "DoubleWell", 
             "morse": "Morse", 
@@ -716,9 +716,9 @@ def main():
             "smff": "SMFF",
             "sawtooth": "Sawtooth",
         }
-        results = [load_relevant_data(name) for name in potential.keys()]
+        results = [load_relevant_data(name) for name in potentials.keys()]
         ds_tests, ds_rk4s = zip(*results)
-        tests_name = list(Potentials.values())
+        tests_name = list(potentials.values())
 
         for i in range(len(ds_tests)):
             print()
