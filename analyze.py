@@ -566,8 +566,8 @@ def main():
             for batch_data in zip(dl_true, dl_y4, dl_rk4):
                 # 데이터 추출 및 형태 조정
                 (_, _, q_true, p_true) = batch_data[0]
-                (_, _, q_y4, p_y4) = batch_data[2]
-                (_, _, q_rk4, p_rk4) = batch_data[3]
+                (_, _, q_y4, p_y4) = batch_data[1]
+                (_, _, q_rk4, p_rk4) = batch_data[2]
 
                 # NumPy 배열로 변환
                 q_true = q_true.numpy().reshape(-1)
