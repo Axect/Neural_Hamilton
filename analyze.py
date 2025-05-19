@@ -646,7 +646,7 @@ def plot_comparison_histograms(results_dict, fig_dir):
         
         # Combined histogram - compare distributions
         fig, ax = plt.subplots()
-        ax.hist([model_losses, y4_losses, rk4_losses], bins=logbins, 
+        ax.hist([model_losses, y4_losses, rk4_losses], bins=logbins, histtype='step',
                 label=["Model", "Y4", "RK4"], alpha=0.6)
         ax.axvline(model_losses.mean(), color="C0", linestyle="--")
         ax.axvline(y4_losses.mean(), color="C1", linestyle="--")
