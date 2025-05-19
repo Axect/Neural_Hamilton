@@ -601,8 +601,8 @@ def main():
                         q_gl4,
                         color="gray",
                         label=r"$q$ (GL4)",
-                        alpha=0.7,
-                        linewidth=2.5,
+                        alpha=0.5,
+                        linewidth=1.75,
                         zorder=0,
                     )
 
@@ -614,9 +614,8 @@ def main():
                         linestyle="-",
                         label=r"$q$ (Y4)",
                         alpha=0.8,
-                        linewidth=1.2,
+                        linewidth=1,
                         zorder=1,
-                        alpha=0.6,
                     )
                     ax.plot(
                         t,
@@ -625,9 +624,8 @@ def main():
                         linestyle="--",
                         label=r"$q$ (RK4)",
                         alpha=0.8,
-                        linewidth=1.2,
+                        linewidth=1,
                         zorder=1,
-                        alpha=0.6,
                     )
 
                     # 예측값은 점으로 표시
@@ -690,8 +688,8 @@ def main():
                         p_gl4,
                         color="gray",
                         label=r"$p$ (GL4)",
-                        alpha=0.7,
-                        linewidth=2.5,
+                        alpha=0.5,
+                        linewidth=1.75,
                         zorder=0,
                     )
 
@@ -703,7 +701,7 @@ def main():
                         linestyle="-",
                         label=r"$p$ (Y4)",
                         alpha=0.8,
-                        linewidth=1.2,
+                        linewidth=1,
                         zorder=1,
                     )
                     ax.plot(
@@ -713,7 +711,7 @@ def main():
                         linestyle="--",
                         label=r"$p$ (RK4)",
                         alpha=0.8,
-                        linewidth=1.2,
+                        linewidth=1,
                         zorder=1,
                     )
 
@@ -777,8 +775,8 @@ def main():
                         p_gl4,
                         color="gray",
                         label=r"$(q,p)$ (GL4)",
-                        alpha=0.7,
-                        linewidth=2.5,
+                        alpha=0.5,
+                        linewidth=1.75,
                         zorder=0,
                     )
 
@@ -790,7 +788,7 @@ def main():
                         linestyle="-",
                         label=r"$(q,p)$ (Y4)",
                         alpha=0.8,
-                        linewidth=1.2,
+                        linewidth=1,
                         zorder=1,
                     )
                     ax.plot(
@@ -800,7 +798,7 @@ def main():
                         linestyle="--",
                         label=r"$(q,p)$ (RK4)",
                         alpha=0.8,
-                        linewidth=1.2,
+                        linewidth=1,
                         zorder=1,
                     )
 
