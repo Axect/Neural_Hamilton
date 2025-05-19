@@ -51,31 +51,18 @@ def load_relevant_data(potential: str):
         torch.tensor(p_rk4, dtype=torch.float32).unsqueeze(0),
     )
 
-    q_gl4 = df[f"q_gl4"].to_numpy()
-    p_gl4 = df[f"p_gl4"].to_numpy()
-    ds_gl4 = TensorDataset(
-        torch.tensor(V, dtype=torch.float32).unsqueeze(0),
-        torch.tensor(t, dtype=torch.float32).unsqueeze(0),
-        torch.tensor(q_gl4, dtype=torch.float32).unsqueeze(0),
-        torch.tensor(p_gl4, dtype=torch.float32).unsqueeze(0),
-    )
-    
     # True 데이터 로드 (Julia에서 생성한 고차 심플렉틱 적분기 결과)
     true_file_name = f"./data_true/{potential}.parquet"
-    if os.path.exists(true_file_name):
-        df_true = pl.read_parquet(true_file_name)
-        q_true = df_true["q_true"].to_numpy()
-        p_true = df_true["p_true"].to_numpy()
-        ds_true = TensorDataset(
-            torch.tensor(V, dtype=torch.float32).unsqueeze(0),
-            torch.tensor(t, dtype=torch.float32).unsqueeze(0),
-            torch.tensor(q_true, dtype=torch.float32).unsqueeze(0),
-            torch.tensor(p_true, dtype=torch.float32).unsqueeze(0),
-        )
-        return ds_true, ds_gl4, ds, ds_rk4  # True, GL4, Y4, RK4
-    else:
-        print(f"Warning: True data file {true_file_name} not found. Using GL4 as reference.")
-        return ds_gl4, ds_gl4, ds, ds_rk4  # GL4, GL4, Y4, RK4 (GL4를 True 대신 사용)
+    df_true = pl.read_parquet(true_file_name)
+    q_true = df_true["q_true"].to_numpy()
+    p_true = df_true["p_true"].to_numpy()
+    ds_true = TensorDataset(
+        torch.tensor(V, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(t, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(q_true, dtype=torch.float32).unsqueeze(0),
+        torch.tensor(p_true, dtype=torch.float32).unsqueeze(0),
+    )
+    return ds_true, ds, ds_rk4  # True, Y4, RK4
 
 
 # ┌──────────────────────────────────────────────────────────┐
@@ -531,7 +518,7 @@ def main():
             "sawtooth": "Sawtooth",
         }
         results = [load_relevant_data(name) for name in potentials.keys()]
-        ds_trues, ds_gl4s, ds_y4s, ds_rk4s = zip(*results)
+        ds_trues, ds_y4s, ds_rk4s = zip(*results)
         tests_name = list(potentials.values())
 
         for i in range(len(ds_trues)):
@@ -658,21 +645,21 @@ def main():
                     # 손실 표시
                     ax.text(
                         0.05,
-                        0.9,
+                        0.95,
                         f"Model Loss: {loss_q_test:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
                     ax.text(
                         0.05,
-                        0.85,
+                        0.9,
                         f"Y4 Loss: {loss_q_y4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
                     ax.text(
                         0.05,
-                        0.8,
+                        0.85,
                         f"RK4 Loss: {loss_q_rk4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
@@ -745,21 +732,21 @@ def main():
                     # 손실 표시
                     ax.text(
                         0.05,
-                        0.1,
+                        0.15,
                         f"Model Loss: {loss_p_test:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
                     ax.text(
                         0.05,
-                        0.05,
+                        0.10,
                         f"Y4 Loss: {loss_p_y4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
                     ax.text(
                         0.05,
-                        0.0,
+                        0.05,
                         f"RK4 Loss: {loss_p_rk4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
