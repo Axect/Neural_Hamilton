@@ -372,6 +372,7 @@ function run_simulation_reference()
         # Update progress bar
         next!(pb)
     end
+    finish!(pb)
 
     # Convert results to DataFrame
     df = DataFrame(
