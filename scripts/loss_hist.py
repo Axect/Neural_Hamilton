@@ -85,7 +85,7 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
             loss_q3s.append(loss_q3)
             loss_iqrs.append(iqr)
             ax.hist(loss, bins=bins, label=legend, color=colors[i], histtype="step", alpha=0.65)
-        ax.set_xlabel("Total Loss")
+        ax.set_xlabel("Test Loss")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
         ax.set_xlim((1e-12, 1e-2))
@@ -128,7 +128,7 @@ def hist_losses_model_only(losses: List[np.ndarray], legends: List[str]):
         fig, ax = plt.subplots()
         for i, (loss, legend) in enumerate(zip(losses, legends)):
             ax.hist(loss, bins=bins, label=legend, color=colors[i], histtype="step", alpha=alphas[i])
-        ax.set_xlabel("Total Loss")
+        ax.set_xlabel("Test Loss")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
         ax.set_xlim((1e-7, 1e-2))
