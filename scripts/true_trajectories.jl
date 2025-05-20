@@ -340,8 +340,8 @@ function run_all_simulations()
     println("All simulations completed!")
 end
 
-function run_simulation_reference()
-    file_path = "data_test/test.parquet"
+function run_simulation_reference(input_path::String = "data_test/test.parquet", output_path::String = "data_true/test_kl8.parquet")
+    file_path = input_path
 
     @printf "Loading test potentials from %s...\n" file_path
     potentials = load_test_potentials(file_path)
@@ -383,7 +383,7 @@ function run_simulation_reference()
     )
 
     # Save as Parquet file
-    output_file = "data_true/test_kl8.parquet"
+    output_file = output_path
     @printf "Saving to %s...\n" output_file
     Parquet.write_parquet(output_file, df)
 
@@ -394,5 +394,14 @@ end
 
 # Run all simulations
 run_all_simulations()
-# Run reference simulation
-run_simulation_reference()
+# Run reference simulation (test)
+run_simulation_reference(input_path="data_test/test.parquet", output_path="data_true/test_kl8.parquet")
+# Run reference simulation (normal)
+run_simulation_reference(input_path="data_normal/train.parquet", output_path="data_true/train_normal_kl8.parquet")
+run_simulation_reference(input_path="data_normal/val.parquet", output_path="data_true/val_normal_kl8.parquet")
+# Run reference simulation (more)
+run_simulation_reference(input_path="data_more/train.parquet", output_path="data_true/train_more_kl8.parquet")
+run_simulation_reference(input_path="data_more/val.parquet", output_path="data_true/val_more_kl8.parquet")
+# Run reference simulation (much)
+run_simulation_reference(input_path="data_much/train.parquet", output_path="data_true/train_much_kl8.parquet")
+run_simulation_reference(input_path="data_much/val.parquet", output_path="data_true/val_much_kl8.parquet")
