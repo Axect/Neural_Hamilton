@@ -25,6 +25,9 @@ def main():
     parser.add_argument(
         "--device", type=str, help="Device to run on (e.g. 'cuda:0' or 'cpu')"
     )
+    parser.add_argument(
+        "--true", action="store_true", help="Use true labels for evaluation"
+    )
     args = parser.parse_args()
 
     # Run Config
@@ -35,9 +38,14 @@ def main():
         base_config.device = args.device
 
     # Load data
-    data_folder = f"data_{args.data}"
-    ds_train = load_data(f"{data_folder}/train.parquet")
-    ds_val = load_data(f"{data_folder}/val.parquet")
+    if args.true:
+        data_folder = f"data_true"
+        ds_train = load_data(f"{data_folder}/train_{args.data}_kl8.parquet")
+        ds_val = load_data(f"{data_folder}/val_{args.data}_kl8.parquet")
+    else:
+        data_folder = f"data_{args.data}"
+        ds_train = load_data(f"{data_folder}/train.parquet")
+        ds_val = load_data(f"{data_folder}/val.parquet")
     dl_train = DataLoader(ds_train, batch_size=base_config.batch_size, shuffle=True)
     dl_val = DataLoader(ds_val, batch_size=base_config.batch_size, shuffle=False)
 
