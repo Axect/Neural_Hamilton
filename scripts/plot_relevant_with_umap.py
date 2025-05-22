@@ -257,9 +257,9 @@ def main():
 
     print(f"--- Processing Test Data (Scenario: Train) ---")
     try:
-        df_test_original = pd.read_parquet(f"data_normal/train.parquet")
+        df_test_original = pd.read_parquet(f"data_normal/train_cand.parquet")
     except Exception as e:
-        print(f"Error loading test data (data_normal/train.parquet): {e}")
+        print(f"Error loading test data: {e}")
         return
 
     if df_test_original.empty:
@@ -276,7 +276,7 @@ def main():
     # df_active_reshaped를 직접 전달합니다. umap_map_and_embed가 'index' 및 'Cluster' 열 제거를 처리합니다.
     umap_active, mapper = umap_map_and_embed(
         df_active_reshaped, 
-        n_neighbors=25, min_dist=0.001, n_components=2, random_state=42
+        n_neighbors=10, min_dist=0.001, n_components=2, random_state=42
     )
     
     # KMeans 클러스터링 및 관련 로직 제거됨.
