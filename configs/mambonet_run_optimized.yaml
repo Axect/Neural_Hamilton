@@ -7,14 +7,14 @@ epochs: 250
 batch_size: 100
 seeds: [89]
 net_config:
-  d_model: 128
+  d_model: 256
   num_layers1: 5
-  n_head: 16
-  num_layers2: 3
+  n_head: 4
+  num_layers2: 5
   d_ff: 1024
 optimizer_config:
-  lr: 0.0008576920766023444
+  lr: 0.00043933928880740834
 scheduler_config:
-  upper_bound: 400
+  upper_bound: 300
   max_iter: 250
-  infimum_lr: 0.00000001126475390015
+  infimum_lr: 0.00000001950366474708
