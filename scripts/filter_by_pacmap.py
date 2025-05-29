@@ -187,8 +187,9 @@ def sampling_by_cluster_point_count_inverse_weighted(
 
     # Calculate weights (inverse of point counts, add epsilon for stability if count is 0)
     epsilon = 1e-6
+    alpha = 2.0
     cluster_weights = {
-        cid: 1.0 / (cluster_point_counts.get(cid, 0) + epsilon) for cid in unique_cluster_ids
+        cid: 1.0 / (cluster_point_counts.get(cid, 0)**alpha + epsilon) for cid in unique_cluster_ids
     }
     total_weight = sum(cluster_weights.values())
 
