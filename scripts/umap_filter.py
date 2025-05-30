@@ -105,7 +105,6 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
         elif current_total_samples > total_samples:
             for i in reversed(range(len(n_samples))):
                 if n_samples[i] > n_sample_min:
-                    print(f"Reducing samples for label {labels[i]}: {n_samples[i]} -> {n_samples[i] - 1}")
                     n_samples[i] -= 1
                     additional_samples += 1
                     if additional_samples >= 0:
