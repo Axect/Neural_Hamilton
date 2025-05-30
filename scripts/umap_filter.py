@@ -76,7 +76,7 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     # Define number of samples to take from each cluster
     n_sample_min = 5
     elements_per_cluster = [len(clusters[clusters['label'] == label]) for label in unique_labels]
-    total_samples = x.shape[0] / 10 # 10% of total points
+    total_samples = x.shape[0] // 10 # 10% of total points
     n_samples = np.repeat(n_sample_min, len(unique_labels))
     left_samples = total_samples - n_sample_min * len(unique_labels)
     target_samples = n_samples + np.round(left_samples * weights).astype(int)
@@ -90,12 +90,12 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     sorted_label_and_n_sample = labels_and_n_samples.sort_values(by='n_samples', ascending=False)
     labels = sorted_label_and_n_sample['label'].values
     n_samples = sorted_label_and_n_sample['n_samples'].values
-    n_elemnts = sorted_label_and_n_sample['n_elements'].values
+    n_elements = sorted_label_and_n_sample['n_elements'].values
     print(f"Total samples to take: {total_samples}, Current total samples: {current_total_samples}")
     additional_samples = total_samples - current_total_samples
     if current_total_samples < total_samples:
         for i in range(len(n_samples)):
-            if n_samples[i] < n_elemnts[i]:
+            if n_samples[i] < n_elements[i]:
                 n_samples[i] += 1
                 additional_samples -= 1
                 if additional_samples <= 0:
@@ -103,6 +103,7 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     elif current_total_samples > total_samples:
         for i in reversed(range(len(n_samples))):
             if n_samples[i] > n_sample_min:
+                print(f"Reducing samples for label {labels[i]}: {n_samples[i]} -> {n_samples[i] - 1}")
                 n_samples[i] -= 1
                 additional_samples += 1
                 if additional_samples >= 0:
