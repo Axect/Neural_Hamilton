@@ -72,26 +72,30 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     # Define weights based on density
     weights = - np.log(normalized_densities + 1e-10)  # Avoid log(0)
     weights /= weights.sum()  # Normalize weights
-    label_and_weight = pd.DataFrame({
-        'label': unique_labels,
-        'weight': weights
-    })
 
     # Define number of samples to take from each cluster
     n_sample_min = 5
-    n_sample_max = 100
+    elements_per_cluster = [len(clusters[clusters['label'] == label]) for label in unique_labels]
     total_samples = x.shape[0] / 10 # 10% of total points
-    sorted_label_and_weight = label_and_weight.sort_values(by='weight', ascending=False)
     n_samples = np.repeat(n_sample_min, len(unique_labels))
     left_samples = total_samples - n_sample_min * len(unique_labels)
-    target_samples = n_samples + np.round(sorted_label_and_weight['weight'].values * left_samples).astype(int)
-    n_samples = np.clip(target_samples, n_sample_min, n_sample_max)
+    target_samples = n_samples + np.round(left_samples * weights).astype(int)
+    n_samples = np.clip(target_samples, n_sample_min, elements_per_cluster)
     current_total_samples = n_samples.sum()
+    labels_and_n_samples = pd.DataFrame({
+        'label': unique_labels,
+        'n_samples': n_samples,
+        'n_elements': elements_per_cluster,
+    })
+    sorted_label_and_n_sample = labels_and_n_samples.sort_values(by='n_samples', ascending=False)
+    labels = sorted_label_and_n_sample['label'].values
+    n_samples = sorted_label_and_n_sample['n_samples'].values
+    n_elemnts = sorted_label_and_n_sample['n_elements'].values
     print(f"Total samples to take: {total_samples}, Current total samples: {current_total_samples}")
     additional_samples = total_samples - current_total_samples
     if current_total_samples < total_samples:
         for i in range(len(n_samples)):
-            if n_samples[i] < n_sample_max:
+            if n_samples[i] < n_elemnts[i]:
                 n_samples[i] += 1
                 additional_samples -= 1
                 if additional_samples <= 0:
