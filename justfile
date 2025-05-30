@@ -13,9 +13,8 @@ build-cargo:
 
 data-gen:
     for i in {0..3}; do \
-        cargo run --release --bin neural_hamilton -- $i \
-    done
-    cargo run --release --bin neural_hamilton -- 0
+        cargo run --release --bin neural_hamilton -- $i; \
+    done 
     cargo run --release --bin relevant
 
 data-filter: activate
