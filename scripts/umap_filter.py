@@ -11,6 +11,7 @@ import warnings
 import os
 from rich.console import Console
 import beaupy
+import argparse
 
 NCOLS = 100
 console = Console()
@@ -70,7 +71,7 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     normalized_densities = densities / densities.sum()
 
     # Define weights based on density
-    weights = np.exp(- len(unique_labels) * normalized_densities)
+    weights = np.exp(- 0.5 * len(unique_labels) * normalized_densities)
     weights /= weights.sum()  # Normalize weights
 
     # Define number of samples to take from each cluster
@@ -209,7 +210,14 @@ def plot_density_of_embedding(embedding: pd.DataFrame, data_type: str):
 #  Main
 # └──────────────────────────────────────────────────────────┘
 if __name__ == "__main__":
-    data_file = select_data_option()
+    # Interactive
+    #data_file = select_data_option()
+
+    # Non-interactive
+    parser = argparse.ArgumentParser(description="UMAP and clustering on data files.")
+    parser.add_argument('--data_file', type=str, help='Path to the data file (parquet format)')
+    args = parser.parse_args()
+    data_file = args.data_file
     data_type = data_file.split('/')[-1].split('.')[0]
     print(f"Processing file: {data_file}")
 

@@ -31,20 +31,30 @@ pub enum SolverOrder {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let items = &["Normal", "More", "Much", "Precise", "Test"];
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select data generation mode:")
-        .items(items)
-        .default(0)
-        .interact()?;
+    // Interactive selection of data generation mode
+    //let items = &["Normal", "More", "Much", "Precise", "Test"];
+    //let selection = Select::with_theme(&ColorfulTheme::default())
+    //    .with_prompt("Select data generation mode:")
+    //    .items(items)
+    //    .default(0)
+    //    .interact()?;
+
+    // Non-interactive selection for testing
+    let args: Vec<String> = std::env::args().collect();
+    let selection = if args.len() > 1 {
+        args[1].parse::<usize>().unwrap_or(0)
+    } else {
+        println!("No selection provided, defaulting to Normal mode.");
+        0 // Default to Normal if no argument is provided
+    };
 
     match selection {
-        0 | 1 | 2 => {
+        0 | 1 => {
             // Normal, More, Much (all Y4 for Train/Val)
             let (n_total_samples, folder, order) = match selection {
                 0 => (10000, "data_normal", SolverOrder::Yoshida4th),
                 1 => (100000, "data_more", SolverOrder::Yoshida4th),
-                2 => (1000000, "data_much", SolverOrder::Yoshida4th),
+                //2 => (1000000, "data_much", SolverOrder::Yoshida4th),
                 _ => unreachable!(),
             };
             let n_total_samples = 10 * n_total_samples; // For UMAP filtering
@@ -73,60 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             ds_val.write_parquet(&format!("{}/val_cand.parquet", folder))?;
         }
-        3 => {
-            // Precise (Y8 main, Y4 compare for the *exact same potentials*)
-            let n_target_pairs = 4000;
-            let n_initial_potentials = (n_target_pairs as f64 * 2.5).round() as usize;
-            let folder = "data_precise";
-            let seed = 789;
-
-            println!("\n--- Precise Mode (Comparison Generation) ---");
-
-            // 1. Create potential candidates
-            let potential_generator = BoundedPotential::generate_potential(
-                n_initial_potentials,
-                seed,
-                SolverOrder::Yoshida8th,
-            );
-
-            // 2. Create pairs
-            match potential_generator.generate_data_for_comparison(n_target_pairs) {
-                Ok((ds_y8_final, ds_y4_final)) => {
-                    println!(
-                        "Successfully generated {} pairs of comparable datasets.",
-                        ds_y8_final.data.len()
-                    );
-
-                    // Save Y8
-                    if !ds_y8_final.data.is_empty() {
-                        let (q_max_y8, p_max_y8) = ds_y8_final.max();
-                        println!("\nMax of Y8 q: {:.4}, p: {:.4}", q_max_y8, p_max_y8);
-                    }
-                    println!(
-                        "Write Precise Y8 data ({} samples) to {}/compare.parquet...",
-                        ds_y8_final.data.len(),
-                        folder
-                    );
-                    ds_y8_final.write_parquet(&format!("{}/compare.parquet", folder))?;
-
-                    // Save Y4
-                    if !ds_y4_final.data.is_empty() {
-                        let (q_max_y4, p_max_y4) = ds_y4_final.max();
-                        println!("\nMax of Y4 q: {:.4}, p: {:.4}", q_max_y4, p_max_y4);
-                    }
-                    println!(
-                        "Write Comparison Y4 data ({} samples) to {}/test.parquet...",
-                        ds_y4_final.data.len(),
-                        folder
-                    );
-                    ds_y4_final.write_parquet(&format!("{}/test.parquet", folder))?;
-                }
-                Err(e) => {
-                    eprintln!("Error generating comparison datasets: {}", e);
-                }
-            }
-        }
-        4 => {
+        2 => {
             // Test
             let n = 8000 * 10; // For UMAP filtering
             let folder = "data_test";
