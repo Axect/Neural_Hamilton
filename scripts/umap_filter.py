@@ -109,6 +109,7 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
                     break
 
     print(f"Final samples per cluster: {n_samples}")
+    print(f"Total samples to take: {n_samples.sum()}")
 
     # Sample from clusters based on weights
     samples = []
