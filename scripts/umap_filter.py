@@ -93,21 +93,23 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     n_elements = sorted_label_and_n_sample['n_elements'].values
     print(f"Total samples to take: {total_samples}, Current total samples: {current_total_samples}")
     additional_samples = total_samples - current_total_samples
-    if current_total_samples < total_samples:
-        for i in range(len(n_samples)):
-            if n_samples[i] < n_elements[i]:
-                n_samples[i] += 1
-                additional_samples -= 1
-                if additional_samples <= 0:
-                    break
-    elif current_total_samples > total_samples:
-        for i in reversed(range(len(n_samples))):
-            if n_samples[i] > n_sample_min:
-                print(f"Reducing samples for label {labels[i]}: {n_samples[i]} -> {n_samples[i] - 1}")
-                n_samples[i] -= 1
-                additional_samples += 1
-                if additional_samples >= 0:
-                    break
+    while additional_samples != 0:
+        current_total_samples = n_samples.sum()
+        if current_total_samples < total_samples:
+            for i in range(len(n_samples)):
+                if n_samples[i] < n_elements[i]:
+                    n_samples[i] += 1
+                    additional_samples -= 1
+                    if additional_samples <= 0:
+                        break
+        elif current_total_samples > total_samples:
+            for i in reversed(range(len(n_samples))):
+                if n_samples[i] > n_sample_min:
+                    print(f"Reducing samples for label {labels[i]}: {n_samples[i]} -> {n_samples[i] - 1}")
+                    n_samples[i] -= 1
+                    additional_samples += 1
+                    if additional_samples >= 0:
+                        break
 
     print(f"Final samples per cluster: {n_samples}")
     print(f"Total samples to take: {n_samples.sum()}")
