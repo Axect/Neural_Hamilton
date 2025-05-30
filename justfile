@@ -12,7 +12,7 @@ build-cargo:
     cargo build --release
 
 data-gen:
-    for i in {0..3}; do \
+    for i in {0..2}; do \
         cargo run --release --bin neural_hamilton -- $i; \
     done 
     cargo run --release --bin relevant
