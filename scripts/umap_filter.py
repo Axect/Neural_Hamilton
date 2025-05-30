@@ -70,7 +70,7 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     normalized_densities = densities / densities.sum()
 
     # Define weights based on density
-    weights = np.exp(- 100 * normalized_densities)
+    weights = np.exp(- len(unique_labels) * normalized_densities)
     weights /= weights.sum()  # Normalize weights
 
     # Define number of samples to take from each cluster
