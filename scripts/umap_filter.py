@@ -121,7 +121,7 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
         samples.append(sample)
 
     samples = pd.concat(samples, ignore_index=True)
-    return samples
+    return samples, n_samples
 
 
 # ┌──────────────────────────────────────────────────────────┐
@@ -145,9 +145,26 @@ def select_data_option() -> str:
 
     return os.path.join(data_folder, file_name)
 
+# ┌──────────────────────────────────────────────────────────┐
+#  Plot
+# └──────────────────────────────────────────────────────────┘
+def hist_n_samples(n_samples: np.ndarray, data_type: str):
+    bins = len(np.unique(n_samples)) // 10
+    with plt.style.context(['science', 'nature']):
+        fig, ax = plt.subplots()
+        ax.hist(n_samples, bins=bins, edgecolor='black', linewidth=1.2, histtype='step')
+        ax.set_xlabel('Samples per cluster')
+        ax.set_ylabel('Number of clusters')
+        fig.tight_layout()
+        fig.savefig(f'figs/{data_type}_samples_per_cluster.png', dpi=600, bbox_inches='tight')
+        plt.close(fig)
 
+# ┌──────────────────────────────────────────────────────────┐
+#  Main
+# └──────────────────────────────────────────────────────────┘
 if __name__ == "__main__":
     data_file = select_data_option()
+    data_type = data_file.split('/')[-1].split('.')[0]
     print(f"Processing file: {data_file}")
 
     df = load_data(data_file)
@@ -169,14 +186,14 @@ if __name__ == "__main__":
     console.print(f"Unique labels found: {len(unique_labels)}")
 
     # Sample from clusters
-    samples = sample_from_clusters(embedding_df)
+    samples, n_samples = sample_from_clusters(embedding_df)
     print(f"Number of samples taken: {samples.shape[0]}")
     print(samples)
+    hist_n_samples(n_samples, data_type)
 
     # Save Embedding and samples
     data_folder = 'data_umap'
     os.makedirs(data_folder, exist_ok=True)
-    data_type = data_file.split('/')[-1].split('.')[0]
     embedding_file = os.path.join(data_folder, f"{data_type}_embedding.parquet")
     samples_file = os.path.join(data_folder, f"{data_type}_samples.parquet")
     embedding_df.to_parquet(embedding_file, index=False)
