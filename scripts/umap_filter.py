@@ -57,9 +57,9 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     kernel = gaussian_kde(values)
 
     # Find center of mass
-    labels = clusters['label'].unique()
+    unique_labels = clusters['label'].unique()
     centers = []
-    for label in labels:
+    for label in unique_labels:
         cluster_points = clusters[clusters['label'] == label]
         center = cluster_points[['umap1', 'umap2']].mean().to_numpy()
         centers.append(center)
@@ -68,7 +68,50 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     # Density of center
     densities = kernel(centers.T)
     normalized_densities = densities / densities.sum()
-    print(normalized_densities)
+
+    # Define weights based on density
+    weights = - np.log(normalized_densities + 1e-10)  # Avoid log(0)
+    weights /= weights.sum()  # Normalize weights
+    label_and_weight = pd.DataFrame({
+        'label': unique_labels,
+        'weight': weights
+    })
+
+    # Define number of samples to take from each cluster
+    n_sample_min = 5
+    n_sample_max = 100
+    total_samples = x.shape[0] / 10 # 10% of total points
+    sorted_label_and_weight = label_and_weight.sort_values(by='weight', ascending=True)
+    n_samples = np.repeat(n_sample_min, len(unique_labels))
+    left_samples = total_samples - n_sample_min * len(unique_labels)
+    target_samples = n_samples + np.round(sorted_label_and_weight['weight'].values * left_samples).astype(int)
+    n_samples = np.clip(target_samples, n_sample_min, n_sample_max)
+    current_total_samples = n_samples.sum()
+    print(f"Total samples to take: {total_samples}, Current total samples: {current_total_samples}")
+    additional_samples = total_samples - current_total_samples
+    if current_total_samples < total_samples:
+        for i in range(len(n_samples)):
+            if n_samples[i] < n_sample_max:
+                n_samples[i] += 1
+                additional_samples -= 1
+                if additional_samples <= 0:
+                    break
+    elif current_total_samples > total_samples:
+        for i in reversed(range(len(n_samples))):
+            if n_samples[i] > n_sample_min:
+                n_samples[i] -= 1
+                additional_samples += 1
+                if additional_samples >= 0:
+                    break
+
+    print(f"Final samples per cluster: {n_samples}")
+
+    # Sample from clusters based on weights
+    samples = []
+    for label, n_sample in zip(unique_labels, n_samples):
+        cluster_points = clusters[clusters['label'] == label]
+        sample = cluster_points.sample(n=n_sample, replace=False)
+        samples.append(sample)
 
 
 # ┌──────────────────────────────────────────────────────────┐
