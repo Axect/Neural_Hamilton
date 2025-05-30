@@ -5,6 +5,7 @@ import fireducks.pandas as pd
 import numpy as np
 import random
 from sklearn.cluster import MiniBatchKMeans
+from scipy.stats import gaussian_kde
 import argparse
 import warnings
 import os
@@ -42,11 +43,33 @@ def umap_fit(V: np.ndarray, n_neighbors: int = 15, min_dist: float = 0.1) -> uma
     return mapper
 
 # ┌──────────────────────────────────────────────────────────┐
-#  Clustering
+#  Clustering and Sampling
 # └──────────────────────────────────────────────────────────┘
 def cluster_data(embedding: np.ndarray, n_clusters) -> np.ndarray:
     clustering = MiniBatchKMeans(n_clusters=n_clusters, random_state=42).fit(embedding)
     return clustering.labels_
+
+def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
+    # KDE
+    x = clusters['umap1'].to_numpy()
+    y = clusters['umap2'].to_numpy()
+    values = np.vstack([x, y])
+    kernel = gaussian_kde(values)
+
+    # Find center of mass
+    labels = clusters['label'].unique()
+    centers = []
+    for label in labels:
+        cluster_points = clusters[clusters['label'] == label]
+        center = cluster_points[['umap1', 'umap2']].mean().to_numpy()
+        centers.append(center)
+    centers = np.array(centers) # shape (n_clusters, 2)
+
+    # Density of center
+    densities = kernel(centers)
+    normalized_densities = densities / densities.sum()
+    print(normalized_densities)
+
 
 # ┌──────────────────────────────────────────────────────────┐
 #  Utils
@@ -78,7 +101,7 @@ if __name__ == "__main__":
     V = extract_potential(df)
     console.print(f"Data shape: {V.shape}")
 
-    # Fit UMAP
+    # Fit UMAP and cluster the data
     mapper = umap_fit(V)
     embedding = mapper.transform(V)
     V_labels = cluster_data(embedding, n_clusters = embedding.shape[0] // 1000)
@@ -90,3 +113,6 @@ if __name__ == "__main__":
     print(embedding_df)
     unique_labels = np.unique(V_labels)
     console.print(f"Unique labels found: {len(unique_labels)}")
+
+    # Sample from clusters
+    sample_from_clusters(embedding_df)
