@@ -40,6 +40,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let pacmap_df = pacmap_embedding(&df)?;
             let reshaped_df = reshape_array(&pacmap_df);
             reshaped_df.print();
+
+            reshaped_df.write_parquet("data_test/test_pacmap.parquet", CompressionOptions::Snappy)?;
         },
         _ => {
             eprintln!("Invalid selection");
