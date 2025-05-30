@@ -70,7 +70,7 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     normalized_densities = densities / densities.sum()
 
     # Define weights based on density
-    weights = - np.log(normalized_densities + 1e-10)  # Avoid log(0)
+    weights = - np.log(100 * normalized_densities + 1e-10)  # Avoid log(0)
     weights /= weights.sum()  # Normalize weights
 
     # Define number of samples to take from each cluster
