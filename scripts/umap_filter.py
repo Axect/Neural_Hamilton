@@ -19,10 +19,10 @@ warnings.filterwarnings("ignore")
 # ┌──────────────────────────────────────────────────────────┐
 #  UMAP and Data Processing
 # └──────────────────────────────────────────────────────────┘
-def extract_potential(df: pd.DataFrame) -> np.ndarray:
-    V = df['V'].to_numpy()
-    V = V.reshape((-1, NCOLS))
-    return V
+def extract_column(df: pd.DataFrame, col: str) -> np.ndarray:
+    C = df[col].to_numpy()
+    C = C.reshape((-1, NCOLS))
+    return C
 
 def embedding_to_df(embedding: np.ndarray) -> pd.DataFrame:
     umap1 = embedding[:, 0]
@@ -149,7 +149,7 @@ def select_data_option() -> str:
 #  Plot
 # └──────────────────────────────────────────────────────────┘
 def hist_n_samples(n_samples: np.ndarray, data_type: str):
-    bins = len(np.unique(n_samples)) // 10
+    bins = len(np.unique(n_samples)) // 4
     with plt.style.context(['science', 'nature']):
         fig, ax = plt.subplots()
         ax.hist(n_samples, bins=bins, edgecolor='black', linewidth=1.2, histtype='step')
@@ -157,6 +157,52 @@ def hist_n_samples(n_samples: np.ndarray, data_type: str):
         ax.set_ylabel('Number of clusters')
         fig.tight_layout()
         fig.savefig(f'figs/{data_type}_samples_per_cluster.png', dpi=600, bbox_inches='tight')
+        plt.close(fig)
+
+def plot_embedding(embedding: pd.DataFrame, data_type: str):
+    umap1 = embedding['umap1']
+    umap2 = embedding['umap2']
+    label = embedding['label']
+
+    with plt.style.context(['science', 'nature']):
+        fig, ax = plt.subplots()
+        scatter = ax.scatter(umap1, umap2, c=label, cmap='Spectral', s=5, linewidth=0, alpha=0.7)
+        ax.set_aspect('equal', 'box')
+        ax.set_xlabel('UMAP 1')
+        ax.set_ylabel('UMAP 2')
+        fig.colorbar(scatter, label='Cluster ID', fraction=0.046, pad=0.04)
+        fig.tight_layout()
+        fig.savefig(f'figs/{data_type}_umap_embedding.png', dpi=600, bbox_inches='tight')
+        plt.close(fig)
+
+def plot_density_of_embedding(embedding: pd.DataFrame, data_type: str):
+    umap1 = embedding['umap1']
+    umap2 = embedding['umap2']
+
+    with plt.style.context(['science', 'nature']):
+        fig, ax = plt.subplots()
+        values = np.vstack([umap1, umap2])
+        kernel = gaussian_kde(values)
+        xmin, xmax = umap1.min(), umap1.max()
+        ymin, ymax = umap2.min(), umap2.max()
+        x_padding = (xmax - xmin) * 0.1
+        y_padding = (ymax - ymin) * 0.1
+        xmin -= x_padding
+        xmax += x_padding
+        ymin -= y_padding
+        ymax += y_padding
+        xi, yi = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+        zi = kernel(np.vstack([xi.ravel(), yi.ravel()]))
+        zi = zi.reshape(xi.shape)
+
+        ax.scatter(umap1, umap2, c='silver', s=5, linewidth=0, alpha=0.3, label='_nolegend_')
+        ax.set_aspect('equal', 'box')
+        contour = ax.contourf(xi, yi, zi, levels=10, cmap='Blues', alpha=0.6)
+        ax.set_xlabel('UMAP 1')
+        ax.set_ylabel('UMAP 2')
+        fig.colorbar(contour, ax=ax, label='Density', fraction=0.046, pad=0.04)
+        fig.tight_layout()
+        fig.savefig(f'figs/{data_type}_umap_density.png', dpi=600, bbox_inches='tight')
         plt.close(fig)
 
 # ┌──────────────────────────────────────────────────────────┐
@@ -168,7 +214,10 @@ if __name__ == "__main__":
     print(f"Processing file: {data_file}")
 
     df = load_data(data_file)
-    V = extract_potential(df)
+    V = extract_column(df, 'V')
+    t = extract_column(df, 't')
+    q = extract_column(df, 'q')
+    p = extract_column(df, 'p')
     console.print(f"Data shape: {V.shape}")
 
     # Fit UMAP and cluster the data
@@ -198,3 +247,27 @@ if __name__ == "__main__":
     samples_file = os.path.join(data_folder, f"{data_type}_samples.parquet")
     embedding_df.to_parquet(embedding_file, index=False)
     samples.to_parquet(samples_file, index=False)
+
+    # Plot UMAP embedding and density
+    plot_embedding(embedding_df, data_type)
+    plot_density_of_embedding(embedding_df, data_type)
+    plot_embedding(samples, data_type + '_samples')
+    plot_density_of_embedding(samples, data_type + '_samples')
+
+    # Reconstruct DataFrame with samples
+    numbers = samples['number'].to_numpy()
+    V_samples = V[numbers].flatten()
+    t_samples = t[numbers].flatten()
+    q_samples = q[numbers].flatten()
+    p_samples = p[numbers].flatten()
+    samples_df = pd.DataFrame({
+        'V': V_samples,
+        't': t_samples,
+        'q': q_samples,
+        'p': p_samples,
+    })
+    print(f"Samples DataFrame shape: {samples_df.shape}")
+    print(samples_df)
+    modified_data_file = data_file.replace('.parquet', '_samples.parquet')
+    samples_df.to_parquet(modified_data_file, index=False)
+
