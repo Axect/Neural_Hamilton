@@ -4,7 +4,7 @@ import scienceplots
 import fireducks.pandas as pd
 import numpy as np
 import random
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import MiniBatchKMeans
 import argparse
 import warnings
 import os
@@ -45,9 +45,7 @@ def umap_fit(V: np.ndarray, n_neighbors: int = 15, min_dist: float = 0.1) -> uma
 #  Clustering
 # └──────────────────────────────────────────────────────────┘
 def cluster_data(embedding: np.ndarray, n_clusters) -> np.ndarray:
-    clustering = AgglomerativeClustering(
-        n_clusters=n_clusters,
-    ).fit(embedding)
+    clustering = MiniBatchKMeans(n_clusters=n_clusters, random_state=42).fit(embedding)
     return clustering.labels_
 
 # ┌──────────────────────────────────────────────────────────┐
