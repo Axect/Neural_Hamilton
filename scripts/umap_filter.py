@@ -81,7 +81,7 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     n_sample_min = 5
     n_sample_max = 100
     total_samples = x.shape[0] / 10 # 10% of total points
-    sorted_label_and_weight = label_and_weight.sort_values(by='weight', ascending=True)
+    sorted_label_and_weight = label_and_weight.sort_values(by='weight', ascending=False)
     n_samples = np.repeat(n_sample_min, len(unique_labels))
     left_samples = total_samples - n_sample_min * len(unique_labels)
     target_samples = n_samples + np.round(sorted_label_and_weight['weight'].values * left_samples).astype(int)
