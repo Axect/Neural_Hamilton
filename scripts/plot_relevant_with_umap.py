@@ -89,6 +89,7 @@ def umap_map_and_embed(
             min_dist=min_dist,
             n_components=n_components,
             random_state=random_state,
+            densmap=True,
         ).fit(np.empty((0, num_features if num_features > 0 else 1))) # fit이 최소 1개의 특징 차원을 갖도록 보장
         return empty_umap_df, mapper
 
@@ -97,6 +98,7 @@ def umap_map_and_embed(
         min_dist=min_dist,
         n_components=n_components,
         random_state=random_state,
+        densmap=True, # 밀도 맵을 활성화합니다.
     )
     mapper = reducer.fit(data_for_umap)
     embedding = mapper.transform(data_for_umap)
