@@ -75,7 +75,7 @@ fn pacmap_embedding(df: &DataFrame) -> anyhow::Result<Array2<f32>> {
     let V_array = reshape_df(df)?;
     let config = Configuration::builder()
         .embedding_dimensions(2)
-        .initialization(pacmap::Initialization::Pca)
+        .initialization(pacmap::Initialization::Random(Some(42)))
         .build();
     let (embedding, _) = fit_transform(V_array.view(), config)?;
 
