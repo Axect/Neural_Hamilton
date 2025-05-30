@@ -163,10 +163,21 @@ if __name__ == "__main__":
     # Convert embedding to DataFrame
     embedding_df = embedding_to_df(embedding)
     embedding_df['label'] = V_labels
+    embedding_df['number'] = np.arange(embedding_df.shape[0])
     print(embedding_df)
     unique_labels = np.unique(V_labels)
     console.print(f"Unique labels found: {len(unique_labels)}")
 
     # Sample from clusters
     samples = sample_from_clusters(embedding_df)
+    print(f"Number of samples taken: {samples.shape[0]}")
     print(samples)
+
+    # Save Embedding and samples
+    data_folder = 'data_umap'
+    os.makedirs(data_folder, exist_ok=True)
+    data_type = data_file.split('/')[-1].split('.')[0]
+    embedding_file = os.path.join(data_folder, f"{data_type}_embedding.parquet")
+    samples_file = os.path.join(data_folder, f"{data_type}_samples.parquet")
+    embedding_df.to_parquet(embedding_file, index=False)
+    samples.to_parquet(samples_file, index=False)
