@@ -115,10 +115,13 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
 
     # Sample from clusters based on weights
     samples = []
-    for label, n_sample in zip(unique_labels, n_samples):
+    for label, n_sample in zip(labels, n_samples):
         cluster_points = clusters[clusters['label'] == label]
         sample = cluster_points.sample(n=n_sample, replace=False)
         samples.append(sample)
+
+    samples = pd.concat(samples, ignore_index=True)
+    return samples
 
 
 # ┌──────────────────────────────────────────────────────────┐
@@ -165,4 +168,5 @@ if __name__ == "__main__":
     console.print(f"Unique labels found: {len(unique_labels)}")
 
     # Sample from clusters
-    sample_from_clusters(embedding_df)
+    samples = sample_from_clusters(embedding_df)
+    print(samples)
