@@ -93,6 +93,7 @@ def umap_map_and_embed(
             min_dist=min_dist,
             n_components=n_components,
             random_state=random_state,
+            densmap=True
         ).fit(np.empty((0, num_features)))
         return empty_umap_df, mapper
 
@@ -101,6 +102,7 @@ def umap_map_and_embed(
         min_dist=min_dist,
         n_components=n_components,
         random_state=random_state,
+        densmap=True, # Enable DensMAP for better clustering visualization
     )
     mapper = reducer.fit(data_for_umap)
     embedding = mapper.transform(data_for_umap)
