@@ -63,10 +63,10 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
         cluster_points = clusters[clusters['label'] == label]
         center = cluster_points[['umap1', 'umap2']].mean().to_numpy()
         centers.append(center)
-    centers = np.array(centers) # shape (n_clusters, 2)
+    centers = np.array(centers)
 
     # Density of center
-    densities = kernel(centers)
+    densities = kernel(centers.T)
     normalized_densities = densities / densities.sum()
     print(normalized_densities)
 
