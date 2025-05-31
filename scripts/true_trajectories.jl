@@ -403,5 +403,5 @@ run_simulation_reference("data_normal/val.parquet", "data_true/val_normal_kl8.pa
 run_simulation_reference("data_more/train.parquet", "data_true/train_more_kl8.parquet")
 run_simulation_reference("data_more/val.parquet", "data_true/val_more_kl8.parquet")
 # Run reference simulation (much)
-run_simulation_reference("data_much/train.parquet", "data_true/train_much_kl8.parquet")
-run_simulation_reference("data_much/val.parquet", "data_true/val_much_kl8.parquet")
+#run_simulation_reference("data_much/train.parquet", "data_true/train_much_kl8.parquet")
+#run_simulation_reference("data_much/val.parquet", "data_true/val_much_kl8.parquet")
