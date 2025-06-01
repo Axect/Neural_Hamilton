@@ -21,16 +21,16 @@ search_space:
   net_config:
     d_model:
       type: categorical
-      choices: [64, 128, 256]
+      choices: [32, 64, 128]
     num_layers1:
       type: categorical
-      choices: [3, 4, 5, 6]
+      choices: [3, 4, 5]
     n_head:
       type: categorical
       choices: [4, 8, 16, 32]
     num_layers2:
       type: categorical
-      choices: [3, 4, 5, 6]
+      choices: [3, 4, 5]
     d_ff:
       type: categorical
       choices: [256, 512, 1024]
