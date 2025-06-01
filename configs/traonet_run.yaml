@@ -1,5 +1,5 @@
-project: NeuralHamilton_v1.10_TraONet
-device: cuda:1
+project: NeuralHamilton_v1.12_TraONet
+device: cuda:0
 net: model.TraONet
 optimizer: torch.optim.adamw.AdamW
 scheduler: hyperbolic_lr.ExpHyperbolicLR
