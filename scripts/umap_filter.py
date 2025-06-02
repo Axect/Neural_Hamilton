@@ -187,7 +187,7 @@ def plot_embedding(embedding: pd.DataFrame, data_quant, data_type: str):
     label = embedding["label"]
 
     with plt.style.context(["science", "nature"]):
-        fig, ax = plt.subplots(figsize=(5,5))
+        fig, ax = plt.subplots(figsize=(5,4))
         scatter = ax.scatter(
             umap1, umap2, c=label, cmap="Spectral", s=5, linewidth=0, alpha=0.7
         )
@@ -209,7 +209,7 @@ def plot_density_of_embedding(embedding: pd.DataFrame, data_quant: str, data_typ
     umap2 = embedding["umap2"]
 
     with plt.style.context(["science", "nature"]):
-        fig, ax = plt.subplots(figsize=(5,5))
+        fig, ax = plt.subplots(figsize=(5,4))
         values = np.vstack([umap1, umap2])
         kernel = gaussian_kde(values)
         xmin, xmax = umap1.min(), umap1.max()
@@ -260,7 +260,7 @@ def plot_density_of_embedding_with_relevant(
     umap2 = embedding["umap2"]
 
     with plt.style.context(["science", "nature"]):
-        fig, ax = plt.subplots(figsize=(5,5))
+        fig, ax = plt.subplots(figsize=(5,4))
         values = np.vstack([umap1, umap2])
         kernel = gaussian_kde(values)
         xmin, xmax = umap1.min(), umap1.max()
