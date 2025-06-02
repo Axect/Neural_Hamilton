@@ -405,6 +405,30 @@ if __name__ == "__main__":
         samples, data_quant, data_type + "_samples", relevants
     )
 
+    # UMAP again on samples
+    samples_mat = samples[["umap1", "umap2"]].to_numpy()
+    mapper_samples = umap_fit(samples_mat)
+    embedding_samples = mapper_samples.transform(samples_mat)
+    embedding_potentials = [
+        mapper_samples.transform(potential) for potential in potentials
+    ]
+    relevants = [
+        RelevantPotential(
+            label=label,
+            color=color,
+            marker=marker,
+            umap1=embedding_potential[0, 0],
+            umap2=embedding_potential[0, 1],
+        )
+        for embedding_potential, label, color, marker in zip(
+            embedding_potentials, labels, colors, markers
+        )
+    ]
+    embedding_samples_df = embedding_to_df(embedding_samples)
+    plot_density_of_embedding_with_relevant(
+        embedding_samples_df, data_quant, data_type + "_embedding_samples", relevants
+    )
+
     # Reconstruct DataFrame with samples
     numbers = samples["number"].to_numpy()
     V_samples = V[numbers].flatten()
