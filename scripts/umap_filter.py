@@ -228,11 +228,11 @@ def plot_density_of_embedding(embedding: pd.DataFrame, data_quant: str, data_typ
         ax.scatter(
             umap1, umap2, c="silver", s=5, linewidth=0, alpha=0.3, label="_nolegend_"
         )
-        ax.set_aspect("equal", "box")
         contour = ax.contourf(xi, yi, zi, levels=10, cmap="Blues", alpha=0.6)
         ax.set_xlabel("UMAP 1")
         ax.set_ylabel("UMAP 2")
         fig.colorbar(contour, ax=ax, label="Density", fraction=0.046, pad=0.04)
+        ax.set_aspect("equal", "box")
         fig.tight_layout()
         fig.savefig(
             f"figs/{data_quant}_{data_type}_umap_density.png",
@@ -279,7 +279,6 @@ def plot_density_of_embedding_with_relevant(
         ax.scatter(
             umap1, umap2, c="silver", s=5, linewidth=0, alpha=0.3, label="_nolegend_"
         )
-        ax.set_aspect("equal", "box")
         contour = ax.contourf(xi, yi, zi, levels=10, cmap="Blues", alpha=0.6)
         ax.set_xlabel("UMAP 1")
         ax.set_ylabel("UMAP 2")
@@ -299,6 +298,7 @@ def plot_density_of_embedding_with_relevant(
             )
 
         ax.legend(fontsize=5)
+        ax.set_aspect("equal", "box")
         fig.tight_layout()
         fig.savefig(
             f"figs/{data_quant}_{data_type}_umap_density_relevant.png",
@@ -407,7 +407,8 @@ if __name__ == "__main__":
 
     # UMAP again on samples
     samples_mat = samples[["umap1", "umap2"]].to_numpy()
-    mapper_samples = umap_fit(samples_mat)
+    samples_with_relevants = np.row_stack([sample_mat, *potentials])
+    mapper_samples = umap_fit(samples_with_relevants)
     embedding_samples = mapper_samples.transform(samples_mat)
     embedding_potentials = [
         mapper_samples.transform(potential) for potential in potentials
