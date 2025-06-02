@@ -394,7 +394,7 @@ if __name__ == "__main__":
     samples.to_parquet(samples_file, index=False)
 
     # Plot UMAP embedding and density
-    plot_embedding(embedding_df, data_type)
+    plot_embedding(embedding_df, data_quant, data_type)
     plot_density_of_embedding(embedding_df, data_quant, data_type)
     plot_embedding(samples, data_quant, data_type + "_samples")
     plot_density_of_embedding(samples, data_quant, data_type + "_samples")
