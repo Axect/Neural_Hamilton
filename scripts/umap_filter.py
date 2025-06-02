@@ -255,6 +255,7 @@ def plot_density_of_embedding_with_relevant(embedding: pd.DataFrame, data_type: 
                 label=relevant.label
             )
 
+        ax.legend(fontsize=5)
         fig.tight_layout()
         fig.savefig(f'figs/{data_type}_umap_density_relevant.png', dpi=600, bbox_inches='tight')
         plt.close(fig)
