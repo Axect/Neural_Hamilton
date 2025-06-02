@@ -191,7 +191,7 @@ def plot_embedding(embedding: pd.DataFrame, data_quant, data_type: str):
         scatter = ax.scatter(
             umap1, umap2, c=label, cmap="Spectral", s=5, linewidth=0, alpha=0.7
         )
-        ax.set_aspect("equal", "box")
+        ax.set_aspect("equal")
         ax.set_xlabel("UMAP 1")
         ax.set_ylabel("UMAP 2")
         fig.colorbar(scatter, label="Cluster ID", fraction=0.046, pad=0.04)
@@ -231,7 +231,7 @@ def plot_density_of_embedding(embedding: pd.DataFrame, data_quant: str, data_typ
         ax.set_xlabel("UMAP 1")
         ax.set_ylabel("UMAP 2")
         fig.colorbar(contour, ax=ax, label="Density", fraction=0.046, pad=0.04)
-        ax.set_aspect("equal", "box")
+        ax.set_aspect("equal")
         fig.tight_layout()
         fig.savefig(
             f"figs/{data_quant}_{data_type}_umap_density.png",
@@ -297,7 +297,7 @@ def plot_density_of_embedding_with_relevant(
             )
 
         ax.legend(fontsize=5)
-        ax.set_aspect("equal", "box")
+        ax.set_aspect("equal")
         fig.tight_layout()
         fig.savefig(
             f"figs/{data_quant}_{data_type}_umap_density_relevant.png",
