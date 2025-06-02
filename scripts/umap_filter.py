@@ -407,7 +407,7 @@ if __name__ == "__main__":
 
     # UMAP again on samples
     samples_mat = samples[["umap1", "umap2"]].to_numpy()
-    samples_with_relevants = np.row_stack([sample_mat, *potentials])
+    samples_with_relevants = np.row_stack([samples_mat, *potentials])
     mapper_samples = umap_fit(samples_with_relevants)
     embedding_samples = mapper_samples.transform(samples_mat)
     embedding_potentials = [
