@@ -302,7 +302,9 @@ if __name__ == "__main__":
     embedding = mapper.transform(V)
     V_labels = cluster_data(embedding, n_clusters = embedding.shape[0] // 1000)
     console.print(f"UMAP embedding shape: {embedding.shape}")
-    embedding_potentials = [mapper.transform(potential) for potential in potentials]
+    V_with_relevant = np.concatenate(V, potentials, axis=0)
+    another_mapper = umap_fit(V_with_relevant)
+    embedding_potentials = [another_mapper.transform(potential) for potential in potentials]
     relevants = [
         RelevantPotential(
             label=label,
