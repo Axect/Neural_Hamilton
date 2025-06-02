@@ -11,7 +11,6 @@ import warnings
 import os
 from rich.console import Console
 import beaupy
-import argparse
 from dataclasses import dataclass
 
 NCOLS = 100
