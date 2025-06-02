@@ -206,6 +206,58 @@ def plot_density_of_embedding(embedding: pd.DataFrame, data_type: str):
         fig.savefig(f'figs/{data_type}_umap_density.png', dpi=600, bbox_inches='tight')
         plt.close(fig)
 
+@dataclass
+class RelevantPotential:
+    label: str
+    color: str
+    marker: str
+    umap1: float
+    umap2: float
+
+def plot_density_of_embedding_with_relevant(embedding: pd.DataFrame, data_type: str, relevants: list[RelevantPotential]):
+    umap1 = embedding['umap1']
+    umap2 = embedding['umap2']
+
+    with plt.style.context(['science', 'nature']):
+        fig, ax = plt.subplots()
+        values = np.vstack([umap1, umap2])
+        kernel = gaussian_kde(values)
+        xmin, xmax = umap1.min(), umap1.max()
+        ymin, ymax = umap2.min(), umap2.max()
+        x_padding = (xmax - xmin) * 0.1
+        y_padding = (ymax - ymin) * 0.1
+        xmin -= x_padding
+        xmax += x_padding
+        ymin -= y_padding
+        ymax += y_padding
+        xi, yi = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+        zi = kernel(np.vstack([xi.ravel(), yi.ravel()]))
+        zi = zi.reshape(xi.shape)
+
+        ax.scatter(umap1, umap2, c='silver', s=5, linewidth=0, alpha=0.3, label='_nolegend_')
+        ax.set_aspect('equal', 'box')
+        contour = ax.contourf(xi, yi, zi, levels=10, cmap='Blues', alpha=0.6)
+        ax.set_xlabel('UMAP 1')
+        ax.set_ylabel('UMAP 2')
+        fig.colorbar(contour, ax=ax, label='Density', fraction=0.046, pad=0.04)
+
+        # Plot relevant points
+        for relevant in relevants:
+            ax.scatter(
+                relevant.umap1,
+                relevant.umap2,
+                s=20,
+                linewidth=0.5,
+                edgecolors='black',
+                color=relevant.color,
+                marker=relevant.marker,
+                label=relevant.label
+            )
+
+        fig.tight_layout()
+        fig.savefig(f'figs/{data_type}_umap_density_relevant.png', dpi=600, bbox_inches='tight')
+        plt.close(fig)
+
 # ┌──────────────────────────────────────────────────────────┐
 #  Main
 # └──────────────────────────────────────────────────────────┘
@@ -221,6 +273,7 @@ if __name__ == "__main__":
     data_type = data_file.split('/')[-1].split('.')[0]
     print(f"Processing file: {data_file}")
 
+    # Load data
     df = load_data(data_file)
     V = extract_column(df, 'V')
     t = extract_column(df, 't')
@@ -228,11 +281,36 @@ if __name__ == "__main__":
     p = extract_column(df, 'p')
     console.print(f"Data shape: {V.shape}")
 
+    # Load relevant potentials
+    df_relevants = [
+        load_data('data_analyze/sho.parquet'),
+        load_data('data_analyze/double_well.parquet'),
+        load_data('data_analyze/morse.parquet'),
+        load_data('data_analyze/sawtooth.parquet'),
+        load_data('data_analyze/mff.parquet'),
+        load_data('data_analyze/smff.parquet'),
+    ]
+    potentials = [extract_column(df, 'V') for df in df_relevants]
+    labels = ['SHO', 'Double Well', 'Morse', 'ATW', 'STW', 'SSTW']
+    colors = ["cyan", "darkviolet", "lime", "orange", "red", "deeppink"]
+    markers = ["o", "s", "^", "D", "P", "*"]
+
     # Fit UMAP and cluster the data
     mapper = umap_fit(V)
     embedding = mapper.transform(V)
     V_labels = cluster_data(embedding, n_clusters = embedding.shape[0] // 1000)
     console.print(f"UMAP embedding shape: {embedding.shape}")
+    embedding_potentials = [mapper.transform(potential) for potential in potentials]
+    relevants = [
+        RelevantPotential(
+            label=label,
+            color=color,
+            marker=marker,
+            umap1=embedding_potential[0, 0],
+            umap2=embedding_potential[0, 1]
+        )
+        for embedding_potential, label, color, marker in zip(embedding_potentials, labels, colors, markers)
+    ]
 
     # Convert embedding to DataFrame
     embedding_df = embedding_to_df(embedding)
@@ -261,6 +339,16 @@ if __name__ == "__main__":
     plot_density_of_embedding(embedding_df, data_type)
     plot_embedding(samples, data_type + '_samples')
     plot_density_of_embedding(samples, data_type + '_samples')
+    plot_density_of_embedding_with_relevant(
+        embedding_df,
+        data_type,
+        relevants
+    )
+    plot_density_of_embedding_with_relevant(
+        samples,
+        data_type + '_samples',
+        relevants
+    )
 
     # Reconstruct DataFrame with samples
     numbers = samples['number'].to_numpy()
