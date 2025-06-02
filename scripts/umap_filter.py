@@ -404,10 +404,28 @@ if __name__ == "__main__":
         samples, data_quant, data_type + "_samples", relevants
     )
 
+    # Reconstruct DataFrame with samples
+    numbers = samples["number"].to_numpy()
+    V_samples = V[numbers].flatten()
+    t_samples = t[numbers].flatten()
+    q_samples = q[numbers].flatten()
+    p_samples = p[numbers].flatten()
+    samples_df = pd.DataFrame(
+        {
+            "V": V_samples,
+            "t": t_samples,
+            "q": q_samples,
+            "p": p_samples,
+        }
+    )
+    print(f"Samples DataFrame shape: {samples_df.shape}")
+    print(samples_df)
+    modified_data_file = data_file.replace(".parquet", "_samples.parquet")
+    samples_df.to_parquet(modified_data_file, index=False)
+
     # UMAP again on samples
-    samples_mat = samples[["umap1", "umap2"]].to_numpy()
-    samples_with_relevants = np.row_stack([samples_mat, *potentials])
-    mapper_samples = umap_fit(samples_with_relevants)
+    samples_mat = extract_column(samples_df, "V")
+    mapper_samples = umap_fit(samples_mat)
     embedding_samples = mapper_samples.transform(samples_mat)
     embedding_potentials = [
         mapper_samples.transform(potential) for potential in potentials
@@ -428,22 +446,3 @@ if __name__ == "__main__":
     plot_density_of_embedding_with_relevant(
         embedding_samples_df, data_quant, data_type + "_embedding_samples", relevants
     )
-
-    # Reconstruct DataFrame with samples
-    numbers = samples["number"].to_numpy()
-    V_samples = V[numbers].flatten()
-    t_samples = t[numbers].flatten()
-    q_samples = q[numbers].flatten()
-    p_samples = p[numbers].flatten()
-    samples_df = pd.DataFrame(
-        {
-            "V": V_samples,
-            "t": t_samples,
-            "q": q_samples,
-            "p": p_samples,
-        }
-    )
-    print(f"Samples DataFrame shape: {samples_df.shape}")
-    print(samples_df)
-    modified_data_file = data_file.replace(".parquet", "_samples.parquet")
-    samples_df.to_parquet(modified_data_file, index=False)
