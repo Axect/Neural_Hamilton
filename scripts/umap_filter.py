@@ -343,9 +343,9 @@ if __name__ == "__main__":
         load_data("data_analyze/sho.parquet"),
         load_data("data_analyze/double_well.parquet"),
         load_data("data_analyze/morse.parquet"),
-        load_data("data_analyze/sawtooth.parquet"),
-        load_data("data_analyze/mff.parquet"),
-        load_data("data_analyze/smff.parquet"),
+        load_data("data_analyze/atw.parquet"),
+        load_data("data_analyze/stw.parquet"),
+        load_data("data_analyze/sstw.parquet"),
     ]
     potentials = [extract_column(df, "V") for df in df_relevants]
     labels = ["SHO", "Double Well", "Morse", "ATW", "STW", "SSTW"]

@@ -126,17 +126,17 @@ register_potentials! {
         potential: Pendulum { theta_L: PI / 3f64 }
     },
     4 => {
-        name: "STW",
+        name: "stw",
         display: "SymmetricTriangularWell",
         potential: SymmetricTriangularWell
     },
     5 => {
-        name: "SSTW",
+        name: "sstw",
         display: "SoftenedSymmetricTriangularWell",
         potential: SoftenedSymmetricTriangularWell
     },
     6 => {
-        name: "ATW",
+        name: "atw",
         display: "AsymmetricTriangularWell",
         potential: AsymmetricTriangularWell { lambda: 0.25 }
     }
