@@ -30,3 +30,5 @@ data-filter: activate
     mv "data_more/val_cand_samples.parquet" "data_more/val.parquet"
 
 build: build-cargo
+
+all: install build-cargo data-gen data-filter

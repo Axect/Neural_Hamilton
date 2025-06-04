@@ -20,7 +20,8 @@ Key features:
 - [Rust & Cargo](https://rustup.rs/)
 - Python 3.8+
 - CUDA (optional, for GPU support)
-- [uv](https://github.com/astral-sh/uv) (recommended) or pip
+- [uv](https://github.com/astral-sh/uv)
+- [just](https://github.com/casey/just)
 
 ### Setup
 
@@ -30,53 +31,22 @@ Key features:
    cd Neural_Hamilton
    ```
 
-2. Install the required packages:
+2. (Recommended) Setup all dependencies and generate all data in once using `just`:
    ```bash
-   # Use uv with sync requirements.txt (recommended)
-   uv pip sync requirements.txt
-
-   # Or use uv (fresh install)
-   uv pip install -U torch wandb polars numpy optuna matplotlib scienceplots beaupy rich mambapy
-
-   # Or use pip
-   pip install -r requirements.txt
-
+   just all
    ```
-
-## Usage
-
-### Data Generation
-
-To generate training & validation data with Rust:
-```bash
-cargo run --release --bin neural_hamilton
-```
-
-To generate physically relevant potentials:
-```bash
-cargo run --release --bin <potential_name>
-```
-
-For `potential_name`, there are six options:
-- `sho`: Simple Harmonic Oscillator
-- `quartic`: Double-well
-- `morse`: Morse
-- `mff`: Mirrored Free Fall
-- `smff`: Softened Mirrored Free Fall
-- `unbounded`: Unbounded potential example in the paper
 
 ### Training Models
 
 The main training script can be run with different dataset sizes:
 ```bash
-python main.py --data normal --run_config configs/run_config.yaml  # 10,000 potentials
-python main.py --data more --run_config configs/run_config.yaml    # 100,000 potentials
-python main.py --data much --run_config configs/run_config.yaml    # 1,000,000 potentials
+python main.py --data normal --run_config configs/deeponet_run_optimized.yaml  # 10,000 potentials
+python main.py --data more --run_config configs/deeponet_run_optimized.yaml    # 100,000 potentials
 ```
 
 For hyperparameter optimization:
 ```bash
-python main.py --data normal --run_config configs/run_config.yaml --optimize_config configs/optimize_config.yaml
+python main.py --data normal --run_config configs/deeponet_run.yaml --optimize_config configs/deeponet_tpe_full.yaml --device="cuda:0"
 ```
 
 ### Analyzing Results

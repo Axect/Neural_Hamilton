@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-use dialoguer::Select;
 use peroxide::fuga::*;
 use std::f64::consts::PI;
 
@@ -98,15 +97,6 @@ macro_rules! register_potentials {
                 _ => unreachable!(),
             }
         }
-
-        /// RKF78
-        #[allow(non_snake_case)]
-        fn solve_rkf78(potential_idx: usize, initial_condition: &[f64], rkf78: RKF78) -> (Vec<f64>, Vec<f64>) {
-            match potential_idx {
-                $($idx => ode_solve!($potential, initial_condition, rkf78),)*
-                _ => unreachable!(),
-            }
-        }
     };
 }
 
@@ -136,19 +126,19 @@ register_potentials! {
         potential: Pendulum { theta_L: PI / 3f64 }
     },
     4 => {
-        name: "mff",
-        display: "MirroredFreeFall",
-        potential: MirroredFreeFall
+        name: "STW",
+        display: "SymmetricTriangularWell",
+        potential: SymmetricTriangularWell
     },
     5 => {
-        name: "smff",
-        display: "SoftenedMirroredFreeFall",
-        potential: SoftenedMirroredFreeFall
+        name: "SSTW",
+        display: "SoftenedSymmetricTriangularWell",
+        potential: SoftenedSymmetricTriangularWell
     },
     6 => {
-        name: "sawtooth",
-        display: "Sawtooth",
-        potential: Sawtooth { lambda: 0.25 }
+        name: "ATW",
+        display: "AsymmetricTriangularWell",
+        potential: AsymmetricTriangularWell { lambda: 0.25 }
     }
     // Add more potentials here
 }
@@ -160,66 +150,51 @@ register_potentials! {
 fn main() -> Result<(), Box<dyn Error>> {
     // Set up potential selection
     let potentials = get_potential_names();
-    let potential = Select::new()
-        .with_prompt("Choose potential")
-        .items(&potentials)
-        .default(0)
-        .interact()?;
 
     // Define initial conditions
     let initial_condition = [0f64, 0f64];
 
-    // Yoshida 4th order
-    let data = solve_yoshida(potential, &initial_condition)?;
+    for potential in 0..potentials.len() {
+        // Yoshida 4th order
+        let data = solve_yoshida(potential, &initial_condition)?;
 
-    // Declare integrators - GL4 & RKF78
-    let gl4 = GL4 {
-        solver: ImplicitSolver::Broyden,
-        tol: 1e-6,
-        max_step_iter: 100,
-    };
-    let rkf78 = RKF78 {
-        tol: 1e-6,
-        safety_factor: 0.9,
-        min_step_size: 1e-6,
-        max_step_size: TSTEP * 10f64,
-        max_step_iter: 100,
-    };
+        // Declare integrators - GL4 & RKF78
+        let gl4 = GL4 {
+            solver: ImplicitSolver::Broyden,
+            tol: 1e-6,
+            max_step_iter: 100,
+        };
 
-    // Solve with various methods
-    let rk4_data = solve_rk4(potential, &initial_condition);
-    let gl4_data = solve_gl4(potential, &initial_condition, gl4);
-    let rkf78_data = solve_rkf78(potential, &initial_condition, rkf78);
+        // Solve with various methods
+        let rk4_data = solve_rk4(potential, &initial_condition);
+        let gl4_data = solve_gl4(potential, &initial_condition, gl4);
 
-    let potential_name = get_potential_file_name(potential);
+        let potential_name = get_potential_file_name(potential);
 
-    // DataFrame
-    let mut df = DataFrame::new(vec![]);
+        // DataFrame
+        let mut df = DataFrame::new(vec![]);
 
-    let V = data.V.clone();
-    let t = data.t.clone();
-    let q = data.q.clone();
-    let p = data.p.clone();
-    let q_rk4 = rk4_data.0.clone();
-    let p_rk4 = rk4_data.1.clone();
-    let q_gl4 = gl4_data.0.clone();
-    let p_gl4 = gl4_data.1.clone();
-    let q_rkf78 = rkf78_data.0.clone();
-    let p_rkf78 = rkf78_data.1.clone();
+        let V = data.V.clone();
+        let t = data.t.clone();
+        let q = data.q.clone();
+        let p = data.p.clone();
+        let q_rk4 = rk4_data.0.clone();
+        let p_rk4 = rk4_data.1.clone();
+        let q_gl4 = gl4_data.0.clone();
+        let p_gl4 = gl4_data.1.clone();
 
-    df.push("V", Series::new(V));
-    df.push("t", Series::new(t));
-    df.push("q", Series::new(q));
-    df.push("p", Series::new(p));
-    df.push("q_rk4", Series::new(q_rk4));
-    df.push("p_rk4", Series::new(p_rk4));
-    df.push("q_gl4", Series::new(q_gl4));
-    df.push("p_gl4", Series::new(p_gl4));
-    df.push("q_rkf78", Series::new(q_rkf78));
-    df.push("p_rkf78", Series::new(p_rkf78));
-    df.print();
-    let file_name = format!("data_analyze/{}.parquet", potential_name);
-    df.write_parquet(file_name.as_str(), CompressionOptions::Uncompressed)?;
+        df.push("V", Series::new(V));
+        df.push("t", Series::new(t));
+        df.push("q", Series::new(q));
+        df.push("p", Series::new(p));
+        df.push("q_rk4", Series::new(q_rk4));
+        df.push("p_rk4", Series::new(p_rk4));
+        df.push("q_gl4", Series::new(q_gl4));
+        df.push("p_gl4", Series::new(p_gl4));
+        df.print();
+        let file_name = format!("data_analyze/{}.parquet", potential_name);
+        df.write_parquet(file_name.as_str(), CompressionOptions::Uncompressed)?;
+    }
 
     Ok(())
 }
@@ -279,9 +254,9 @@ impl_ode_problem!(SHO);
 impl_ode_problem!(DoubleWell);
 impl_ode_problem!(Morse);
 impl_ode_problem!(Pendulum);
-impl_ode_problem!(MirroredFreeFall);
-impl_ode_problem!(SoftenedMirroredFreeFall);
-impl_ode_problem!(Sawtooth);
+impl_ode_problem!(SymmetricTriangularWell);
+impl_ode_problem!(SoftenedSymmetricTriangularWell);
+impl_ode_problem!(AsymmetricTriangularWell);
 
 // ┌─────────────────────────────────────────────────────────┐
 //  Potential Structs Definition
@@ -301,10 +276,10 @@ pub struct Pendulum {
     theta_L: f64,
 }
 
-pub struct MirroredFreeFall;
-pub struct SoftenedMirroredFreeFall;
+pub struct SymmetricTriangularWell;
+pub struct SoftenedSymmetricTriangularWell;
 
-pub struct Sawtooth {
+pub struct AsymmetricTriangularWell {
     lambda: f64,
 }
 
@@ -381,7 +356,7 @@ impl Potential for Pendulum {
 }
 
 // Mirrored Free Fall Potential
-impl Potential for MirroredFreeFall {
+impl Potential for SymmetricTriangularWell {
     fn V(&self, q: f64) -> f64 {
         4f64 * (q - 0.5).abs()
     }
@@ -402,7 +377,7 @@ impl Potential for MirroredFreeFall {
 }
 
 // Softened Mirrored Free Fall Potential
-impl Potential for SoftenedMirroredFreeFall {
+impl Potential for SoftenedSymmetricTriangularWell {
     fn V(&self, q: f64) -> f64 {
         let alpha = 20f64;
         let a = 4f64 * (0.5 * alpha).tanh();
@@ -421,8 +396,8 @@ impl Potential for SoftenedMirroredFreeFall {
     }
 }
 
-// Sawtooth Ratchet Potential
-impl Potential for Sawtooth {
+// AsymmetricTriangularWell Ratchet Potential
+impl Potential for AsymmetricTriangularWell {
     fn V(&self, q: f64) -> f64 {
         let lambda = self.lambda;
         if q < lambda {
