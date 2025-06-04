@@ -316,6 +316,9 @@ def plot_density_of_embedding_with_relevant(
 #  Main
 # └──────────────────────────────────────────────────────────┘
 if __name__ == "__main__":
+    # Create figs directory if it doesn't exist
+    os.makedirs("figs", exist_ok=True)
+
     # Interactive
     # data_file = select_data_option()
 
