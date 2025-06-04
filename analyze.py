@@ -1347,9 +1347,9 @@ def main():
             "double_well": "DoubleWell",
             "morse": "Morse",
             "pendulum": "Pendulum",
-            "mff": "MFF",
-            "smff": "SMFF",
-            "sawtooth": "Sawtooth",
+            "atw": "ATW",
+            "stw": "STW",
+            "sstw": "SSTW",
         }
         results = [load_relevant_data(name) for name in potentials.keys()]
         ds_trues, ds_y4s, ds_rk4s = zip(*results)
