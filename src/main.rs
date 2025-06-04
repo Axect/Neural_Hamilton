@@ -1,4 +1,3 @@
-use dialoguer::{theme::ColorfulTheme, Select};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressIterator};
 use peroxide::fuga::*;
 use rayon::prelude::*;
