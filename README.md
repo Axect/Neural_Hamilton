@@ -11,7 +11,7 @@ Neural Hamilton reformulates Hamilton's equations as an operator learning proble
 Key features:
 - Novel algorithm for generating physically plausible potential functions using Gaussian Random Fields and cubic B-splines
 - Multiple neural network architectures (DeepONet, TraONet, VaRONet, MambONet) for solving Hamilton's equations
-- Comparison with traditional numerical methods (RK4)
+- Comparison with traditional numerical methods (Yoshida 4th order, Runge-Kutta 4th order)
 - Performance evaluation on various physical potentials (harmonic oscillators, double-well potentials, Morse potentials)
 
 ## Installation
