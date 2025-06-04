@@ -154,6 +154,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Define initial conditions
     let initial_condition = [0f64, 0f64];
 
+    // Create data_analyze directory if it doesn't exist
+    std::fs::create_dir_all("data_analyze")?;
+
     for potential in 0..potentials.len() {
         // Yoshida 4th order
         let data = solve_yoshida(potential, &initial_condition)?;
