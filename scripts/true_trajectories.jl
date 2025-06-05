@@ -95,12 +95,12 @@ function dV_SoftenedMirroredFreeFall(q)
     return a * (1.0 / tanh_val - alpha * (q - 0.5) / (sinh_val^2))
 end
 
-# Sawtooth
-@with_kw struct SawtoothParams
+# ATW
+@with_kw struct ATWParams
     lambda::Float64 = 0.25
 end
 
-function V_Sawtooth(q, p::SawtoothParams)
+function V_ATW(q, p::ATWParams)
     lambda = p.lambda
     if q < lambda
         return 2.0 * (1.0 - q / lambda)
@@ -109,7 +109,7 @@ function V_Sawtooth(q, p::SawtoothParams)
     end
 end
 
-function dV_Sawtooth(q, p::SawtoothParams)
+function dV_ATW(q, p::ATWParams)
     lambda = p.lambda
     if q == lambda
         return NaN
@@ -158,29 +158,29 @@ function hamiltonian_pendulum_q(p_momentum, q, params, t) # dq/dt
 end
 
 # Mirrored Free Fall
-function hamiltonian_mff_p(p_momentum, q, params, t) # dp/dt
+function hamiltonian_stw_p(p_momentum, q, params, t) # dp/dt
     return -dV_MirroredFreeFall(q)
 end
-function hamiltonian_mff_q(p_momentum, q, params, t) # dq/dt
+function hamiltonian_stw_q(p_momentum, q, params, t) # dq/dt
     return p_momentum
 end
 
 # Softened Mirrored Free Fall
-function hamiltonian_smff_p(p_momentum, q, params, t) # dp/dt
+function hamiltonian_sstw_p(p_momentum, q, params, t) # dp/dt
     return -dV_SoftenedMirroredFreeFall(q)
 end
-function hamiltonian_smff_q(p_momentum, q, params, t) # dq/dt
+function hamiltonian_sstw_q(p_momentum, q, params, t) # dq/dt
     return p_momentum
 end
 
-# Sawtooth
-function hamiltonian_sawtooth_p(p_momentum, q, params, t) # dp/dt
-    val_dV = dV_Sawtooth(q, params)
+# ATW
+function hamiltonian_atw_p(p_momentum, q, params, t) # dp/dt
+    val_dV = dV_ATW(q, params)
     if isnan(val_dV)
     end
     return -val_dV
 end
-function hamiltonian_sawtooth_q(p_momentum, q, params, t) # dq/dt
+function hamiltonian_atw_q(p_momentum, q, params, t) # dq/dt
     return p_momentum
 end
 
@@ -291,13 +291,13 @@ function run_simulation(potential_name, p_fn_ham, q_fn_ham, initial_condition, p
     elseif potential_name == "pendulum"
         pendulum_params_local = PendulumParams()
         V_values = [V_Pendulum(q_v, pendulum_params_local) for q_v in q_range_for_V]
-    elseif potential_name == "mff"
+    elseif potential_name == "stw"
         V_values = [V_MirroredFreeFall(q_v) for q_v in q_range_for_V]
-    elseif potential_name == "smff"
+    elseif potential_name == "sstw"
         V_values = [V_SoftenedMirroredFreeFall(q_v) for q_v in q_range_for_V]
-    elseif potential_name == "sawtooth"
-        sawtooth_params_local = SawtoothParams()
-        V_values = [V_Sawtooth(q_v, sawtooth_params_local) for q_v in q_range_for_V]
+    elseif potential_name == "atw"
+        atw_params_local = ATWParams()
+        V_values = [V_ATW(q_v, atw_params_local) for q_v in q_range_for_V]
     end
 
     # Convert results to DataFrame
@@ -322,9 +322,9 @@ function run_all_simulations()
         ("double_well", hamiltonian_double_well_p, hamiltonian_double_well_q, [0.0, 0.0], nothing),
         ("morse", hamiltonian_morse_p, hamiltonian_morse_q, [0.0, 0.0], MorseParams()), # q0=0 for Morse can be far from r_e
         ("pendulum", hamiltonian_pendulum_p, hamiltonian_pendulum_q, [0.0, 0.0], PendulumParams()), # q0=0 means theta = -theta_L
-        ("mff", hamiltonian_mff_p, hamiltonian_mff_q, [0.0, 0.0], nothing),
-        ("smff", hamiltonian_smff_p, hamiltonian_smff_q, [0.0, 0.0], nothing),
-        ("sawtooth", hamiltonian_sawtooth_p, hamiltonian_sawtooth_q, [0.0, 0.0], SawtoothParams()) # q0=0 is in the first slope segment
+        ("stw", hamiltonian_stw_p, hamiltonian_stw_q, [0.0, 0.0], nothing),
+        ("sstw", hamiltonian_sstw_p, hamiltonian_sstw_q, [0.0, 0.0], nothing),
+        ("atw", hamiltonian_atw_p, hamiltonian_atw_q, [0.0, 0.0], ATWParams()) # q0=0 is in the first slope segment
     ]
 
     for (name, p_fn, q_fn, init_cond, params_obj) in potentials

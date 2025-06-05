@@ -264,7 +264,7 @@ def log_mse_loss(predictions, targets):
     EPSILON = 1e-12
     mse = F.mse_loss(predictions, targets)
     mse = mse.clamp(min=EPSILON)  # Avoid log(0)
-    log_mse = torch.log(mse)
+    log_mse = torch.log10(mse) + 12 # Make it positive
     return log_mse
 
 
