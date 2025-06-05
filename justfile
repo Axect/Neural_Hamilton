@@ -13,6 +13,7 @@ data-gen:
         cargo run --release --bin neural_hamilton -- $i; \
     done 
     cargo run --release --bin relevant
+    cargo run --release --bin rk4
 
 data-filter:
     .venv/bin/python scripts/umap_filter.py --data_file="data_test/test_cand.parquet"
