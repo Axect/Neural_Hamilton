@@ -8,7 +8,7 @@ batch_size: 100
 seeds: [89]
 net_config:
   #d_model: 128
-  d_model: 64
+  d_model: 32
   nhead: 4
   #num_layers: 3
   num_layers: 3
@@ -17,9 +17,9 @@ net_config:
   dropout: 0.0
 optimizer_config:
   #lr: 0.0003951061831534517
-  lr: 0.002132779234059149
+  lr: 0.004148737482499028
 scheduler_config:
-  upper_bound: 300
+  upper_bound: 350
   max_iter: 250
   #infimum_lr: 0.00000003653474822356
-  infimum_lr: 0.00000010045326935376
+  infimum_lr: 0.00000001169852976435
