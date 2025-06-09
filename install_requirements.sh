@@ -1,1 +1,1 @@
-uv pip install -U torch wandb polars numpy optuna matplotlib scienceplots beaupy rich mambapy scipy umap-learn scikit-learn fireducks schedulefree
+uv pip install -U umap-learn torch wandb polars numpy optuna matplotlib scienceplots beaupy rich mambapy scipy scikit-learn fireducks
