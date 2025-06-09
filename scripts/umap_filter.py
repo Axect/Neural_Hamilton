@@ -301,7 +301,7 @@ def plot_density_of_embedding_with_relevant(
             )
             print(f"{relevant.label} density: {kernel([relevant.umap1, relevant.umap2])[0]}")
 
-        ax.legend(fontsize=5)
+        ax.legend(fontsize=5, loc="upper left")
 
         fig.tight_layout()
         fig.savefig(
