@@ -260,6 +260,17 @@ class Trainer:
         return val_loss
 
 
+def log_cosh_loss(y_pred, y_true, reduction="mean"):
+    error = y_pred - y_true
+    loss = torch.log(torch.cosh(error))
+    if reduction == "mean":
+        return loss.mean()
+    elif reduction == "sum":
+        return loss.sum()
+    else:
+        return loss # No reduction
+
+
 def run(
     run_config: RunConfig,
     dl_train,
@@ -311,7 +322,7 @@ def run(
                 model,
                 optimizer,
                 scheduler,
-                criterion=F.huber_loss,
+                criterion=log_cosh_loss,
                 early_stopping_config=run_config.early_stopping_config,
                 device=device,
                 variational=variational,
