@@ -260,14 +260,6 @@ class Trainer:
         return val_loss
 
 
-def log_mse_loss(predictions, targets):
-    EPSILON = 1e-12
-    mse = F.mse_loss(predictions, targets)
-    mse = mse.clamp(min=EPSILON)  # Avoid log(0)
-    log_mse = torch.log10(mse) + 12 # Make it positive
-    return log_mse
-
-
 def run(
     run_config: RunConfig,
     dl_train,
@@ -319,7 +311,7 @@ def run(
                 model,
                 optimizer,
                 scheduler,
-                criterion=log_mse_loss,
+                criterion=F.huber_loss,
                 early_stopping_config=run_config.early_stopping_config,
                 device=device,
                 variational=variational,
