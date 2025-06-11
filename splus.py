@@ -109,13 +109,17 @@ class SPlus(Optimizer):
                     u = u @ state['q_sides'][1].T if state['q_sides'][1] is not None else u
 
                     # Every `inverse_every` steps, we update the inverse eigendecomposition.
-                    if state['step'] == 1 or state['step'] % group['inverse_every'] == 0:
-                        if state['sides'][0] is not None:
-                            _, eigvecs = torch.linalg.eigh(state['sides'][0] + group['eps'] * torch.eye(state['sides'][0].shape[0], device=p.device))
-                            state['q_sides'][0] = eigvecs
-                        if state['sides'][1] is not None:
-                            _, eigvecs = torch.linalg.eigh(state['sides'][1] + group['eps'] * torch.eye(state['sides'][1].shape[0], device=p.device))
-                            state['q_sides'][1] = eigvecs
+                    try:
+                        if state['step'] == 1 or state['step'] % group['inverse_every'] == 0:
+                            if state['sides'][0] is not None:
+                                _, eigvecs = torch.linalg.eigh(state['sides'][0] + group['eps'] * torch.eye(state['sides'][0].shape[0], device=p.device))
+                                state['q_sides'][0] = eigvecs
+                            if state['sides'][1] is not None:
+                                _, eigvecs = torch.linalg.eigh(state['sides'][1] + group['eps'] * torch.eye(state['sides'][1].shape[0], device=p.device))
+                                state['q_sides'][1] = eigvecs
+                    except Exception as e:
+                        # If the eigendecomposition fails, return infinite loss
+                        raise RuntimeError(f"Failed to compute eigendecomposition: {e}")
                 else:
                     u = torch.sign(m)
 

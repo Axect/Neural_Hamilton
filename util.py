@@ -350,6 +350,10 @@ def run(
     except optuna.TrialPruned:
         wandb.finish()
         raise
+    except Exception as e:
+        print(f"Runtime error during training: {e}")
+        wandb.finish()
+        raise
     finally:
         # Call trial_finished only once after all seeds are done
         if (
