@@ -1,8 +1,7 @@
-project: NeuralHamilton_v1.14_MambONet
+project: NeuralHamilton_v1.16_MambONet
 device: cuda:0
 net: model.MambONet
 optimizer: torch.optim.adamw.AdamW
-#optimizer: schedulefree.AdamWScheduleFree
 scheduler: hyperbolic_lr.ExpHyperbolicLR
 epochs: 50
 batch_size: 100
