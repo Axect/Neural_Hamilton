@@ -47,6 +47,8 @@ class SPlus(Optimizer):
                 if train_mode:
                     for p in group['params']:
                         state = self.state[p]
+                        if len(state) == 0 or 'ema' not in state:
+                            continue
                         state['param_buffer'] = p.clone()
                         p.lerp_(state['ema'], 1)
                         p.mul_(1 / (1 - ema_rate ** state['step']))

@@ -1,4 +1,4 @@
-project: NeuralHamilton_v1.16_MambONet
+project: NeuralHamilton_v1.17_MambONet
 device: cuda:0
 net: model.MambONet
 #optimizer: torch.optim.adamw.AdamW
