@@ -159,8 +159,8 @@ class Trainer:
 
     def train_epoch(self, dl_train):
         self.model.train()
-        # ScheduleFree Optimizer (name contains "ScheduleFree")
-        if "ScheduleFree" in self.optimizer.__class__.__name__:
+        # ScheduleFree Optimizer or SPlus
+        if any(keyword in self.optimizer.__class__.__name__ for keyword in ["ScheduleFree", "SPlus"]):
             self.optimizer.train()
         train_loss = 0
         for V, t, q, p in dl_train:
@@ -181,8 +181,8 @@ class Trainer:
 
     def val_epoch(self, dl_val):
         self.model.eval()
-        # ScheduleFree Optimizer (name contains "ScheduleFree")
-        if "ScheduleFree" in self.optimizer.__class__.__name__:
+        # ScheduleFree Optimizer or SPlus
+        if any(keyword in self.optimizer.__class__.__name__ for keyword in ["ScheduleFree", "SPlus"]):
             self.optimizer.eval()
         val_loss = 0
         with torch.no_grad():
