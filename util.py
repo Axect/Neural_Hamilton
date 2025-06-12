@@ -271,6 +271,17 @@ def log_cosh_loss(y_pred, y_true, reduction="mean"):
         return loss # No reduction
 
 
+def np_log_cosh_loss(y_pred, y_true, reduction="mean"):
+    error = y_pred - y_true
+    loss = np.log(np.cosh(error))
+    if reduction == "mean":
+        return np.mean(loss)
+    elif reduction == "sum":
+        return np.sum(loss)
+    else:
+        return loss  # No reduction
+
+
 def run(
     run_config: RunConfig,
     dl_train,

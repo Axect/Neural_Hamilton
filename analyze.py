@@ -21,7 +21,7 @@ from util import (
     load_data,
     load_study,
     load_best_model,
-    log_cosh_loss
+    log_cosh_loss,
 )
 
 
@@ -1395,16 +1395,16 @@ def main():
                 q_test = test_results.q_preds
                 p_test = test_results.p_preds
 
-                loss_q_test = np.mean(np.square(q_true - q_test))
-                loss_p_test = np.mean(np.square(p_true - p_test))
+                loss_q_test = np_log_cosh_loss(q_test, q_true)
+                loss_p_test = np_log_cosh_loss(p_test, p_true)
                 loss_test = 0.5 * (loss_q_test + loss_p_test)
 
-                loss_q_y4 = np.mean(np.square(q_true - q_y4))
-                loss_p_y4 = np.mean(np.square(p_true - p_y4))
+                loss_q_y4 = np_log_cosh_loss(q_y4, q_true)
+                loss_p_y4 = np_log_cosh_loss(p_y4, p_true)
                 loss_y4 = 0.5 * (loss_q_y4 + loss_p_y4)
 
-                loss_q_rk4 = np.mean(np.square(q_true - q_rk4))
-                loss_p_rk4 = np.mean(np.square(p_true - p_rk4))
+                loss_q_rk4 = np_log_cosh_loss(q_rk4, q_true)
+                loss_p_rk4 = np_log_cosh_loss(p_rk4, p_true)
                 loss_rk4 = 0.5 * (loss_q_rk4 + loss_p_rk4)
 
                 print(f"Model Loss: {loss_test:.4e}")
