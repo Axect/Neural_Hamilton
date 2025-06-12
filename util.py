@@ -388,6 +388,7 @@ def select_group(project):
     groups = [
         d for d in os.listdir(runs_path) if os.path.isdir(os.path.join(runs_path, d))
     ]
+    groups.sort()
     if not groups:
         raise ValueError(f"No run groups found in {runs_path}")
 
@@ -400,6 +401,7 @@ def select_seed(project, group_name):
     seeds = [
         d for d in os.listdir(group_path) if os.path.isdir(os.path.join(group_path, d))
     ]
+    seeds.sort()
     if not seeds:
         raise ValueError(f"No seeds found in {group_path}")
 
