@@ -1387,14 +1387,14 @@ def main():
                 (_, _, q_y4, p_y4) = batch_data[1]
                 (_, _, q_rk4, p_rk4) = batch_data[2]
 
-                q_true = q_true.numpy().reshape(-1)
-                p_true = p_true.numpy().reshape(-1)
-                q_y4 = q_y4.numpy().reshape(-1)
-                p_y4 = p_y4.numpy().reshape(-1)
-                q_rk4 = q_rk4.numpy().reshape(-1)
-                p_rk4 = p_rk4.numpy().reshape(-1)
-                q_test = test_results.q_preds
-                p_test = test_results.p_preds
+                q_true = q_true.numpy().astype(np.float64).reshape(-1)
+                p_true = p_true.numpy().astype(np.float64).reshape(-1)
+                q_y4 = q_y4.numpy().astype(np.float64).reshape(-1)
+                p_y4 = p_y4.numpy().astype(np.float64).reshape(-1)
+                q_rk4 = q_rk4.numpy().astype(np.float64).reshape(-1)
+                p_rk4 = p_rk4.numpy().astype(np.float64).reshape(-1)
+                q_test = test_results.q_preds.astype(np.float64)
+                p_test = test_results.p_preds.astype(np.float64)
 
                 loss_q_test = np_log_cosh_loss(q_test, q_true)
                 loss_p_test = np_log_cosh_loss(p_test, p_true)
