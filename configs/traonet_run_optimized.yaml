@@ -15,6 +15,7 @@ net_config:
   dropout: 0.0
 optimizer_config:
   lr: 0.06226107193276968
+  eps: 1.e-10
 scheduler_config:
   upper_bound: 300
   max_iter: 250
