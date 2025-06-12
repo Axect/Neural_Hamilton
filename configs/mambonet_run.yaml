@@ -15,6 +15,7 @@ net_config:
   d_ff: 1024
 optimizer_config:
   lr: 1.e-3
+  eps: 1.e-10
 scheduler_config:
   upper_bound: 300
   max_iter: 150
