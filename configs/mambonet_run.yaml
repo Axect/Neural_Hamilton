@@ -1,8 +1,9 @@
-project: NeuralHamilton_v1.17_MambONet
+project: NeuralHamilton_v1.18_MambONet
 device: cuda:0
 net: model.MambONet
 #optimizer: torch.optim.adamw.AdamW
-optimizer: splus.SPlus
+#optimizer: splus.SPlus
+optimizer: soap.SOAP
 scheduler: hyperbolic_lr.ExpHyperbolicLR
 epochs: 50
 batch_size: 100
