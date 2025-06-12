@@ -21,10 +21,12 @@ from util import (
     load_data,
     load_study,
     load_best_model,
+    log_cosh_loss
 )
 
 
 torch.set_float32_matmul_precision("medium")
+criterion = log_cosh_loss
 
 
 def load_relevant_data(potential: str):
@@ -210,8 +212,8 @@ class TestResults:
                     q_pred, p_pred, _, _ = self.model(V, t)
                 t_total = (time.time() - t_start) / V.shape[0]
 
-                loss_q_vec = F.mse_loss(q_pred, q, reduction="none")
-                loss_p_vec = F.mse_loss(p_pred, p, reduction="none")
+                loss_q_vec = criterion(q_pred, q, reduction="none")
+                loss_p_vec = criterion(p_pred, p, reduction="none")
                 loss_vec = 0.5 * (loss_q_vec + loss_p_vec)
 
                 loss_q = loss_q_vec.mean(dim=1)
@@ -574,18 +576,18 @@ def calculate_comparison_results(
 
         # Calculate MSE loss (against KahanLi8 reference)
         # Model
-        loss_q_model = F.mse_loss(q_pred, q_true, reduction="none").mean(dim=1)
-        loss_p_model = F.mse_loss(p_pred, p_true, reduction="none").mean(dim=1)
+        loss_q_model = criterion(q_pred, q_true, reduction="none").mean(dim=1)
+        loss_p_model = criterion(p_pred, p_true, reduction="none").mean(dim=1)
         loss_model = 0.5 * (loss_q_model + loss_p_model)
 
         # Y4
-        loss_q_y4 = F.mse_loss(q_y4, q_true, reduction="none").mean(dim=1)
-        loss_p_y4 = F.mse_loss(p_y4, p_true, reduction="none").mean(dim=1)
+        loss_q_y4 = criterion(q_y4, q_true, reduction="none").mean(dim=1)
+        loss_p_y4 = criterion(p_y4, p_true, reduction="none").mean(dim=1)
         loss_y4 = 0.5 * (loss_q_y4 + loss_p_y4)
 
         # RK4
-        loss_q_rk4 = F.mse_loss(q_rk4, q_true, reduction="none").mean(dim=1)
-        loss_p_rk4 = F.mse_loss(p_rk4, p_true, reduction="none").mean(dim=1)
+        loss_q_rk4 = criterion(q_rk4, q_true, reduction="none").mean(dim=1)
+        loss_p_rk4 = criterion(p_rk4, p_true, reduction="none").mean(dim=1)
         loss_rk4 = 0.5 * (loss_q_rk4 + loss_p_rk4)
 
         # Store results
