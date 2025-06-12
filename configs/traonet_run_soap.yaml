@@ -5,9 +5,9 @@ net: model.TraONet
 #optimizer: splus.SPlus
 optimizer: soap.SOAP
 scheduler: hyperbolic_lr.ExpHyperbolicLR
-epochs: 250
+epochs: 50
 batch_size: 100
-seeds: [89]
+seeds: [89, 231, 928]
 net_config:
   d_model: 128
   nhead: 4
@@ -18,5 +18,5 @@ optimizer_config:
   lr: 0.06226107193276968
 scheduler_config:
   upper_bound: 300
-  max_iter: 250
+  max_iter: 150
   infimum_lr: 0.00000015312096895639
