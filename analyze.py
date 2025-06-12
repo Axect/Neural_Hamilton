@@ -633,9 +633,9 @@ def plot_comparison_histograms(results_dict, fig_dir):
     # Calculate min/max log scale range
     all_losses = np.concatenate([model_losses, y4_losses, rk4_losses])
     loss_min_log = (
-        np.log10(all_losses.min()) * 1.01
+        np.log10(all_losses.min() + 1e-20) * 1.01
         if all_losses.min() < 0
-        else np.log10(all_losses.min()) * 0.99
+        else np.log10(all_losses.min() + 1e-20) * 0.99
     )
     loss_max_log = (
         np.log10(all_losses.max()) * 0.99
