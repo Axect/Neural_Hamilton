@@ -22,6 +22,7 @@ from util import (
     load_study,
     load_best_model,
     log_cosh_loss,
+    np_log_cosh_loss
 )
 
 
