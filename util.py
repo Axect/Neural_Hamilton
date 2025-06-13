@@ -7,9 +7,9 @@ import beaupy
 from rich.console import Console
 import wandb
 import optuna
-from scipy.optimize import curve_fit, least_squares
-from scipy.stats import linregress
-import warnings
+#from scipy.optimize import curve_fit, least_squares
+#from scipy.stats import linregress
+#import warnings
 
 from config import RunConfig
 
@@ -72,212 +72,212 @@ class EarlyStopping:
         return False
 
 
-#def predict_final_loss(losses, max_epochs):
-#    if len(losses) < 10:
-#        return -np.log10(losses[-1])
-#    try:
-#        # Convert to numpy array
-#        y = np.array(losses)
-#        t = np.arange(len(y))
-#
-#        # Decay fitting
-#        y_transformed = np.log(y)
-#        K, log_A = np.polyfit(t, y_transformed, 1)
-#        A = np.exp(log_A)
-#
-#        # Predict final loss
-#        predicted_loss = -np.log10(A * np.exp(K * max_epochs))
-#
-#        if np.isfinite(predicted_loss):
-#            return predicted_loss
-#
-#    except Exception as e:
-#        print(f"Error in loss prediction: {e}")
-#
-#    return -np.log10(losses[-1])
-
 def predict_final_loss(losses, max_epochs):
-    """
-    Predict final loss using multiple curve fitting models.
-    
-    Args:
-        losses: List of validation losses
-        max_epochs: Target epoch to predict
-        
-    Returns:
-        Predicted final loss (negative log scale)
-    """
-    if len(losses) < 5:
+    if len(losses) < 10:
         return -np.log10(losses[-1])
-    
-    # Convert to numpy arrays
-    y = np.array(losses)
-    t = np.arange(len(y))
-    
-    # Handle edge cases
-    if np.any(~np.isfinite(y)) or np.any(y <= 0):
-        return -np.log10(losses[-1])
-    
-    # Check for plateau - if recent losses are not changing much
-    if len(losses) >= 20:
-        recent_std = np.std(losses[-10:])
-        recent_mean = np.mean(losses[-10:])
-        if recent_std / recent_mean < 0.001:  # Very small relative change
-            return -np.log10(recent_mean)
-    
-    predictions = []
-    
-    # Model 1: Exponential decay - y = a * exp(b * t) + c
     try:
-        def exp_decay(t, a, b, c):
-            return a * np.exp(b * t) + c
-        
-        # Initial guess based on data
-        a0 = y[0] - y[-1]
-        b0 = np.log(y[-1] / y[0]) / len(y) if y[0] > 0 and y[-1] > 0 else -0.1
-        c0 = min(y) * 0.9
-        
-        popt, _ = curve_fit(exp_decay, t, y, 
-                           p0=[a0, b0, c0],
-                           bounds=([0, -np.inf, 0], [np.inf, 0, min(y)]),
-                           maxfev=5000)
-        
-        pred = exp_decay(max_epochs, *popt)
-        if pred > 0 and pred < y[0]:  # Sanity check
-            predictions.append(pred)
-    except:
-        pass
-    
-    # Model 2: Power law - y = a * t^b + c
-    try:
-        def power_law(t, a, b, c):
-            return a * (t + 1) ** b + c
-        
-        # Transform to avoid t=0 issues
-        popt, _ = curve_fit(power_law, t, y,
-                           bounds=([0, -5, 0], [np.inf, 0, min(y)]),
-                           maxfev=5000)
-        
-        pred = power_law(max_epochs, *popt)
-        if pred > 0 and pred < y[0]:
-            predictions.append(pred)
-    except:
-        pass
-    
-    # Model 3: Logarithmic - y = a * log(t + 1) + b
-    try:
-        def log_model(t, a, b):
-            return a * np.log(t + 1) + b
-        
-        popt, _ = curve_fit(log_model, t, y, maxfev=5000)
-        pred = log_model(max_epochs, *popt)
-        
-        if pred > 0 and pred < y[0]:
-            predictions.append(pred)
-    except:
-        pass
-    
-    # Model 4: Inverse - y = a / (t + 1) + b
-    try:
-        def inverse_model(t, a, b):
-            return a / (t + 1) + b
-        
-        popt, _ = curve_fit(inverse_model, t, y,
-                           bounds=([0, 0], [np.inf, min(y)]),
-                           maxfev=5000)
-        
-        pred = inverse_model(max_epochs, *popt)
-        if pred > 0 and pred < y[0]:
-            predictions.append(pred)
-    except:
-        pass
-    
-    # Model 5: Double exponential for more complex curves
-    if len(losses) >= 10:
-        try:
-            def double_exp(t, a1, b1, a2, b2, c):
-                return a1 * np.exp(b1 * t) + a2 * np.exp(b2 * t) + c
-            
-            # Initial guesses
-            mid = len(y) // 2
-            a1_0 = (y[0] - y[mid]) * 0.7
-            a2_0 = (y[0] - y[mid]) * 0.3
-            b1_0 = np.log(0.5) / mid
-            b2_0 = np.log(0.1) / mid
-            c_0 = min(y) * 0.9
-            
-            popt, _ = curve_fit(double_exp, t, y,
-                               p0=[a1_0, b1_0, a2_0, b2_0, c_0],
-                               bounds=([0, -np.inf, 0, -np.inf, 0], 
-                                      [np.inf, 0, np.inf, 0, min(y)]),
-                               maxfev=5000)
-            
-            pred = double_exp(max_epochs, *popt)
-            if pred > 0 and pred < y[0]:
-                predictions.append(pred)
-        except:
-            pass
-    
-    # Model 6: Polynomial with constraints (for smooth extrapolation)
-    if len(losses) >= 10:
-        try:
-            # Use lower degree polynomial to avoid overfitting
-            degree = min(3, len(losses) // 5)
-            
-            # Fit polynomial to recent data for better local behavior
-            recent_points = min(20, len(losses))
-            t_recent = t[-recent_points:]
-            y_recent = y[-recent_points:]
-            
-            # Normalize for numerical stability
-            t_norm = (t_recent - t_recent[0]) / (t_recent[-1] - t_recent[0])
-            coeffs = np.polyfit(t_norm, y_recent, degree)
-            
-            # Extrapolate
-            t_pred_norm = (max_epochs - t_recent[0]) / (t_recent[-1] - t_recent[0])
-            pred = np.polyval(coeffs, t_pred_norm)
-            
-            # Only accept if decreasing and reasonable
-            if pred > 0 and pred < y_recent[0]:
-                predictions.append(pred)
-        except:
-            pass
-    
-    # If we have predictions, use robust averaging
-    if predictions:
-        # Remove outliers using IQR
-        predictions = np.array(predictions)
-        q1, q3 = np.percentile(predictions, [25, 75])
-        iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
-        
-        # Filter predictions
-        filtered = predictions[(predictions >= lower_bound) & 
-                             (predictions <= upper_bound)]
-        
-        if len(filtered) > 0:
-            # Weighted average favoring lower predictions (more conservative)
-            weights = 1.0 / (filtered + 1e-10)
-            final_pred = np.average(filtered, weights=weights)
-        else:
-            final_pred = np.median(predictions)
-        
-        return -np.log10(final_pred)
-    
-    # Fallback: linear extrapolation of recent trend
-    if len(losses) >= 10:
-        recent = losses[-10:]
-        t_recent = np.arange(len(recent))
-        slope, intercept, _, _, _ = linregress(t_recent, recent)
-        
-        if slope < 0:  # Only if decreasing
-            pred = intercept + slope * (max_epochs - len(losses) + 10)
-            if pred > 0:
-                return -np.log10(pred)
-    
-    # Final fallback
+        # Convert to numpy array
+        y = np.array(losses)
+        t = np.arange(len(y))
+
+        # Decay fitting
+        y_transformed = np.log(y)
+        K, log_A = np.polyfit(t, y_transformed, 1)
+        A = np.exp(log_A)
+
+        # Predict final loss
+        predicted_loss = -np.log10(A * np.exp(K * max_epochs))
+
+        if np.isfinite(predicted_loss):
+            return predicted_loss
+
+    except Exception as e:
+        print(f"Error in loss prediction: {e}")
+
     return -np.log10(losses[-1])
+
+#def predict_final_loss(losses, max_epochs):
+#    """
+#    Predict final loss using multiple curve fitting models.
+#    
+#    Args:
+#        losses: List of validation losses
+#        max_epochs: Target epoch to predict
+#        
+#    Returns:
+#        Predicted final loss (negative log scale)
+#    """
+#    if len(losses) < 5:
+#        return -np.log10(losses[-1])
+#    
+#    # Convert to numpy arrays
+#    y = np.array(losses)
+#    t = np.arange(len(y))
+#    
+#    # Handle edge cases
+#    if np.any(~np.isfinite(y)) or np.any(y <= 0):
+#        return -np.log10(losses[-1])
+#    
+#    # Check for plateau - if recent losses are not changing much
+#    if len(losses) >= 20:
+#        recent_std = np.std(losses[-10:])
+#        recent_mean = np.mean(losses[-10:])
+#        if recent_std / recent_mean < 0.001:  # Very small relative change
+#            return -np.log10(recent_mean)
+#    
+#    predictions = []
+#    
+#    # Model 1: Exponential decay - y = a * exp(b * t) + c
+#    try:
+#        def exp_decay(t, a, b, c):
+#            return a * np.exp(b * t) + c
+#        
+#        # Initial guess based on data
+#        a0 = y[0] - y[-1]
+#        b0 = np.log(y[-1] / y[0]) / len(y) if y[0] > 0 and y[-1] > 0 else -0.1
+#        c0 = min(y) * 0.9
+#        
+#        popt, _ = curve_fit(exp_decay, t, y, 
+#                           p0=[a0, b0, c0],
+#                           bounds=([0, -np.inf, 0], [np.inf, 0, min(y)]),
+#                           maxfev=5000)
+#        
+#        pred = exp_decay(max_epochs, *popt)
+#        if pred > 0 and pred < y[0]:  # Sanity check
+#            predictions.append(pred)
+#    except:
+#        pass
+#    
+#    # Model 2: Power law - y = a * t^b + c
+#    try:
+#        def power_law(t, a, b, c):
+#            return a * (t + 1) ** b + c
+#        
+#        # Transform to avoid t=0 issues
+#        popt, _ = curve_fit(power_law, t, y,
+#                           bounds=([0, -5, 0], [np.inf, 0, min(y)]),
+#                           maxfev=5000)
+#        
+#        pred = power_law(max_epochs, *popt)
+#        if pred > 0 and pred < y[0]:
+#            predictions.append(pred)
+#    except:
+#        pass
+#    
+#    # Model 3: Logarithmic - y = a * log(t + 1) + b
+#    try:
+#        def log_model(t, a, b):
+#            return a * np.log(t + 1) + b
+#        
+#        popt, _ = curve_fit(log_model, t, y, maxfev=5000)
+#        pred = log_model(max_epochs, *popt)
+#        
+#        if pred > 0 and pred < y[0]:
+#            predictions.append(pred)
+#    except:
+#        pass
+#    
+#    # Model 4: Inverse - y = a / (t + 1) + b
+#    try:
+#        def inverse_model(t, a, b):
+#            return a / (t + 1) + b
+#        
+#        popt, _ = curve_fit(inverse_model, t, y,
+#                           bounds=([0, 0], [np.inf, min(y)]),
+#                           maxfev=5000)
+#        
+#        pred = inverse_model(max_epochs, *popt)
+#        if pred > 0 and pred < y[0]:
+#            predictions.append(pred)
+#    except:
+#        pass
+#    
+#    # Model 5: Double exponential for more complex curves
+#    if len(losses) >= 10:
+#        try:
+#            def double_exp(t, a1, b1, a2, b2, c):
+#                return a1 * np.exp(b1 * t) + a2 * np.exp(b2 * t) + c
+#            
+#            # Initial guesses
+#            mid = len(y) // 2
+#            a1_0 = (y[0] - y[mid]) * 0.7
+#            a2_0 = (y[0] - y[mid]) * 0.3
+#            b1_0 = np.log(0.5) / mid
+#            b2_0 = np.log(0.1) / mid
+#            c_0 = min(y) * 0.9
+#            
+#            popt, _ = curve_fit(double_exp, t, y,
+#                               p0=[a1_0, b1_0, a2_0, b2_0, c_0],
+#                               bounds=([0, -np.inf, 0, -np.inf, 0], 
+#                                      [np.inf, 0, np.inf, 0, min(y)]),
+#                               maxfev=5000)
+#            
+#            pred = double_exp(max_epochs, *popt)
+#            if pred > 0 and pred < y[0]:
+#                predictions.append(pred)
+#        except:
+#            pass
+#    
+#    # Model 6: Polynomial with constraints (for smooth extrapolation)
+#    if len(losses) >= 10:
+#        try:
+#            # Use lower degree polynomial to avoid overfitting
+#            degree = min(3, len(losses) // 5)
+#            
+#            # Fit polynomial to recent data for better local behavior
+#            recent_points = min(20, len(losses))
+#            t_recent = t[-recent_points:]
+#            y_recent = y[-recent_points:]
+#            
+#            # Normalize for numerical stability
+#            t_norm = (t_recent - t_recent[0]) / (t_recent[-1] - t_recent[0])
+#            coeffs = np.polyfit(t_norm, y_recent, degree)
+#            
+#            # Extrapolate
+#            t_pred_norm = (max_epochs - t_recent[0]) / (t_recent[-1] - t_recent[0])
+#            pred = np.polyval(coeffs, t_pred_norm)
+#            
+#            # Only accept if decreasing and reasonable
+#            if pred > 0 and pred < y_recent[0]:
+#                predictions.append(pred)
+#        except:
+#            pass
+#    
+#    # If we have predictions, use robust averaging
+#    if predictions:
+#        # Remove outliers using IQR
+#        predictions = np.array(predictions)
+#        q1, q3 = np.percentile(predictions, [25, 75])
+#        iqr = q3 - q1
+#        lower_bound = q1 - 1.5 * iqr
+#        upper_bound = q3 + 1.5 * iqr
+#        
+#        # Filter predictions
+#        filtered = predictions[(predictions >= lower_bound) & 
+#                             (predictions <= upper_bound)]
+#        
+#        if len(filtered) > 0:
+#            # Weighted average favoring lower predictions (more conservative)
+#            weights = 1.0 / (filtered + 1e-10)
+#            final_pred = np.average(filtered, weights=weights)
+#        else:
+#            final_pred = np.median(predictions)
+#        
+#        return -np.log10(final_pred)
+#    
+#    # Fallback: linear extrapolation of recent trend
+#    if len(losses) >= 10:
+#        recent = losses[-10:]
+#        t_recent = np.arange(len(recent))
+#        slope, intercept, _, _, _ = linregress(t_recent, recent)
+#        
+#        if slope < 0:  # Only if decreasing
+#            pred = intercept + slope * (max_epochs - len(losses) + 10)
+#            if pred > 0:
+#                return -np.log10(pred)
+#    
+#    # Final fallback
+#    return -np.log10(losses[-1])
 
 
 class Trainer:
