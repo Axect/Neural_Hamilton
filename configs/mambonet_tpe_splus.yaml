@@ -1,5 +1,5 @@
 study_name: TPEFullSearch
-trials: 200
+trials: 100
 seed: 42
 metric: val_loss
 direction: minimize
@@ -21,7 +21,7 @@ search_space:
   net_config:
     d_model:
       type: categorical
-      choices: [32, 64, 128]
+      choices: [128]
     num_layers1:
       type: categorical
       choices: [3, 4, 5]
@@ -33,12 +33,12 @@ search_space:
       choices: [3, 4, 5]
     d_ff:
       type: categorical
-      choices: [256, 512, 1024]
+      choices: [1024]
   optimizer_config:
     lr:
       type: float
-      min: 5.e-3
-      max: 1.e-1
+      min: 5.e-2
+      max: 1.e+0
       log: true
   scheduler_config:
     upper_bound:
@@ -49,5 +49,5 @@ search_space:
     infimum_lr:
       type: float
       min: 1.e-7
-      max: 5.e-3
+      max: 5.e-2
       log: true
