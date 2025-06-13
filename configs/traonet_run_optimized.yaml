@@ -12,12 +12,12 @@ net_config:
   d_model: 128
   nhead: 4
   num_layers: 3
-  dim_feedforward: 1024
+  dim_feedforward: 512
   dropout: 0.0
 optimizer_config:
   lr: 0.0017545915944100886
-  eps: 1.e-10
 scheduler_config:
   upper_bound: 300
   max_iter: 250
   infimum_lr: 0.00000001023237108778
+  #infimum_lr: 1.e-10
