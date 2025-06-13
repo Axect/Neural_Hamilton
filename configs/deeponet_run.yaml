@@ -1,7 +1,8 @@
-project: NeuralHamilton_v1.12_DeepONet
+project: NeuralHamilton_v1.18_DeepONet
 device: cuda:0
 net: model.DeepONet
-optimizer: torch.optim.adamw.AdamW
+#optimizer: torch.optim.adamw.AdamW
+optimizer: soap.SOAP
 scheduler: hyperbolic_lr.ExpHyperbolicLR
 epochs: 50
 batch_size: 100
