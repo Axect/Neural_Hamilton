@@ -193,3 +193,130 @@ class PFLPruner(BasePruner):
             return curr_pfl < worst_pfl
 
         return False
+
+# ┌──────────────────────────────────────────────────────────┐
+#  Improved Predicted Final Loss (PFL) Pruner V2
+# └──────────────────────────────────────────────────────────┘
+class PFLPrunerV2(BasePruner):
+    """
+    Improved Predicted Final Loss (PFL) based pruner.
+
+    This pruner models learning curves using a power-law fit (y = a*x^b)
+    and prunes a trial if its predicted final loss is worse than the
+    actual final loss of the k-th best completed trial.
+    """
+
+    def __init__(
+        self,
+        n_startup_trials: int = 10,
+        n_warmup_epochs: int = 10,
+        top_k: int = 10,
+        target_epoch: int = 50,
+        min_points_for_prediction: int = 3,
+    ):
+        super().__init__()
+        self.n_startup_trials = n_startup_trials
+        self.n_warmup_epochs = n_warmup_epochs
+        self.top_k = top_k
+        self.target_epoch = target_epoch
+        self.min_points_for_prediction = min_points_for_prediction
+
+        self.top_k_final_losses: List[float] = []
+        self.completed_trials_count = 0
+
+    def complete_trial(self, trial_id: int) -> None:
+        if trial_id in self._trials:
+            trial = self._trials[trial_id]
+            final_loss = self._get_final_loss(trial)
+
+            if np.isfinite(final_loss):
+                self.completed_trials_count += 1
+                if len(self.top_k_final_losses) < self.top_k:
+                    bisect.insort(self.top_k_final_losses, final_loss)
+                elif final_loss < self.top_k_final_losses[-1]:
+                    self.top_k_final_losses.pop()
+                    bisect.insort(self.top_k_final_losses, final_loss)
+
+            super().complete_trial(trial_id)
+            del self._trials[trial_id]
+
+    def _get_final_loss(self, trial: Trial) -> float:
+        """Get the average final loss across all seeds for a completed trial."""
+        if not trial.seed_values:
+            return float("inf")
+        
+        total_loss = 0.0
+        n_seeds = len(trial.seed_values)
+        for loss_vec in trial.seed_values.values():
+            if not loss_vec: return float("inf")
+            total_loss += loss_vec[-1]
+        
+        return total_loss / n_seeds if n_seeds > 0 else float("inf")
+
+    def _predict_final_loss_power_law(self, losses: List[float]) -> float:
+        """
+        Predict final loss using power-law curve fitting (y = a*x^b).
+        This is equivalent to a linear fit in log-log space.
+        """
+        n_losses = len(losses)
+        if n_losses < self.min_points_for_prediction:
+            return float("inf")
+
+        try:
+            # x: epochs (1-based), y: losses
+            epochs = np.arange(1, n_losses + 1)
+            # Clip losses to avoid log(0) issues
+            safe_losses = np.maximum(losses, 1e-10)
+
+            log_epochs = np.log(epochs)
+            log_losses = np.log(safe_losses)
+
+            # Linear fit in log-log space
+            b, log_a = np.polyfit(log_epochs, log_losses, 1)
+
+            # Prune if the slope (b) is positive
+            if b > 0:
+                return float("inf")
+
+            # Predict final loss at target_epoch
+            predicted_log_loss = log_a + b * np.log(self.target_epoch)
+            predicted_loss = np.exp(predicted_log_loss)
+            
+            # Return the minimum of predicted loss and the actual final losses
+            return min(predicted_loss, min(losses))
+
+        except (np.linalg.LinAlgError, ValueError):
+            # If fitting fails, return a large value to indicate pruning
+            return float("inf")
+
+    def _should_prune_trial(self, trial: Trial) -> bool:
+        # Check if any seed has invalid loss
+        for losses in trial.seed_values.values():
+            if not losses or not np.isfinite(losses[-1]):
+                return True
+
+        # Don't prune during warmup period
+        if (
+            self.completed_trials_count < self.n_startup_trials
+            or trial.current_epoch <= self.n_warmup_epochs
+        ):
+            return False
+
+        # Don't prune if we have not enough top_k final losses
+        if len(self.top_k_final_losses) < 1:
+            return False
+
+        avg_predicted_loss = 0.0
+        n_seeds = len(trial.seed_values)
+        if n_seeds == 0: return False
+
+        for loss_vec in trial.seed_values.values():
+            avg_predicted_loss += self._predict_final_loss_power_law(loss_vec)
+        
+        avg_predicted_loss /= n_seeds
+
+        # Get the worst final loss from the top k trials
+        pruning_threshold = self.top_k_final_losses[-1]
+
+        # Prune if the predicted final loss is worse than the threshold
+        return avg_predicted_loss > pruning_threshold
