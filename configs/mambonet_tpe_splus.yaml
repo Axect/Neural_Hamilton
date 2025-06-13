@@ -10,7 +10,7 @@ sampler:
   #  n_startup_trials: 10
 
 pruner:
-  name: pruner.PFLPruner
+  name: pruner.PFLPrunerV2
   kwargs:
     n_startup_trials: 10
     n_warmup_epochs: 10
