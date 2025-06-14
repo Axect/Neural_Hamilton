@@ -1,18 +1,19 @@
-project: NeuralHamilton_v1.14_DeepONet
+project: NeuralHamilton_v1.18_DeepONet
 device: cuda:0
 net: model.DeepONet
-optimizer: torch.optim.adamw.AdamW
+#optimizer: torch.optim.adamw.AdamW
+optimizer: soap.SOAP
 scheduler: hyperbolic_lr.ExpHyperbolicLR
 epochs: 250
 batch_size: 100
 seeds: [89]
 net_config:
-  nodes: 256
-  layers: 5
+  nodes: 512
+  layers: 6
   branches: 32
 optimizer_config:
-  lr: 0.0026796287072897336
+  lr: 0.003783421179168536
 scheduler_config:
-  upper_bound: 300
+  upper_bound: 400
   max_iter: 250
-  infimum_lr: 0.00000321006670232738
+  infimum_lr: 0.00000002485930916295
