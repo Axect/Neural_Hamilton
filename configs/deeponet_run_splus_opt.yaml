@@ -1,0 +1,19 @@
+project: NeuralHamilton_v1.17_DeepONet
+device: cuda:0
+net: model.DeepONet
+optimizer: splus.SPlus
+scheduler: hyperbolic_lr.ExpHyperbolicLR
+epochs: 250
+batch_size: 100
+seeds: [89]
+net_config:
+  nodes: 1024
+  layers: 6
+  branches: 64
+optimizer_config:
+  lr: 0.3381844298841634
+  eps: 1.e-10
+scheduler_config:
+  upper_bound: 350
+  max_iter: 250
+  infimum_lr: 0.00000150362637866792
