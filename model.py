@@ -13,7 +13,7 @@ def create_net(sizes):
     return nn.Sequential(*net)
 
 
-#@torch.compile
+@torch.compile
 class DeepONet(nn.Module):
     def __init__(self, hparams):
         super().__init__()
