@@ -282,7 +282,9 @@ impl BoundedPotential {
         let uniform_t = Uniform(0f64, 2f64);
         let t_domain_vec = (0 .. bounded_potential_pairs.len())
             .map(|_| {
-                let mut t_domain = uniform_t.sample_with_rng(&mut rng, NSENSORS);
+                let mut t_domain = uniform_t.sample_with_rng(&mut rng, NSENSORS-2);
+                t_domain.insert(0, 0f64);
+                t_domain.push(2f64);
                 t_domain.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 t_domain
             })
