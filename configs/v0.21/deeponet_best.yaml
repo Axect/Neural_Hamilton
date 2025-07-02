@@ -1,4 +1,4 @@
-project: NeuralHamilton_v1.17_DeepONet
+project: NeuralHamilton_v1.21_DeepONet
 device: cuda:0
 net: model.DeepONet
 optimizer: splus.SPlus
@@ -8,13 +8,12 @@ batch_size: 100
 seeds: [89]
 net_config:
   nodes: 1024
-  layers: 6
+  layers: 4
   branches: 64
 optimizer_config:
-  lr: 0.3381844298841634
+  lr: 0.4536669377133622
   eps: 1.e-10
 scheduler_config:
-  upper_bound: 350
+  upper_bound: 300
   max_iter: 250
-  #infimum_lr: 0.00000150362637866792
-  infimum_lr: 1.e-4
+  infimum_lr: 0.00000128059868595452
