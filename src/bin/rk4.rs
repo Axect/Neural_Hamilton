@@ -14,6 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let test_V: Vec<f64> = df["V"].to_vec();
     let test_q: Vec<f64> = df["q"].to_vec();
     let test_p: Vec<f64> = df["p"].to_vec();
+    let test_t: Vec<f64> = df["t"].to_vec();
     let samples = test_V.len() / 100;
 
     // RK4 (parallel)
@@ -34,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let cs_q: CubicHermiteSpline = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
             let cs_p: CubicHermiteSpline = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
 
-            let t_vec = linspace(0, 2, 100);
+            let t_vec = test_t[i * 100..(i + 1) * 100].to_vec();
             let q_vec = cs_q.eval_vec(&t_vec);
             let p_vec = cs_p.eval_vec(&t_vec);
 
