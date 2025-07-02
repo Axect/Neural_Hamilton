@@ -6,10 +6,10 @@ optimizer: splus.SPlus
 scheduler: hyperbolic_lr.ExpHyperbolicLR
 epochs: 10
 batch_size: 100
-seeds: [89]
+seeds: [89, 231, 928]
 net_config:
   d_model: 128
-  num_layers1: 5
+  num_layers1: 3
   n_head: 8
   num_layers2: 5
   d_ff: 1024
