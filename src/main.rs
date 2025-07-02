@@ -24,9 +24,8 @@ const YOSHIDA_4TH_COEFF: [f64; 8] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SolverOrder {
+pub enum Solver {
     Yoshida4th,
-    Yoshida8th,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -51,9 +50,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0 | 1 => {
             // Normal, More, Much (all Y4 for Train/Val)
             let (n_total_samples, folder, order) = match selection {
-                0 => (10000, "data_normal", SolverOrder::Yoshida4th),
-                1 => (100000, "data_more", SolverOrder::Yoshida4th),
-                //2 => (1000000, "data_much", SolverOrder::Yoshida4th),
+                0 => (10000, "data_normal", Solver::Yoshida4th),
+                1 => (100000, "data_more", Solver::Yoshida4th),
+                //2 => (1000000, "data_much", Solver::Yoshida4th),
                 _ => unreachable!(),
             };
             let n_total_samples = 10 * n_total_samples; // For UMAP filtering
@@ -86,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Test
             let n = 8000 * 10; // For UMAP filtering
             let folder = "data_test";
-            let order = SolverOrder::Yoshida4th;
+            let order = Solver::Yoshida4th;
             let seed = 8407;
 
             println!("\nGenerate test data (Order: {:?})...", order);
@@ -134,7 +133,7 @@ impl Dataset {
         (q_max, p_max)
     }
 
-    pub fn generate(n: usize, seed: u64, order: SolverOrder) -> anyhow::Result<Self> {
+    pub fn generate(n: usize, seed: u64, order: Solver) -> anyhow::Result<Self> {
         let potential_generator = BoundedPotential::generate_potential(n, seed, order);
         potential_generator.generate_data()
     }
@@ -194,12 +193,13 @@ pub struct Data {
 #[derive(Debug, Clone)]
 pub struct BoundedPotential {
     pub potential_pair: Vec<(Vec<f64>, Vec<f64>)>,
-    pub solver_order: SolverOrder, // Store the solver order
+    pub solver: Solver,
+    pub t_domain_vec: Option<Vec<Vec<f64>>>,
 }
 
 impl BoundedPotential {
     #[allow(non_snake_case)]
-    pub fn generate_potential(n: usize, seed: u64, order: SolverOrder) -> Self {
+    pub fn generate_potential(n: usize, seed: u64, solver: Solver) -> Self {
         // Accept order
         let n_cand = (n as f64 * 1.1).round() as usize;
         let omega = 0.05;
@@ -278,9 +278,20 @@ impl BoundedPotential {
             })
             .collect::<Vec<_>>();
 
+        // Time Domain (Length = NSENSORS)
+        let uniform_t = Uniform(0f64, 2f64);
+        let t_domain_vec = (0 .. bounded_potential_pairs.len())
+            .map(|_| {
+                let mut t_domain = uniform_t.sample_with_rng(&mut rng, NSENSORS);
+                t_domain.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                t_domain
+            })
+            .collect::<Vec<_>>();
+
         BoundedPotential {
             potential_pair: bounded_potential_pairs,
-            solver_order: order, // Store the order
+            solver: solver,
+            t_domain_vec: Some(t_domain_vec),
         }
     }
 
@@ -289,15 +300,16 @@ impl BoundedPotential {
         // No order param needed here
         println!(
             "Generate data (Order: {:?}). Candidates: {}",
-            self.solver_order,
+            self.solver,
             self.potential_pair.len()
         );
         let data_vec = self
             .potential_pair
             .par_iter()
+            .zip(self.t_domain_vec.as_ref().unwrap().par_iter())
             .progress_with(ProgressBar::new(self.potential_pair.len() as u64))
-            .filter_map(|potential_pair_item| {
-                match solve_hamilton_equation(potential_pair_item.clone(), self.solver_order) {
+            .filter_map(|(potential_pair_item, t_domain)| {
+                match solve_hamilton_equation(potential_pair_item.clone(), self.solver, Some(t_domain.clone())) {
                     // Use stored order
                     Ok(d) => {
                         if d.q
@@ -316,66 +328,6 @@ impl BoundedPotential {
             .collect::<Vec<_>>();
         println!("Generated data: {}", data_vec.len());
         Ok(Dataset::new(data_vec))
-    }
-
-    #[allow(non_snake_case)]
-    pub fn generate_data_for_comparison(
-        &self,
-        n_target_pairs: usize,
-    ) -> anyhow::Result<(Dataset, Dataset)> {
-        println!(
-            "Generating Y8/Y4 comparison data. Initial Potential Candidates: {}. Target successful pairs: {}.",
-            self.potential_pair.len(),
-            n_target_pairs
-        );
-
-        let mut successful_y8_data: Vec<Data> = Vec::with_capacity(n_target_pairs);
-        let mut successful_y4_data: Vec<Data> = Vec::with_capacity(n_target_pairs);
-
-        // ProgressBar 설정 (전체 포텐셜 후보 수 기준)
-        let pb = ProgressBar::new(self.potential_pair.len() as u64);
-        pb.set_message("Processing potentials for comparison");
-
-        for potential_item in self.potential_pair.iter() {
-            if successful_y8_data.len() >= n_target_pairs {
-                break; // 목표 개수 도달 시 중단
-            }
-
-            let data_y8_opt =
-                solve_hamilton_equation(potential_item.clone(), SolverOrder::Yoshida8th)
-                    .ok()
-                    .filter(|d| {
-                        !d.q.iter()
-                            .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
-                            && !d.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64)
-                    });
-
-            let data_y4_opt =
-                solve_hamilton_equation(potential_item.clone(), SolverOrder::Yoshida4th)
-                    .ok()
-                    .filter(|d| {
-                        !d.q.iter()
-                            .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
-                            && !d.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64)
-                    });
-
-            if let (Some(d8), Some(d4)) = (data_y8_opt, data_y4_opt) {
-                successful_y8_data.push(d8);
-                successful_y4_data.push(d4);
-            }
-            pb.inc(1); // ProgressBar 진행
-        }
-        pb.finish_with_message("Comparison processing complete");
-
-        println!(
-            "Generated {} pairs of comparable Y8 and Y4 data.",
-            successful_y8_data.len()
-        );
-
-        Ok((
-            Dataset::new(successful_y8_data),
-            Dataset::new(successful_y4_data),
-        ))
     }
 }
 
@@ -480,69 +432,13 @@ impl YoshidaSolver {
     }
 
     #[allow(non_snake_case)]
-    fn integration_step_y8(
-        &self,
-        q_in: f64,
-        p_in: f64,
-        dt: f64,
-        hamilton_eq: &HamiltonEquation,
-    ) -> (f64, f64) {
-        // Yoshida 8th-order symmetric composition coefficients (γ1…γ8)
-        const GAMMA: [f64; 8] = [
-            0.7416703643506129,  // γ1 = γ15
-            -0.4091008258000316, // γ2 = γ14
-            0.1907547102962384,  // γ3 = γ13
-            -0.5738624711160823, // γ4 = γ12
-            0.2990641813036559,  // γ5 = γ11
-            0.3346249182452982,  // γ6 = γ10
-            0.3152930923967666,  // γ7 = γ9
-            -0.7968879393529163, // γ8 (center)
-        ];
-
-        // 1) 앞(m=8) 단계: Y4(dt * γ1)…Y4(dt * γ8)
-        let mut q = q_in;
-        let mut p = p_in;
-        for &g in &GAMMA {
-            let (q_new, p_new) = self.integration_step_y4(q, p, g * dt, hamilton_eq);
-            q = q_new;
-            p = p_new;
-        }
-
-        // 2) 뒤(m−1=7) 단계: 대칭되게 γ7…γ1
-        for &g in GAMMA[..7].iter().rev() {
-            let (q_new, p_new) = self.integration_step_y4(q, p, g * dt, hamilton_eq);
-            q = q_new;
-            p = p_new;
-        }
-
-        (q, p)
-    }
-
-    //#[allow(non_snake_case)]
-    //fn integration_step_y8(
-    //    &self,
-    //    q_in: f64,
-    //    p_in: f64,
-    //    dt: f64,
-    //    hamilton_eq: &HamiltonEquation,
-    //) -> (f64, f64) {
-    //    let mut q = q_in;
-    //    let mut p = p_in;
-    //    p = p + D_COEFF_8TH[0] * (-hamilton_eq.eval_grad(q)) * dt;
-    //    for j in 0..7 {
-    //        q = q + C_COEFF_8TH[j] * p * dt;
-    //        p = p + D_COEFF_8TH[j + 1] * (-hamilton_eq.eval_grad(q)) * dt;
-    //    }
-    //    (q, p)
-    //}
-
-    #[allow(non_snake_case)]
     pub fn solve(
         &self,
         t_span: (f64, f64),
         dt: f64,
         initial_condition: &[f64],
-        order: SolverOrder, // Added order parameter
+        order: Solver, // Added order parameter
+        t_domain: Option<Vec<f64>>,
     ) -> anyhow::Result<Data> {
         let hamilton_eq = &self.problem;
         let num_intervals = ((t_span.1 - t_span.0) / dt).round() as usize;
@@ -558,13 +454,7 @@ impl YoshidaSolver {
 
         for i in 1..t_vec_sim.len() {
             let (next_q, next_p) = match order {
-                SolverOrder::Yoshida4th => self.integration_step_y4(
-                    q_vec_sim[i - 1],
-                    p_vec_sim[i - 1],
-                    integration_dt,
-                    hamilton_eq,
-                ),
-                SolverOrder::Yoshida8th => self.integration_step_y8(
+                Solver::Yoshida4th => self.integration_step_y4(
                     q_vec_sim[i - 1],
                     p_vec_sim[i - 1],
                     integration_dt,
@@ -578,7 +468,10 @@ impl YoshidaSolver {
         let cs_q = cubic_hermite_spline(&t_vec_sim, &q_vec_sim, Quadratic)?;
         let cs_p = cubic_hermite_spline(&t_vec_sim, &p_vec_sim, Quadratic)?;
 
-        let t_vec_out = linspace(t_span.0, t_span.1, NSENSORS);
+        let t_vec_out = match t_domain {
+            Some(t_domain) => t_domain,
+            None => linspace(t_span.0, t_span.1, NSENSORS),
+        };
         let q_vec_out = cs_q.eval_vec(&t_vec_out);
         let p_vec_out = cs_p.eval_vec(&t_vec_out);
 
@@ -596,10 +489,11 @@ impl YoshidaSolver {
 #[allow(non_snake_case)]
 pub fn solve_hamilton_equation(
     potential_pair: (Vec<f64>, Vec<f64>),
-    order: SolverOrder, // Added order parameter
+    order: Solver, // Added order parameter
+    t_domain: Option<Vec<f64>>,
 ) -> anyhow::Result<Data> {
     let initial_condition = vec![0f64, 0f64];
     let hamilton_eq = HamiltonEquation::new(potential_pair.clone())?;
     let solver = YoshidaSolver::new(hamilton_eq);
-    solver.solve((0f64, 2f64), TSTEP, &initial_condition, order)
+    solver.solve((0f64, 2f64), TSTEP, &initial_condition, order, t_domain)
 }
