@@ -249,11 +249,11 @@ function run_simulation_kl8(V_values, t_values)
     sol = solve(prob, KahanLi8(), dt=dt, adaptive=false)
     
     # Sample at t_values
-    solution = sol(t_values)
+    solution = sol.(t_values)
     
     # Extract results
-    p_values = [solution[1, i] for i in 1:NSENSORS]
-    q_values = [solution[2, i] for i in 1:NSENSORS]
+    p_values = getindex.(solution, 1)  # Momentum values
+    q_values = getindex.(solution, 2)  # Position values
     
     return q_values, p_values
 end
