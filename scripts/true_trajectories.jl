@@ -223,6 +223,7 @@ function run_simulation_kl8(V_values, t_values)
     
     # Uniform q coordinates (0.0 ~ 1.0)
     q_range = range(0.0, 1.0, length=NSENSORS)
+    print(q_range)
     
     # Create spline for potential derivative calculation
     V_spline = Interpolator(q_range, V_values)
@@ -230,7 +231,7 @@ function run_simulation_kl8(V_values, t_values)
     
     # Define Hamiltonian system
     function hamiltonian_dp(p, q, params, t)
-        q_val = clamp(q, 0.0, 1.0)  # Handle boundary cases
+        q_val = clamp(q, 0.0, 0.9999999999999999)
         return -dV_spline(q_val)  # Negative potential derivative
     end
     
@@ -402,15 +403,15 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
 end
 
 # Run all simulations
-run_all_simulations()
-# Run reference simulation (test)
-run_simulation_reference("data_test/test.parquet", "data_true/test_kl8.parquet")
-# Run reference simulation (normal)
-run_simulation_reference("data_normal/train.parquet", "data_true/train_normal_kl8.parquet")
-run_simulation_reference("data_normal/val.parquet", "data_true/val_normal_kl8.parquet")
-# Run reference simulation (more)
-run_simulation_reference("data_more/train.parquet", "data_true/train_more_kl8.parquet")
-run_simulation_reference("data_more/val.parquet", "data_true/val_more_kl8.parquet")
+#run_all_simulations()
+## Run reference simulation (test)
+#run_simulation_reference("data_test/test.parquet", "data_true/test_kl8.parquet")
+## Run reference simulation (normal)
+#run_simulation_reference("data_normal/train.parquet", "data_true/train_normal_kl8.parquet")
+#run_simulation_reference("data_normal/val.parquet", "data_true/val_normal_kl8.parquet")
+## Run reference simulation (more)
+#run_simulation_reference("data_more/train.parquet", "data_true/train_more_kl8.parquet")
+#run_simulation_reference("data_more/val.parquet", "data_true/val_more_kl8.parquet")
 # Run reference simulation (much)
 #run_simulation_reference("data_much/train.parquet", "data_true/train_much_kl8.parquet")
 #run_simulation_reference("data_much/val.parquet", "data_true/val_much_kl8.parquet")
