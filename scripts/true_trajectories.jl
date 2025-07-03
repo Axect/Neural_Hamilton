@@ -335,7 +335,7 @@ function run_all_simulations()
 
         # Save as Parquet2 file
         output_file = "data_true/$(name).parquet"
-        Parquet2.write_parquet(output_file, df)
+        Parquet2.writefile(output_file, df)
         @printf "Saved to %s\n" output_file
     end
 
@@ -388,7 +388,7 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
     # Save as Parquet2 file
     output_file = output_path
     @printf "Saving to %s...\n" output_file
-    Parquet2.write_parquet(output_file, df)
+    Parquet2.writefile(output_file, df)
 
     @printf "Saved to %s\n" output_file
 
