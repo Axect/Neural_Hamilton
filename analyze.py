@@ -27,7 +27,8 @@ from util import (
 
 
 torch.set_float32_matmul_precision("medium")
-criterion = log_cosh_loss
+#criterion = log_cosh_loss
+criterion = F.mse_loss
 
 
 def load_relevant_data(potential: str):
@@ -169,13 +170,9 @@ class TestResults:
                     q_pred, p_pred, _, _ = self.model(V, t)
                 t_total = (time.time() - t_start) / V.shape[0]
 
-                loss_q_vec = criterion(q_pred, q, reduction="none")
-                loss_p_vec = criterion(p_pred, p, reduction="none")
-                loss_vec = 0.5 * (loss_q_vec + loss_p_vec)
-
-                loss_q = loss_q_vec.mean(dim=1)
-                loss_p = loss_p_vec.mean(dim=1)
-                loss = loss_vec.mean(dim=1)
+                loss_q = criterion(q_pred, q).item()
+                loss_p = criterion(p_pred, p).item()
+                loss = 0.5 * (loss_q_vec + loss_p_vec)
 
                 V_vec.extend(V.cpu().numpy())
                 t_vec.extend(t.cpu().numpy())
@@ -183,7 +180,7 @@ class TestResults:
                 p_preds.extend(p_pred.cpu().numpy())
                 q_targets.extend(q.cpu().numpy())
                 p_targets.extend(p.cpu().numpy())
-                total_loss_vec.extend(loss.cpu().numpy())
+                total_loss_vec.append(loss)
                 total_loss_q_vec.extend(loss_q.cpu().numpy())
                 total_loss_p_vec.extend(loss_p.cpu().numpy())
                 total_time_vec.extend([t_total] * V.shape[0])
@@ -526,41 +523,41 @@ def calculate_comparison_results(
 
         # Calculate MSE loss (against KahanLi8 reference)
         # Model
-        loss_q_model = criterion(q_pred, q_true, reduction="none").mean(dim=1)
-        loss_p_model = criterion(p_pred, p_true, reduction="none").mean(dim=1)
+        loss_q_model = criterion(q_pred, q_true).item()
+        loss_p_model = criterion(p_pred, p_true).item()
         loss_model = 0.5 * (loss_q_model + loss_p_model)
 
         # Y4
-        loss_q_y4 = criterion(q_y4, q_true, reduction="none").mean(dim=1)
-        loss_p_y4 = criterion(p_y4, p_true, reduction="none").mean(dim=1)
+        loss_q_y4 = criterion(q_y4, q_true).item()
+        loss_p_y4 = criterion(p_y4, p_true).item()
         loss_y4 = 0.5 * (loss_q_y4 + loss_p_y4)
 
         # RK4
-        loss_q_rk4 = criterion(q_rk4, q_true, reduction="none").mean(dim=1)
-        loss_p_rk4 = criterion(p_rk4, p_true, reduction="none").mean(dim=1)
+        loss_q_rk4 = criterion(q_rk4, q_true).item()
+        loss_p_rk4 = criterion(p_rk4, p_true).item()
         loss_rk4 = 0.5 * (loss_q_rk4 + loss_p_rk4)
 
         # Store results
         test_results_dict["model"]["q"].extend(q_pred.cpu().numpy())
         test_results_dict["model"]["p"].extend(p_pred.cpu().numpy())
-        test_results_dict["model"]["loss_q"].extend(loss_q_model.cpu().numpy())
-        test_results_dict["model"]["loss_p"].extend(loss_p_model.cpu().numpy())
-        test_results_dict["model"]["loss"].extend(loss_model.cpu().numpy())
+        test_results_dict["model"]["loss_q"].append(loss_q_model)
+        test_results_dict["model"]["loss_p"].append(loss_p_model)
+        test_results_dict["model"]["loss"].append(loss_model)
 
         test_results_dict["true"]["q"].extend(q_true.cpu().numpy())
         test_results_dict["true"]["p"].extend(p_true.cpu().numpy())
 
         test_results_dict["y4"]["q"].extend(q_y4.cpu().numpy())
         test_results_dict["y4"]["p"].extend(p_y4.cpu().numpy())
-        test_results_dict["y4"]["loss_q"].extend(loss_q_y4.cpu().numpy())
-        test_results_dict["y4"]["loss_p"].extend(loss_p_y4.cpu().numpy())
-        test_results_dict["y4"]["loss"].extend(loss_y4.cpu().numpy())
+        test_results_dict["y4"]["loss_q"].append(loss_q_y4)
+        test_results_dict["y4"]["loss_p"].append(loss_p_y4)
+        test_results_dict["y4"]["loss"].append(loss_y4)
 
         test_results_dict["rk4"]["q"].extend(q_rk4.cpu().numpy())
         test_results_dict["rk4"]["p"].extend(p_rk4.cpu().numpy())
-        test_results_dict["rk4"]["loss_q"].extend(loss_q_rk4.cpu().numpy())
-        test_results_dict["rk4"]["loss_p"].extend(loss_p_rk4.cpu().numpy())
-        test_results_dict["rk4"]["loss"].extend(loss_rk4.cpu().numpy())
+        test_results_dict["rk4"]["loss_q"].append(loss_q_rk4)
+        test_results_dict["rk4"]["loss_p"].append(loss_p_rk4)
+        test_results_dict["rk4"]["loss"].append(loss_rk4)
 
         # Collect V and t for plotting
         all_V.append(V.cpu().numpy())

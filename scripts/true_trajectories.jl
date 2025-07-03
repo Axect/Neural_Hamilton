@@ -219,18 +219,18 @@ end
 function run_simulation_kl8(V_values, t_values)
     # Set interval and time
     tspan = (0.0, 2.0)
-    dt = 1e-5  # Very small timestep to ensure accuracy
+    dt = 1e-4  # Very small timestep to ensure accuracy
     
     # Uniform q coordinates (0.0 ~ 1.0)
     q_range = range(0.0, 1.0, length=NSENSORS)
     
     # Create spline for potential derivative calculation
-    V_spline = Interpolator(q_range, V_values)
+    V_spline = Interpolator(q_range, V_values; extrapolate=true)
     dV_spline(q) = ForwardDiff.derivative(V_spline, q)
     
     # Define Hamiltonian system
     function hamiltonian_dp(p, q, params, t)
-        q_val = clamp(q, 0.0, 0.9999999999999999)
+        q_val = clamp(q, 0.0, 1.0)
         return -dV_spline(q_val)  # Negative potential derivative
     end
     
