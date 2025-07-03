@@ -219,7 +219,7 @@ end
 function run_simulation_kl8(V_values, t_values)
     # Set interval and time
     tspan = (0.0, 2.0)
-    dt = 1e-4  # Very small timestep to ensure accuracy
+    dt = 1e-5  # Very small timestep to ensure accuracy
     
     # Uniform q coordinates (0.0 ~ 1.0)
     q_range = range(0.0, 1.0, length=NSENSORS)
