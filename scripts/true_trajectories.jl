@@ -1,6 +1,6 @@
 using DifferentialEquations
 using DataFrames
-using Parquet
+using Parquet2
 using LinearAlgebra
 using Parameters
 using Printf
@@ -188,9 +188,9 @@ end
 #  Loading Test Data and Generating Reference Data
 # └─────────────────────────────────────────────────────────┘
 
-# Read V data from Parquet file
+# Read V data from Parquet2 file
 function load_test_potentials(file_path)
-    df = Parquet.read_parquet(file_path)
+    df = Parquet2.read_parquet(file_path)
     
     # Extract V field and divide into NSENSORS-sized chunks
     V_values = df.V
@@ -333,9 +333,9 @@ function run_all_simulations()
         @printf "Running simulation for %s...\n" name
         df = run_simulation(name, p_fn, q_fn, init_cond, params_obj, (0.0, 2.0))
 
-        # Save as Parquet file
+        # Save as Parquet2 file
         output_file = "data_true/$(name).parquet"
-        Parquet.write_parquet(output_file, df)
+        Parquet2.write_parquet(output_file, df)
         @printf "Saved to %s\n" output_file
     end
 
@@ -385,10 +385,10 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
         p_true = all_p_true
     )
 
-    # Save as Parquet file
+    # Save as Parquet2 file
     output_file = output_path
     @printf "Saving to %s...\n" output_file
-    Parquet.write_parquet(output_file, df)
+    Parquet2.write_parquet(output_file, df)
 
     @printf "Saved to %s\n" output_file
 
