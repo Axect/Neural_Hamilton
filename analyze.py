@@ -86,24 +86,11 @@ def load_test_data_with_true():
     q_true = df_true["q_true"].to_numpy()
     p_true = df_true["p_true"].to_numpy()
 
-    # Load or calculate RK4 data
-    # Calculate RK4 from existing data (modify if needed)
-    num_potentials = len(V) // NSENSORS
-    q_rk4 = []
-    p_rk4 = []
-
-    for i in range(num_potentials):
-        start_idx = i * NSENSORS
-        end_idx = (i + 1) * NSENSORS
-        V_i = V[start_idx:end_idx]
-        t_i = t[start_idx:end_idx]
-
-        q_rk4_i, p_rk4_i = solve_hamilton(V_i, 0.0, 0.0, t_i)
-        q_rk4.extend(q_rk4_i)
-        p_rk4.extend(p_rk4_i)
-
-    q_rk4 = np.array(q_rk4)
-    p_rk4 = np.array(p_rk4)
+    # Load RK4 test data
+    rk4_file_name = "./data_analyze/rk4.parquet"
+    df_rk4 = pl.read_parquet(rk4_file_name)
+    q_rk4 = df_rk4["q"].to_numpy()
+    p_rk4 = df_rk4["p"].to_numpy()
 
     # Create TensorDatasets
     ds_true = TensorDataset(
@@ -134,37 +121,6 @@ def load_test_data_with_true():
 NSENSORS = 100  # Global constant needed for dataset reshaping
 
 
-def rk4_step(f, y, t, dt):
-    k1 = dt * f(y, t)
-    k2 = dt * f(y + k1 / 2, t + dt / 2)
-    k3 = dt * f(y + k2 / 2, t + dt / 2)
-    k4 = dt * f(y + k3, t + dt)
-    return y + (k1 + 2 * k2 + 2 * k3 + k4) / 6
-
-
-def solve_hamilton(V, q0, p0, t):
-    q = np.linspace(0, 1, 100)
-    V_interp = PchipInterpolator(q, V)
-    dVdq_interp = V_interp.derivative()
-
-    def hamilton_eqs(y, _t):
-        q, p = y
-        dqdt = p
-        dpdt = -dVdq_interp(q)
-        return np.array([dqdt, dpdt])
-
-    y0 = np.array([q0, p0])
-    dt = t[1] - t[0]
-
-    solution = np.zeros((len(t), 2))
-    solution[0] = y0
-
-    for i in range(1, len(t)):
-        solution[i] = rk4_step(hamilton_eqs, solution[i - 1], t[i - 1], dt)
-
-    return solution[:, 0], solution[:, 1]
-
-
 class TestResults:
     def __init__(self, model, dl_val, device, variational=False, precise=False):
         self.model = model
@@ -180,12 +136,12 @@ class TestResults:
         else:
             self.run_test()
             self.load_rk4()
-            self.measure_rk4()
 
     def run_test(self):
         self.model.eval()
 
         V_vec = []
+        t_vec = []
         q_preds = []
         p_preds = []
         q_targets = []
@@ -222,6 +178,7 @@ class TestResults:
                 loss = loss_vec.mean(dim=1)
 
                 V_vec.extend(V.cpu().numpy())
+                t_vec.extend(t.cpu().numpy())
                 q_preds.extend(q_pred.cpu().numpy())
                 p_preds.extend(p_pred.cpu().numpy())
                 q_targets.extend(q.cpu().numpy())
@@ -236,6 +193,7 @@ class TestResults:
         self.total_loss_p_vec = np.array(total_loss_p_vec)
         self.total_time_vec = np.array(total_time_vec)
         self.V_vec = np.array(V_vec)
+        self.t_vec = np.array(t_vec)
         self.q_preds = np.array(q_preds)
         self.p_preds = np.array(p_preds)
         self.q_targets = np.array(q_targets)
@@ -248,17 +206,6 @@ class TestResults:
         self.rk4_loss_q = df_rk4["loss_q"].to_numpy().reshape(-1, 100).mean(axis=1)
         self.rk4_loss_p = df_rk4["loss_p"].to_numpy().reshape(-1, 100).mean(axis=1)
         self.rk4_loss = df_rk4["loss"].to_numpy().reshape(-1, 100).mean(axis=1)
-
-    def measure_rk4(self):
-        t_total_vec = []
-        for V, _, _, p in self.dl_val:
-            for i in range(V.shape[0]):
-                V_i = V[i].detach().cpu().numpy()
-                t = np.linspace(0, 2, 100)
-                t_start = time.time()
-                _, _ = solve_hamilton(V_i, 0, 0, t)
-                t_total_vec.append(time.time() - t_start)
-        self.t_total_time_vec_rk4 = np.array(t_total_vec)
 
     def print_results(self):
         print(f"Shape: {self.total_loss_vec.shape}")
@@ -294,7 +241,6 @@ class TestResults:
 
     def hist_loss_rk4(self, name: str):
         losses = self.rk4_loss
-        times = self.t_total_time_vec_rk4
         df_losses = pl.DataFrame({"loss": losses, "time": times})
         df_losses.write_parquet(f"{name}.parquet")
         loss_min_log = np.log10(losses.min())
@@ -330,7 +276,7 @@ class TestResults:
             plt.close(fig)
 
     def plot_q(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.q_preds[index]))
+        t = self.t_vec[index]
         loss_q = self.total_loss_q_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
@@ -370,7 +316,7 @@ class TestResults:
             plt.close(fig)
 
     def plot_p(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.p_preds[index]))
+        t = self.t_vec[index]
         loss_p = self.total_loss_p_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
@@ -410,7 +356,7 @@ class TestResults:
             plt.close(fig)
 
     def plot_phase(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.p_preds[index]))
+        t = self.t_vec[index]
         loss = self.total_loss_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
@@ -460,7 +406,7 @@ class TestResults:
             plt.close(fig)
 
     def plot_q_expand(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.q_preds[index]))
+        t = self.t_vec[index]
         loss_q = self.total_loss_q_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
@@ -501,7 +447,7 @@ class TestResults:
             plt.close(fig)
 
     def plot_p_expand(self, name: str, index: int):
-        t = np.linspace(0, 2, len(self.p_preds[index]))
+        t = self.t_vec[index]
         loss_p = self.total_loss_p_vec[index]
         cmap = plt.get_cmap("gist_heat")
         colors = cmap(np.linspace(0, 0.75, len(t)))
@@ -556,6 +502,9 @@ def calculate_comparison_results(
         "y4": {"q": [], "p": [], "loss_q": [], "loss_p": [], "loss": []},
         "rk4": {"q": [], "p": [], "loss_q": [], "loss_p": [], "loss": []},
     }
+
+    all_V = []
+    all_t = []
 
     # Compare each potential
     for true_batch, y4_batch, rk4_batch in zip(dl_true, dl_y4, dl_rk4):
@@ -613,13 +562,20 @@ def calculate_comparison_results(
         test_results_dict["rk4"]["loss_p"].extend(loss_p_rk4.cpu().numpy())
         test_results_dict["rk4"]["loss"].extend(loss_rk4.cpu().numpy())
 
+        # Collect V and t for plotting
+        all_V.append(V.cpu().numpy())
+        all_t.append(t.cpu().numpy())
+
+    all_V = np.array(all_V)
+    all_t = np.array(all_t)
+
     # Print loss statistics
     print("\n--- Performance Comparison (KahanLi8 Reference) ---")
     print(f"Model Loss: {np.mean(test_results_dict['model']['loss']):.4e}")
     print(f"Y4 Loss: {np.mean(test_results_dict['y4']['loss']):.4e}")
     print(f"RK4 Loss: {np.mean(test_results_dict['rk4']['loss']):.4e}")
 
-    return test_results_dict, V, t
+    return test_results_dict, all_V, all_t
 
 
 def plot_comparison_histograms(results_dict, fig_dir):
@@ -728,7 +684,6 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
         indices = list(range(10)) + [worst_idx]
 
     num_potentials = len(V)
-    t_array = np.linspace(0, 2, 100)
 
     for idx in indices:
         if idx >= num_potentials:
@@ -738,7 +693,8 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             continue
 
         # Current potential data
-        V_i = V[idx].cpu().numpy()
+        V_i = V[idx].reshape(-1)  # Flatten for plotting
+        t_array = t[idx].reshape(-1)  # Flatten for plotting
         q_true_i = results_dict["true"]["q"][idx]
         p_true_i = results_dict["true"]["p"][idx]
         q_model_i = results_dict["model"]["q"][idx]
@@ -1045,7 +1001,6 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
         indices = list(range(10)) + [worst_idx]
 
     num_potentials = len(V)
-    t_array = np.linspace(0, 2, 100)
 
     for idx in indices:
         if idx >= num_potentials:
@@ -1055,7 +1010,8 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
             continue
 
         # Current potential data
-        V_i = V[idx].cpu().numpy()
+        V_i = V[idx].reshape(-1)  # Flatten for plotting
+        t_array = t[idx].reshape(-1)  # Flatten for plotting
         q_true_i = results_dict["true"]["q"][idx]
         p_true_i = results_dict["true"]["p"][idx]
         q_model_i = results_dict["model"]["q"][idx]
@@ -1303,7 +1259,7 @@ def main():
                 ds_true, ds_y4, ds_rk4 = load_test_data_with_true()
 
                 # Create dataloaders
-                batch_size = 32  # Appropriate batch size
+                batch_size = 1  # Appropriate batch size
                 dl_true = DataLoader(ds_true, batch_size=batch_size)
                 dl_y4 = DataLoader(ds_y4, batch_size=batch_size)
                 dl_rk4 = DataLoader(ds_rk4, batch_size=batch_size)
@@ -1326,7 +1282,7 @@ def main():
                 worst_idx = np.argmax(model_losses)
 
                 # Generate detailed plots for first 10 cases and worst case
-                indices = list(range(10))
+                indices = list(range(0, len(V), len(V) // 10))
                 if worst_idx not in indices:
                     indices.append(worst_idx)
 

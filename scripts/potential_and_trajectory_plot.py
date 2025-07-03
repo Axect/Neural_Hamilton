@@ -11,7 +11,7 @@ from util import load_data
 data = load_data("../data_test/test.parquet")
 q_domain = np.linspace(0, 1, 100)
 
-for i in range(10):
+for i in range(0, len(data), len(data) // 10):
     V, t, q, p = data[i]
     with plt.style.context(["science", "nature"]):
         fig, ax = plt.subplots()
