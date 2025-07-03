@@ -43,19 +43,7 @@ def losses_from_projects(projects: List[str]):
 
 
 def hist_losses(losses: List[np.ndarray], legends: List[str]):
-    min = np.min([np.min(loss) for loss in losses])
-    max = np.max([np.max(loss) for loss in losses])
-    min = np.log10(min)
-    max = np.log10(max)
-    if min < 0:
-        min *= 1.01
-    else:
-        min *= 0.99
-    if max < 0:
-        max *= 0.99
-    else:
-        max *= 1.01
-    bins = np.logspace(-12, -2, 100, base=10)
+    bins = np.logspace(-10, -2, 100, base=10)
     colors = ['gray', 'orange', 'darkred', 'darkgreen', 'darkblue']
     alphas = [0.5, 0.5, 0.65, 0.65, 0.65]
     with plt.style.context(["science", "nature"]):
@@ -84,12 +72,13 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
             loss_q1s.append(loss_q1)
             loss_q3s.append(loss_q3)
             loss_iqrs.append(iqr)
-            ax.hist(loss, bins=bins, label=legend, color=colors[i], histtype="step", alpha=0.65)
+            loss_nonzero = loss + 1e-10  # Avoid log(0) issues
+            ax.hist(loss_nonzero, bins=bins, label=legend, color=colors[i], histtype="step", alpha=0.65)
         ax.set_xlabel("Test Loss")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
-        ax.set_xlim((1e-12, 1e-2))
-        ax.set_ylim((0, 1100))
+        ax.set_xlim((1e-10, 1e-2))
+        ax.set_ylim((0, 800))
         ax.legend()
         fig.savefig("figs/loss_hist.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
