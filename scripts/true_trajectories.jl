@@ -364,8 +364,7 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
     pb = Progress(length(potentials), desc="Obtain: ", showspeed=true)
 
     # Parallelize the simulation
-    #Threads.@threads for i in 1:length(potentials)
-    for i in 1:length(potentials)
+    Threads.@threads for i in 1:length(potentials)
         V_values = potentials[i]
         t_values = ts[i]
         q_values, p_values = run_simulation_kl8(V_values, t_values)
