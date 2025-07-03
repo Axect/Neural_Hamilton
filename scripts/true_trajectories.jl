@@ -190,7 +190,8 @@ end
 
 # Read V data from Parquet2 file
 function load_test_potentials(file_path)
-    df = Parquet2.read_parquet(file_path)
+    tbl = Parquet2.readfile(file_path)
+    df = DataFrame(tbl)
     
     # Extract V field and divide into NSENSORS-sized chunks
     V_values = df.V
@@ -358,10 +359,11 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
     pb = Progress(length(potentials), desc="Obtain: ", showspeed=true)
 
     # Parallelize the simulation
-    Threads.@threads for i in 1:length(potentials)
+    #Threads.@threads for i in 1:length(potentials)
+    for i in 1:length(potentials)
         V_values = potentials[i]
         t_values = ts[i]
-        q_values, p_values = run_simulation_kl8(V_values)
+        q_values, p_values = run_simulation_kl8(V_values, t_values)
         
         # Store results in the preallocated arrays
         start_idx = (i-1) * NSENSORS + 1
