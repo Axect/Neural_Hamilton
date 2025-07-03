@@ -194,20 +194,23 @@ function load_test_potentials(file_path)
     
     # Extract V field and divide into NSENSORS-sized chunks
     V_values = df.V
+    t_values = df.t
     num_potentials = div(length(V_values), NSENSORS)
     
     potentials = []
+    ts = []
     for i in 1:num_potentials
         start_idx = (i-1) * NSENSORS + 1
         end_idx = i * NSENSORS
         push!(potentials, V_values[start_idx:end_idx])
+        push!(ts, t_values[start_idx:end_idx])
     end
     
-    return potentials
+    return potentials, ts
 end
 
 # Run simulation for given potential
-function run_simulation_kl8(V_values)
+function run_simulation_kl8(V_values, t_values)
     # Set interval and time
     tspan = (0.0, 2.0)
     dt = 1e-4  # Very small timestep to ensure accuracy
@@ -239,15 +242,14 @@ function run_simulation_kl8(V_values)
     # Solve with Kahan-Li 8th order symplectic integrator
     sol = solve(prob, KahanLi8(), dt=dt, adaptive=false)
     
-    # Sample at uniform time intervals
-    t_uniform = range(tspan[1], tspan[2], length=NSENSORS)
-    solution = sol(t_uniform)
+    # Sample at t_values
+    solution = sol(t_values)
     
     # Extract results
     p_values = [solution[1, i] for i in 1:NSENSORS]
     q_values = [solution[2, i] for i in 1:NSENSORS]
     
-    return q_values, p_values, t_uniform
+    return q_values, p_values
 end
 
 # ┌─────────────────────────────────────────────────────────┐
@@ -344,7 +346,7 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
     file_path = input_path
 
     @printf "Loading test potentials from %s...\n" file_path
-    potentials = load_test_potentials(file_path)
+    potentials, ts = load_test_potentials(file_path)
     @printf "Loaded %d potentials\n" length(potentials)
 
     n_total = length(potentials) * NSENSORS
@@ -358,14 +360,15 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
     # Parallelize the simulation
     Threads.@threads for i in 1:length(potentials)
         V_values = potentials[i]
-        q_values, p_values, t_uniform = run_simulation_kl8(V_values)
+        t_values = ts[i]
+        q_values, p_values = run_simulation_kl8(V_values)
         
         # Store results in the preallocated arrays
         start_idx = (i-1) * NSENSORS + 1
         end_idx = i * NSENSORS
         
         all_V[start_idx:end_idx] = V_values
-        all_t[start_idx:end_idx] = t_uniform
+        all_t[start_idx:end_idx] = t_values
         all_q_true[start_idx:end_idx] = q_values
         all_p_true[start_idx:end_idx] = p_values
         
