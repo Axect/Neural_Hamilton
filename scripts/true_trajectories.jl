@@ -192,10 +192,15 @@ end
 function load_test_potentials(file_path)
     tbl = Parquet2.readfile(file_path)
     df = DataFrame(tbl)
+
+    # Check missing values
+    if any(ismissing, df.V) || any(ismissing, df.t)
+        error("Missing values found in the input data.")
+    end
     
     # Extract V field and divide into NSENSORS-sized chunks
-    V_values = df.V
-    t_values = df.t
+    V_values = Float64.(df.V)
+    t_values = Float64.(df.t)
     num_potentials = div(length(V_values), NSENSORS)
     
     potentials = []
