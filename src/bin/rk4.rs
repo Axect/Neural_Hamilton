@@ -64,6 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut dg = DataFrame::new(vec![]);
+    dg.push("V", Series::new(test_V));
     dg.push("t", Series::new(t_total));
     dg.push("q", Series::new(q_total));
     dg.push("p", Series::new(p_total));
