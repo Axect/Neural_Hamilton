@@ -10,8 +10,8 @@ batch_size: 100
 seeds: [89, 231, 928]
 net_config:
   nodes: 1024
-  layers: 3
-  branches: 64
+  layers: 4
+  branches: 16
 optimizer_config:
   lr: 1.e-2
   eps: 1.e-10

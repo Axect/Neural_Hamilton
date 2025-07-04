@@ -25,7 +25,7 @@ search_space:
       max: 6
     branches:
       type: categorical
-      choose: [16, 32, 64]
+      choices: [16, 32, 64]
   optimizer_config:
     lr:
       type: float

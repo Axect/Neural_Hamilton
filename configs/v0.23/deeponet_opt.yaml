@@ -19,15 +19,15 @@ sampler:
 
 search_space:
   net_config:
-    layers:
-      type: int
-      min: 4
-      max: 5
+    #layers:
+    #  type: int
+    #  min: 4
+    #  max: 5
   optimizer_config:
     lr:
       type: float
       min: 3.e-1
-      max: 6.e-1
+      max: 8.e-1
       log: true
   scheduler_config:
     infimum_lr:
