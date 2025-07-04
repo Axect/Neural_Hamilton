@@ -172,7 +172,7 @@ class TestResults:
 
                 loss_q = criterion(q_pred, q).item()
                 loss_p = criterion(p_pred, p).item()
-                loss = 0.5 * (loss_q_vec + loss_p_vec)
+                loss = 0.5 * (loss_q + loss_p)
 
                 V_vec.extend(V.cpu().numpy())
                 t_vec.extend(t.cpu().numpy())
@@ -181,8 +181,8 @@ class TestResults:
                 q_targets.extend(q.cpu().numpy())
                 p_targets.extend(p.cpu().numpy())
                 total_loss_vec.append(loss)
-                total_loss_q_vec.extend(loss_q.cpu().numpy())
-                total_loss_p_vec.extend(loss_p.cpu().numpy())
+                total_loss_q_vec.append(loss_q)
+                total_loss_p_vec.append(loss_p)
                 total_time_vec.extend([t_total] * V.shape[0])
 
         self.total_loss_vec = np.array(total_loss_vec)
