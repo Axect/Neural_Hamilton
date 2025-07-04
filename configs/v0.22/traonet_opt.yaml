@@ -1,5 +1,5 @@
 study_name: TPE
-trials: 50
+trials: 100
 seed: 42
 metric: val_loss
 direction: minimize
@@ -11,9 +11,6 @@ sampler:
 
 search_space:
   net_config:
-    #nhead:
-    #  type: categorical
-    #  choices: [4, 8, 16]
     num_layers:
       type: categorical
       choices: [3, 4, 5]
@@ -21,11 +18,11 @@ search_space:
     lr:
       type: float
       min: 3.e-2
-      max: 1.e-1
+      max: 8.e-2
       log: true
   scheduler_config:
     infimum_lr:
       type: float
       min: 1.e-7
-      max: 5.e-3
+      max: 1.e-3
       log: true
