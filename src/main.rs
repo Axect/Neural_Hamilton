@@ -280,9 +280,9 @@ impl BoundedPotential {
 
         // Time Domain (Length = NSENSORS)
         let uniform_t = Uniform(0f64, 2f64);
-        let t_domain_vec = (0 .. bounded_potential_pairs.len())
+        let t_domain_vec = (0..bounded_potential_pairs.len())
             .map(|_| {
-                let mut t_domain = uniform_t.sample_with_rng(&mut rng, NSENSORS-2);
+                let mut t_domain = uniform_t.sample_with_rng(&mut rng, NSENSORS - 2);
                 t_domain.insert(0, 0f64);
                 t_domain.push(2f64);
                 t_domain.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -305,19 +305,34 @@ impl BoundedPotential {
             self.solver,
             self.potential_pair.len()
         );
+        let q_domain = linspace(0f64, L, NSENSORS);
         let data_vec = self
             .potential_pair
             .par_iter()
             .zip(self.t_domain_vec.as_ref().unwrap().par_iter())
             .progress_with(ProgressBar::new(self.potential_pair.len() as u64))
             .filter_map(|(potential_pair_item, t_domain)| {
-                match solve_hamilton_equation(potential_pair_item.clone(), self.solver, Some(t_domain.clone())) {
+                match solve_hamilton_equation(
+                    potential_pair_item.clone(),
+                    self.solver,
+                    Some(t_domain.clone()),
+                ) {
                     // Use stored order
                     Ok(d) => {
                         if d.q
                             .iter()
                             .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
                             || d.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64)
+                            || {
+                                let V_spline =
+                                    cubic_hermite_spline(&q_domain, &d.V, Quadratic).unwrap();
+                                let p_square = d.p.fmap(|p| p * p / 2f64);
+                                let E = V_spline.eval_vec(&d.q).add_v(&p_square);
+                                let E_max = E.max();
+                                let E_min = E.min();
+                                let E_delta_max = (E_max - E_min) / (E_max + E_min).max(1e-10);
+                                E_delta_max > 0.003
+                            }
                         {
                             None
                         } else {

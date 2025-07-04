@@ -1,6 +1,6 @@
+use indicatif::{ParallelProgressIterator, ProgressBar};
 use peroxide::fuga::*;
 use rayon::prelude::*;
-use indicatif::{ParallelProgressIterator, ProgressBar};
 use std::env;
 
 const NSENSORS: usize = 100;
@@ -60,7 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut df = DataFrame::new(vec![]);
     df.push("E_delta_max", Series::new(E_delta_max));
     df.print();
-    df.write_parquet(&format!("data_analyze/{}_conserved.parquet", data_type), CompressionOptions::Snappy)?;
+    df.write_parquet(
+        &format!("data_analyze/{}_conserved.parquet", data_type),
+        CompressionOptions::Snappy,
+    )?;
 
     Ok(())
 }
