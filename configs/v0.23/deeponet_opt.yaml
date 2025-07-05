@@ -18,7 +18,7 @@ sampler:
 #    target_epoch: 50
 
 search_space:
-  net_config:
+  #net_config:
     #layers:
     #  type: int
     #  min: 4
