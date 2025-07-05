@@ -10,15 +10,15 @@ sampler:
   #  n_startup_trials: 10
 
 search_space:
-  net_config:
-    num_layers:
-      type: categorical
-      choices: [3, 4, 5]
+  #net_config:
+  #  num_layers:
+  #    type: categorical
+  #    choices: [3, 4, 5]
   optimizer_config:
     lr:
       type: float
-      min: 3.e-2
-      max: 8.e-2
+      min: 4.e-2
+      max: 2.e-1
       log: true
   scheduler_config:
     infimum_lr:
