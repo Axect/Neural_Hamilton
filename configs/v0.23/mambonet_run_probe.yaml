@@ -1,4 +1,4 @@
-project: NeuralHamilton_v1.22_MambONet_Probe
+project: NeuralHamilton_v1.23_MambONet_Probe
 device: cuda:0
 net: model.MambONet
 #optimizer: torch.optim.adamw.AdamW
@@ -12,7 +12,7 @@ net_config:
   num_layers1: 5
   n_head: 8
   num_layers2: 5
-  d_ff: 512
+  d_ff: 1024
 optimizer_config:
   lr: 0.09002068690539355
   eps: 1.e-10
