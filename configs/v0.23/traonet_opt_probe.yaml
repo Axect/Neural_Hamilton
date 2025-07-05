@@ -11,9 +11,12 @@ sampler:
 
 search_space:
   net_config:
+    d_model:
+      type: categorical
+      choices: [32, 64, 128]
     nhead:
       type: categorical
-      choices: [4, 8, 16]
+      choices: [4, 8, 16, 32]
     num_layers:
       type: categorical
       choices: [2, 3, 4, 5]
