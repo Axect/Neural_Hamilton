@@ -9,7 +9,7 @@ seeds: [89]
 net_config:
   nodes: 1024
   layers: 4
-  branches: 16
+  branches: 64
 optimizer_config:
   lr: 0.5027895045860795
   eps: 1.e-10
