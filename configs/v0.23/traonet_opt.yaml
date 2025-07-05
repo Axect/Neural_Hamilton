@@ -10,10 +10,13 @@ sampler:
   #  n_startup_trials: 10
 
 search_space:
-  #net_config:
-  #  num_layers:
-  #    type: categorical
-  #    choices: [3, 4, 5]
+  net_config:
+    n_head:
+      type: categorical
+      choices: [8, 16, 32]
+    num_layers:
+      type: categorical
+      choices: [3, 4, 5]
   optimizer_config:
     lr:
       type: float
