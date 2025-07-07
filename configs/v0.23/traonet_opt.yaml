@@ -11,7 +11,7 @@ sampler:
 
 search_space:
   net_config:
-    n_head:
+    nhead:
       type: categorical
       choices: [8, 16, 32]
     num_layers:
