@@ -305,6 +305,7 @@ impl BoundedPotential {
             self.solver,
             self.potential_pair.len()
         );
+        let q_domain = linspace(0f64, L, NSENSORS);
         let data_vec = self
             .potential_pair
             .par_iter()
@@ -322,6 +323,16 @@ impl BoundedPotential {
                             .iter()
                             .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
                             || d.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64)
+                            || {
+                                let V_spline =
+                                    cubic_hermite_spline(&q_domain, &d.V, Quadratic).unwrap();
+                                let p_square = d.p.fmap(|p| p * p / 2f64);
+                                let E = V_spline.eval_vec(&d.q).add_v(&p_square);
+                                let E_max = E.max();
+                                let E_min = E.min();
+                                let E_delta_max = (E_max - E_min) / (E_max + E_min).max(1e-10);
+                                E_delta_max > 0.003
+                            }
                         {
                             None
                         } else {
