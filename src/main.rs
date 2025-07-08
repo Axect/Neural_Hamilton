@@ -331,7 +331,7 @@ impl BoundedPotential {
                                 let E_max = E.max();
                                 let E_min = E.min();
                                 let E_delta_max = (E_max - E_min) / (E_max + E_min).max(1e-10);
-                                E_delta_max > 0.002
+                                E_delta_max > 0.001
                             }
                         {
                             None
