@@ -1,0 +1,31 @@
+study_name: TPE
+trials: 100
+seed: 42
+metric: val_loss
+direction: minimize
+
+sampler:
+  name: optuna.samplers.TPESampler
+  #kwargs:
+  #  n_startup_trials: 10
+
+search_space:
+  net_config:
+    nhead:
+      type: categorical
+      choices: [8, 16, 32]
+    num_layers:
+      type: categorical
+      choices: [3, 4, 5]
+  optimizer_config:
+    lr:
+      type: float
+      min: 4.e-2
+      max: 2.e-1
+      log: true
+  scheduler_config:
+    infimum_lr:
+      type: float
+      min: 1.e-7
+      max: 1.e-3
+      log: true

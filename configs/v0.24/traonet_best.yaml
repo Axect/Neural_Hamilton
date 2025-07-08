@@ -1,0 +1,24 @@
+project: NeuralHamilton_v1.23_TraONet
+device: cuda:0
+net: model.TraONet
+#optimizer: torch.optim.adamw.AdamW
+optimizer: splus.SPlus
+scheduler: hyperbolic_lr.ExpHyperbolicLR
+epochs: 250
+batch_size: 100
+seeds: [89]
+net_config:
+  d_model: 128
+  nhead: 16
+  num_layers: 2 # 3
+  dim_feedforward: 1024
+  dropout: 0.0
+optimizer_config:
+  #lr: 0.048721344652895154 # (0.23.2)
+  lr: 0.07717318957587484 # 0.23
+  eps: 1.e-10
+scheduler_config:
+  upper_bound: 300
+  max_iter: 250
+  #infimum_lr: 0.00000013017878621977 # (0.23.2)
+  infimum_lr: 0.00000013761708109706 # 0.23
