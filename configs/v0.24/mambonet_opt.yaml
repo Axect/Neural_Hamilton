@@ -18,20 +18,20 @@ sampler:
 #    target_epoch: 50
 
 search_space:
-  net_config:
-    #num_layers1:
-    #  type: categorical
-    #  choices: [3, 4]
-    #n_head:
-    #  type: categorical
-    #  choices: [16, 32]
-    num_layers2:
-      type: categorical
-      choices: [3, 4]
+  #net_config:
+  #  #num_layers1:
+  #  #  type: categorical
+  #  #  choices: [3, 4]
+  #  #n_head:
+  #  #  type: categorical
+  #  #  choices: [16, 32]
+  #  num_layers2:
+  #    type: categorical
+  #    choices: [3, 4]
   optimizer_config:
     lr:
       type: float
-      min: 8.e-2
+      min: 1.e-1
       max: 2.e-1
       log: true
   scheduler_config:

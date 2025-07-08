@@ -8,11 +8,11 @@ epochs: 10
 batch_size: 100
 seeds: [89, 231, 928]
 net_config:
-  d_model: 128
-  num_layers1: 5
-  n_head: 32
-  num_layers2: 5
-  d_ff: 1024
+  d_model: 64
+  num_layers1: 3
+  n_head: 8
+  num_layers2: 3
+  d_ff: 512
 optimizer_config:
   lr: 0.09002068690539355
   eps: 1.e-10
