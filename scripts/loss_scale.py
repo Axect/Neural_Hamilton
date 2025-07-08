@@ -13,7 +13,7 @@ import argparse
 
 def choose_projects_to_plot():
     project_names = []
-    
+
     # List all folders in figs
     for d in os.listdir("figs"):
         if os.path.isdir(os.path.join("figs", d)):
@@ -23,11 +23,11 @@ def choose_projects_to_plot():
     project_names.sort()
 
     console.print("Choose projects to draw histogram")
-    selected_projects = beaupy.select_multiple(
-        project_names
-    )
+    selected_projects = beaupy.select_multiple(project_names)
 
-    selected_projects = [os.path.join("figs", d) for d in selected_projects] #pyright:ignore
+    selected_projects = [
+        os.path.join("figs", d) for d in selected_projects
+    ]  # pyright:ignore
 
     return selected_projects
 
@@ -57,7 +57,7 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
     else:
         max *= 1.01
     bins = np.logspace(-12, -2, 100, base=10)
-    colors = ['gray', 'orange', 'darkred', 'darkgreen', 'darkblue']
+    colors = ["gray", "orange", "darkred", "darkgreen", "darkblue"]
     alphas = [0.5, 0.5, 0.65, 0.65, 0.65]
     with plt.style.context(["science", "nature"]):
         fig, ax = plt.subplots()
@@ -85,7 +85,14 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
             loss_q1s.append(loss_q1)
             loss_q3s.append(loss_q3)
             loss_iqrs.append(iqr)
-            ax.hist(loss, bins=bins, label=legend, color=colors[i], histtype="step", alpha=0.65)
+            ax.hist(
+                loss,
+                bins=bins,
+                label=legend,
+                color=colors[i],
+                histtype="step",
+                alpha=0.65,
+            )
         ax.set_xlabel("Test Loss")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
@@ -94,17 +101,19 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
         ax.legend()
         fig.savefig("figs/loss_hist.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
-        df = pd.DataFrame({
-            "loss_mean": loss_means,
-            "loss_std": loss_stds,
-            "loss_geo_mean": loss_geo_means,
-            "loss_log_std": loss_log_stds,
-            "loss_med": loss_medians,
-            "loss_q1": loss_q1s,
-            "loss_q3": loss_q3s,
-            "loss_iqr": loss_iqrs
-        })
-        pd.set_option('display.float_format', lambda x: '%.4e' % x)
+        df = pd.DataFrame(
+            {
+                "loss_mean": loss_means,
+                "loss_std": loss_stds,
+                "loss_geo_mean": loss_geo_means,
+                "loss_log_std": loss_log_stds,
+                "loss_med": loss_medians,
+                "loss_q1": loss_q1s,
+                "loss_q3": loss_q3s,
+                "loss_iqr": loss_iqrs,
+            }
+        )
+        pd.set_option("display.float_format", lambda x: "%.4e" % x)
         print(df)
 
 
@@ -123,12 +132,19 @@ def hist_losses_model_only(losses: List[np.ndarray], legends: List[str]):
     else:
         max *= 1.01
     bins = np.logspace(-12, -2, 100, base=10)
-    colors = ['darkred', 'darkgreen', 'darkblue']
+    colors = ["darkred", "darkgreen", "darkblue"]
     alphas = [0.65, 0.65, 0.65]
     with plt.style.context(["science", "nature"]):
         fig, ax = plt.subplots()
         for i, (loss, legend) in enumerate(zip(losses, legends)):
-            ax.hist(loss, bins=bins, label=legend, color=colors[i], histtype="step", alpha=alphas[i])
+            ax.hist(
+                loss,
+                bins=bins,
+                label=legend,
+                color=colors[i],
+                histtype="step",
+                alpha=alphas[i],
+            )
         ax.set_xlabel("Test Loss")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
@@ -147,8 +163,8 @@ if __name__ == "__main__":
     console = Console()
     selected = choose_projects_to_plot()
     losses = losses_from_projects(selected)
-    #legends = ["Y4", "RK4", "DeepONet", "TraONet", "MambONet"]
-    #hist_losses(losses, legends)
+    # legends = ["Y4", "RK4", "DeepONet", "TraONet", "MambONet"]
+    # hist_losses(losses, legends)
     legends = [f"{args.model} (10k)", f"{args.model} (100k)", f"{args.model} (1M)"]
     hist_losses_model_only(losses, legends)
-    #hist_times(times, legends)
+    # hist_times(times, legends)

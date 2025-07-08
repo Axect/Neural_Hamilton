@@ -24,7 +24,7 @@ for i in range(0, len(data), len(data) // 10):
         plt.close(fig)
 
         fig, ax = plt.subplots()
-        ax.plot(t, q)
+        ax.plot(t, q, ".-")
         ax.set_xlabel(r"$t$", fontsize=8)
         ax.set_ylabel(r"$q(t)$", fontsize=8)
         ax.autoscale(tight=True)
@@ -32,10 +32,9 @@ for i in range(0, len(data), len(data) // 10):
         plt.close(fig)
 
         fig, ax = plt.subplots()
-        ax.plot(t, p)
+        ax.plot(t, p, ".-")
         ax.set_xlabel(r"$t$", fontsize=8)
         ax.set_ylabel(r"$p(t)$", fontsize=8)
         ax.autoscale(tight=True)
         fig.savefig(f"../figs/00_p_{i}.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
-
