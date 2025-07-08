@@ -519,8 +519,8 @@ def run(
                 model,
                 optimizer,
                 scheduler,
-                #criterion=log_cosh_loss,
-                criterion=F.mse_loss,
+                criterion=log_cosh_loss,    # v0.21, v0.24
+                #criterion=F.mse_loss,      # ~v0.20, v0.22, v0.23
                 early_stopping_config=run_config.early_stopping_config,
                 device=device,
                 variational=variational,
