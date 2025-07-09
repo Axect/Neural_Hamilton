@@ -30,6 +30,14 @@ torch.set_float32_matmul_precision("medium")
 #criterion = log_cosh_loss
 criterion = F.mse_loss
 
+def np_mse_loss(pred, target):
+    """
+    Calculate MSE loss of numpy arrays
+    """
+    pred_torch = torch.tensor(pred, dtype=torch.float32)
+    target_torch = torch.tensor(target, dtype=torch.float32)
+    return F.mse_loss(pred_torch, target_torch).item()
+
 
 def load_relevant_data(potential: str):
     # Load existing data (Y4, RK4)
@@ -1351,16 +1359,16 @@ def main():
                 q_test = test_results.q_preds.astype(np.float64)
                 p_test = test_results.p_preds.astype(np.float64)
 
-                loss_q_test = np_log_cosh_loss(q_test, q_true)
-                loss_p_test = np_log_cosh_loss(p_test, p_true)
+                loss_q_test = np_mse_loss(q_test, q_true)
+                loss_p_test = np_mse_loss(p_test, p_true)
                 loss_test = 0.5 * (loss_q_test + loss_p_test)
 
-                loss_q_y4 = np_log_cosh_loss(q_y4, q_true)
-                loss_p_y4 = np_log_cosh_loss(p_y4, p_true)
+                loss_q_y4 = np_mse_loss(q_y4, q_true)
+                loss_p_y4 = np_mse_loss(p_y4, p_true)
                 loss_y4 = 0.5 * (loss_q_y4 + loss_p_y4)
 
-                loss_q_rk4 = np_log_cosh_loss(q_rk4, q_true)
-                loss_p_rk4 = np_log_cosh_loss(p_rk4, p_true)
+                loss_q_rk4 = np_mse_loss(q_rk4, q_true)
+                loss_p_rk4 = np_mse_loss(p_rk4, p_true)
                 loss_rk4 = 0.5 * (loss_q_rk4 + loss_p_rk4)
 
                 print(f"Model Loss: {loss_test:.4e}")
