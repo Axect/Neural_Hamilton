@@ -26,6 +26,8 @@ const YOSHIDA_4TH_COEFF: [f64; 8] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Solver {
     Yoshida4th,
+    RK4,
+    GL4,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -312,34 +314,66 @@ impl BoundedPotential {
             .zip(self.t_domain_vec.as_ref().unwrap().par_iter())
             .progress_with(ProgressBar::new(self.potential_pair.len() as u64))
             .filter_map(|(potential_pair_item, t_domain)| {
-                match solve_hamilton_equation(
-                    potential_pair_item.clone(),
-                    self.solver,
-                    Some(t_domain.clone()),
-                ) {
-                    // Use stored order
-                    Ok(d) => {
-                        if d.q
-                            .iter()
-                            .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
-                            || d.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64)
-                            || {
-                                let V_spline =
-                                    cubic_hermite_spline(&q_domain, &d.V, Quadratic).unwrap();
-                                let p_square = d.p.fmap(|p| p * p / 2f64);
-                                let E = V_spline.eval_vec(&d.q).add_v(&p_square);
-                                let E_max = E.max();
-                                let E_min = E.min();
-                                let E_delta_max = (E_max - E_min) / (E_max + E_min).max(1e-10);
-                                E_delta_max > 0.001
+                let solvers = [
+                    Solver::Yoshida4th,
+                    Solver::RK4,
+                    Solver::GL4,
+                ];
+                let solutions = solvers
+                    .iter()
+                    .map(|&solver| {
+                        solve_hamilton_equation(
+                            potential_pair_item.clone(),
+                            solver,
+                            Some(t_domain.clone()),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                if solutions.iter().any(|res| res.is_err()) {
+                    None
+                } else {
+                    // Filter solvers
+                    let mut valid_solvers = vec![];
+                    for (i, res) in solutions.iter().enumerate() {
+                        if let Ok(data) = res {
+                            if data.q.iter()
+                                .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
+                                    || data.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64) {
+                                valid_solvers.push((solvers[i], data.clone()));
                             }
-                        {
-                            None
-                        } else {
-                            Some(d)
                         }
                     }
-                    Err(_) => None,
+
+                    let result = valid_solvers
+                        .into_iter()
+                        .map(|(_, data)| {
+                            let V_splien = cubic_hermite_spline(&q_domain, &data.V, Quadratic).unwrap();
+                            let p_square = data.p.fmap(|p| p * p / 2f64);
+                            let E = V_splien.eval_vec(&data.q).add_v(&p_square);
+                            let E_max = E.max();
+                            let E_min = E.min();
+                            (data, (E_max - E_min) / (E_max + E_min).max(1e-10))
+                        })
+                        .fold(
+                            None,
+                            |acc, (data, E_delta_max)| {
+                                if let Some((_, max_delta)) = acc {
+                                    if E_delta_max < max_delta {
+                                        Some((data, E_delta_max))
+                                    } else {
+                                        acc
+                                    }
+                                } else {
+                                    Some((data, E_delta_max))
+                                }
+                            },
+                        );
+                    match result {
+                        Some((data, E_delta_max)) if E_delta_max < 0.001 => {
+                            Some(data)
+                        }
+                        _ => None,
+                    }
                 }
             })
             .collect::<Vec<_>>();
@@ -454,7 +488,6 @@ impl YoshidaSolver {
         t_span: (f64, f64),
         dt: f64,
         initial_condition: &[f64],
-        order: Solver, // Added order parameter
         t_domain: Option<Vec<f64>>,
     ) -> anyhow::Result<Data> {
         let hamilton_eq = &self.problem;
@@ -470,14 +503,12 @@ impl YoshidaSolver {
         let integration_dt = dt;
 
         for i in 1..t_vec_sim.len() {
-            let (next_q, next_p) = match order {
-                Solver::Yoshida4th => self.integration_step_y4(
+            let (next_q, next_p) = self.integration_step_y4(
                     q_vec_sim[i - 1],
                     p_vec_sim[i - 1],
                     integration_dt,
                     hamilton_eq,
-                ),
-            };
+                );
             q_vec_sim[i] = next_q;
             p_vec_sim[i] = next_p;
         }
@@ -506,11 +537,81 @@ impl YoshidaSolver {
 #[allow(non_snake_case)]
 pub fn solve_hamilton_equation(
     potential_pair: (Vec<f64>, Vec<f64>),
-    order: Solver, // Added order parameter
+    method: Solver, // Added order parameter
     t_domain: Option<Vec<f64>>,
 ) -> anyhow::Result<Data> {
     let initial_condition = vec![0f64, 0f64];
     let hamilton_eq = HamiltonEquation::new(potential_pair.clone())?;
-    let solver = YoshidaSolver::new(hamilton_eq);
-    solver.solve((0f64, 2f64), TSTEP, &initial_condition, order, t_domain)
+    match method {
+        Solver::Yoshida4th => {
+            let solver = YoshidaSolver::new(hamilton_eq);
+            solver.solve((0f64, 2f64), TSTEP, &initial_condition, t_domain)
+        }
+        Solver::RK4 => {
+            let solver = RK4;
+            let ode_solver = BasicODESolver::new(solver);
+            let initial_condition = vec![0f64, 0f64];
+            let (t_vec, x_vec) = ode_solver.solve(
+                &hamilton_eq,
+                (0f64, 2f64),
+                TSTEP,
+                &initial_condition,
+            )?;
+            let x_mat = py_matrix(x_vec);
+            let q_vec = x_mat.col(0);
+            let p_vec = x_mat.col(1);
+
+            let cs_q = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
+            let cs_p = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
+            let t_vec_out = match t_domain {
+                Some(t_domain) => t_domain,
+                None => linspace(0f64, 2f64, NSENSORS),
+            };
+            let q_vec_out = cs_q.eval_vec(&t_vec_out);
+            let p_vec_out = cs_p.eval_vec(&t_vec_out);
+
+            let q_uniform_pot = linspace(0f64, L, NSENSORS);
+            let V_out = hamilton_eq.eval_vec(&q_uniform_pot);
+            Ok(Data {
+                V: V_out,
+                t: t_vec_out,
+                q: q_vec_out,
+                p: p_vec_out,
+            })
+        }
+        Solver::GL4 => {
+            let integrator = GL4 {
+                solver: ImplicitSolver::Broyden,
+                tol: 1e-6,
+                max_step_iter: 100,
+            };
+            let initial_condition = vec![0f64, 0f64];
+            let solver = BasicODESolver::new(integrator);
+            let (t_vec, x_vec) = solver.solve(
+                &hamilton_eq,
+                (0f64, 2f64),
+                TSTEP,
+                &initial_condition,
+            )?;
+            let x_mat = py_matrix(x_vec);
+            let q_vec = x_mat.col(0);
+            let p_vec = x_mat.col(1);
+            let cs_q = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
+            let cs_p = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
+            let t_vec_out = match t_domain {
+                Some(t_domain) => t_domain,
+                None => linspace(0f64, 2f64, NSENSORS),
+            };
+            let q_vec_out = cs_q.eval_vec(&t_vec_out);
+            let p_vec_out = cs_p.eval_vec(&t_vec_out);
+            let q_uniform_pot = linspace(0f64, L, NSENSORS);
+            let V_out = hamilton_eq.eval_vec(&q_uniform_pot);
+            Ok(Data {
+                V: V_out,
+                t: t_vec_out,
+                q: q_vec_out,
+                p: p_vec_out,
+            })
+        }
+    }
 }
