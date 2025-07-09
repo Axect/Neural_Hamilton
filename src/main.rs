@@ -330,6 +330,7 @@ impl BoundedPotential {
                     })
                     .collect::<Vec<_>>();
                 if solutions.iter().any(|res| res.is_err()) {
+                    println!("Error in solving Hamilton equation for potential pair");
                     None
                 } else {
                     // Filter solvers
@@ -369,7 +370,7 @@ impl BoundedPotential {
                             },
                         );
                     match result {
-                        Some((data, E_delta_max)) if E_delta_max < 0.001 => {
+                        Some((data, E_delta_max)) if E_delta_max < 0.005 => {
                             Some(data)
                         }
                         _ => None,
