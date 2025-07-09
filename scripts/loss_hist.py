@@ -85,7 +85,7 @@ def hist_losses(losses: List[np.ndarray], legends: List[str]):
         ax.set_ylabel("Count")
         ax.set_xscale("log")
         ax.set_xlim((1e-12, 1e-2))
-        ax.set_ylim((0, 800))
+        ax.set_ylim((0, 1100))
         ax.legend()
         fig.savefig("figs/loss_hist.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
@@ -119,7 +119,7 @@ def hist_losses_model_only(losses: List[np.ndarray], legends: List[str]):
         max *= 0.99
     else:
         max *= 1.01
-    bins = np.logspace(-12, -2, 100, base=10)
+    bins = np.logspace(-9, -2, 100, base=10)
     colors = ["darkred", "darkgreen", "darkblue"]
     alphas = [0.65, 0.65, 0.65]
     with plt.style.context(["science", "nature"]):
@@ -136,7 +136,7 @@ def hist_losses_model_only(losses: List[np.ndarray], legends: List[str]):
         ax.set_xlabel("Test Loss")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
-        ax.set_xlim((1e-7, 1e-2))
+        ax.set_xlim((1e-9, 1e-2))
         ax.set_ylim((0, 1100))
         ax.legend()
         fig.savefig("figs/loss_hist_model_only.png", dpi=600, bbox_inches="tight")
