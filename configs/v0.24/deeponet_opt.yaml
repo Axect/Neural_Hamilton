@@ -27,11 +27,11 @@ search_space:
     lr:
       type: float
       min: 3.e-1
-      max: 8.e-1
+      max: 6.e-1
       log: true
   scheduler_config:
     infimum_lr:
       type: float
       min: 1.e-7
-      max: 1.e-3
+      max: 1.e-2
       log: true
