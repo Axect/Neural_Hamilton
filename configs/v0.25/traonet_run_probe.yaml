@@ -1,4 +1,4 @@
-project: NeuralHamilton_v1.24_TraONet_Probe
+project: NeuralHamilton_v1.25_TraONet_Probe
 device: cuda:0
 net: model.TraONet
 #optimizer: torch.optim.adamw.AdamW
