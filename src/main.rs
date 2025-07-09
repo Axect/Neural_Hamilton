@@ -369,7 +369,7 @@ impl BoundedPotential {
                             }
                         });
                     match result {
-                        Some((data, E_delta_max)) if E_delta_max < 0.005 => Some(data),
+                        Some((data, E_delta_max)) if E_delta_max < 0.001 => Some(data),
                         _ => None,
                     }
                 }
