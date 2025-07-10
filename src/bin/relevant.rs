@@ -9,25 +9,6 @@ const TSTEP: f64 = 2e-2;
 // ┌─────────────────────────────────────────────────────────┐
 //  Solver Macros
 // └─────────────────────────────────────────────────────────┘
-macro_rules! yoshida_solve {
-    ($potential:expr, $initial_condition:expr) => {{
-        if $potential.is_analytic() {
-            let t_span = (0f64, 2f64);
-            let (q_vec, p_vec) = $potential.analytic_trajectory(t_span, NSENSORS).unwrap();
-            let q_uniform = linspace(-BOUNDARY, 1f64 + BOUNDARY, NSENSORS);
-            let V = $potential.V_map(&q_uniform);
-            Ok(Data {
-                V,
-                t: linspace(t_span.0, t_span.1, NSENSORS),
-                q: q_vec,
-                p: p_vec,
-            })
-        } else {
-            YoshidaSolver::new($potential).solve((0f64, 2f64), TSTEP, $initial_condition)
-        }
-    }};
-}
-
 macro_rules! ode_solve {
     ($potential:expr, $initial_condition:expr, $integrator:expr) => {{
         let t_span = (0f64, 2f64);
@@ -43,7 +24,10 @@ macro_rules! ode_solve {
         let t_vec = linspace(t_span.0, t_span.1, NSENSORS);
         let q_vec = cs_q.eval_vec(&t_vec);
         let p_vec = cs_p.eval_vec(&t_vec);
-        (q_vec, p_vec)
+
+        let q_uniform = linspace(-BOUNDARY, 1f64 + BOUNDARY, NSENSORS);
+        let V = $potential.V_map(&q_uniform);
+        (V, t_vec, q_vec, p_vec)
     }};
 }
 
@@ -73,16 +57,16 @@ macro_rules! register_potentials {
 
         /// Yoshida 4th order
         #[allow(non_snake_case)]
-        fn solve_yoshida(potential_idx: usize, initial_condition: &[f64]) -> Result<Data, anyhow::Error> {
+        fn solve_y4(potential_idx: usize, initial_condition: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
             match potential_idx {
-                $($idx => yoshida_solve!($potential, initial_condition),)*
+                $($idx => ode_solve!($potential, initial_condition, YoshidaSolver),)*
                 _ => unreachable!(),
             }
         }
 
         /// RK4
         #[allow(non_snake_case)]
-        fn solve_rk4(potential_idx: usize, initial_condition: &[f64]) -> (Vec<f64>, Vec<f64>) {
+        fn solve_rk4(potential_idx: usize, initial_condition: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
             match potential_idx {
                 $($idx => ode_solve!($potential, initial_condition, RK4),)*
                 _ => unreachable!(),
@@ -91,7 +75,7 @@ macro_rules! register_potentials {
 
         /// GL4
         #[allow(non_snake_case)]
-        fn solve_gl4(potential_idx: usize, initial_condition: &[f64], gl4: GL4) -> (Vec<f64>, Vec<f64>) {
+        fn solve_gl4(potential_idx: usize, initial_condition: &[f64], gl4: GL4) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
             match potential_idx {
                 $($idx => ode_solve!($potential, initial_condition, gl4),)*
                 _ => unreachable!(),
@@ -159,9 +143,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for potential in 0..potentials.len() {
         // Yoshida 4th order
-        let data = solve_yoshida(potential, &initial_condition)?;
+        let y4_data = solve_y4(potential, &initial_condition);
 
-        // Declare integrators - GL4 & RKF78
+        // Declare integrators - GL4
         let gl4 = GL4 {
             solver: ImplicitSolver::Broyden,
             tol: 1e-6,
@@ -177,19 +161,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         // DataFrame
         let mut df = DataFrame::new(vec![]);
 
-        let V = data.V.clone();
-        let t = data.t.clone();
-        let q = data.q.clone();
-        let p = data.p.clone();
-        let q_rk4 = rk4_data.0.clone();
-        let p_rk4 = rk4_data.1.clone();
-        let q_gl4 = gl4_data.0.clone();
-        let p_gl4 = gl4_data.1.clone();
+        let V = y4_data.0.clone();
+        let t = y4_data.1.clone();
+        let q_y4 = y4_data.2.clone();
+        let p_y4 = y4_data.3.clone();
+        let q_rk4 = rk4_data.2.clone();
+        let p_rk4 = rk4_data.3.clone();
+        let q_gl4 = gl4_data.2.clone();
+        let p_gl4 = gl4_data.3.clone();
 
         df.push("V", Series::new(V));
         df.push("t", Series::new(t));
-        df.push("q", Series::new(q));
-        df.push("p", Series::new(p));
+        df.push("q_y4", Series::new(q_y4));
+        df.push("p_y4", Series::new(p_y4));
         df.push("q_rk4", Series::new(q_rk4));
         df.push("p_rk4", Series::new(p_rk4));
         df.push("q_gl4", Series::new(q_gl4));
@@ -439,9 +423,7 @@ pub struct Data {
 // ┌─────────────────────────────────────────────────────────┐
 //  Yoshida Solver
 // └─────────────────────────────────────────────────────────┘
-pub struct YoshidaSolver<V: Potential> {
-    problem: V,
-}
+pub struct YoshidaSolver;
 
 const W0: f64 = -1.7024143839193153;
 const W1: f64 = 1.3512071919596578;
@@ -457,56 +439,19 @@ const YOSHIDA_COEFF: [f64; 8] = [
     0f64,
 ];
 
-impl<V: Potential> YoshidaSolver<V> {
-    pub fn new(problem: V) -> Self {
-        YoshidaSolver { problem }
-    }
-
-    #[allow(non_snake_case)]
-    pub fn solve(
-        &self,
-        t_span: (f64, f64),
-        dt: f64,
-        initial_condition: &[f64],
-    ) -> anyhow::Result<Data> {
-        let potential = &self.problem;
-
-        let t_vec = linspace(
-            t_span.0,
-            t_span.1,
-            ((t_span.1 - t_span.0) / dt) as usize + 1,
-        );
-        let mut q_vec = vec![0f64; t_vec.len()];
-        let mut p_vec = vec![0f64; t_vec.len()];
-        q_vec[0] = initial_condition[0];
-        p_vec[0] = initial_condition[1];
-
-        for i in 1..t_vec.len() {
-            let mut q = q_vec[i - 1];
-            let mut p = p_vec[i - 1];
-            // Yoshida 4th-order method
-            for j in 0..4 {
-                q = q + YOSHIDA_COEFF[j] * p * dt;
-                p = p + YOSHIDA_COEFF[j + 4] * (-potential.dV(q)) * dt;
-            }
-            q_vec[i] = q;
-            p_vec[i] = p;
+impl ODEIntegrator for YoshidaSolver {
+    fn step<P: ODEProblem>(&self, problem: &P, _t: f64, y: &mut [f64], dt: f64) -> anyhow::Result<f64> {
+        let mut dy = vec![0f64; y.len()];
+        let mut q = y[0];
+        let mut p = y[1];
+        for j in 0 .. 4 {
+            problem.rhs(0f64, &[q, p], &mut dy)?;
+            q = q + YOSHIDA_COEFF[j] * dy[0] * dt;
+            problem.rhs(0f64, &[q, p], &mut dy)?;
+            p = p + YOSHIDA_COEFF[j + 4] * dy[1] * dt;
         }
-
-        let cs_q = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
-        let cs_p = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
-
-        let t_vec = linspace(t_span.0, t_span.1, NSENSORS);
-        let q_vec = cs_q.eval_vec(&t_vec);
-        let p_vec = cs_p.eval_vec(&t_vec);
-
-        let q_uniform = linspace(-BOUNDARY, 1f64 + BOUNDARY, NSENSORS);
-        let V = potential.V_map(&q_uniform);
-        Ok(Data {
-            V,
-            t: t_vec,
-            q: q_vec,
-            p: p_vec,
-        })
+        y[0] = q;
+        y[1] = p;
+        Ok(dt)
     }
 }
