@@ -153,10 +153,7 @@ NSENSORS = 100  # Global constant needed for dataset reshaping
 class TestResults:
     def __init__(self, model, dl_val, device, variational=False):
         self.model = model
-        if precise:
-            self.dl_val = None
-        else:
-            self.dl_val = dl_val
+        self.dl_val = dl_val
         self.device = device
         self.variational = variational
         self.run_test()
