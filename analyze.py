@@ -495,7 +495,7 @@ def calculate_comparison_results(
     all_t = []
 
     # Compare each potential
-    for true_batch, y4_batch, rk4_batch in zip(dl_true, dl_y4, dl_rk4):
+    for true_batch, y4_batch, rk4_batch, gl4_batch in zip(dl_true, dl_y4, dl_rk4, dl_gl4):
         # True data (KahanLi8)
         V, t, q_true, p_true = [x.to(device) for x in true_batch]
 
@@ -506,7 +506,7 @@ def calculate_comparison_results(
         _, _, q_rk4, p_rk4 = [x.to(device) for x in rk4_batch]
 
         # GL4 data
-        _, _, q_gl4, p_gl4 = [x.to(device) for x in rk4_batch]
+        _, _, q_gl4, p_gl4 = [x.to(device) for x in gl4_batch]
 
         # Model predictions
         with torch.no_grad():
