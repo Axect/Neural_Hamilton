@@ -314,7 +314,8 @@ impl BoundedPotential {
             .zip(self.t_domain_vec.as_ref().unwrap().par_iter())
             .progress_with(ProgressBar::new(self.potential_pair.len() as u64))
             .filter_map(|(potential_pair_item, t_domain)| {
-                let solvers = [Solver::Yoshida4th, Solver::RK4, Solver::GL4];
+                //let solvers = [Solver::Yoshida4th, Solver::RK4, Solver::GL4];
+                let solvers = [Solver::GL4];
                 let solutions = solvers
                     .iter()
                     .map(|&solver| {
