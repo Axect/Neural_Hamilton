@@ -63,28 +63,34 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     values = np.vstack([x, y])
     kernel = gaussian_kde(values)
 
-    # Find center of mass
+    # Find center of mass and count elements per cluster
     unique_labels = clusters["label"].unique()
     centers = []
+    elements_per_cluster = []
     for label in unique_labels:
         cluster_points = clusters[clusters["label"] == label]
+        elements_per_cluster.append(len(cluster_points))
         center = cluster_points[["umap1", "umap2"]].mean().to_numpy()
         centers.append(center)
     centers = np.array(centers)
+    elements_per_cluster = np.array(elements_per_cluster)
 
     # Density of center
     densities = kernel(centers.T)
     normalized_densities = densities / densities.sum()
 
-    # Define weights based on density
-    weights = np.exp(-0.5 * len(unique_labels) * normalized_densities)
-    weights /= weights.sum()  # Normalize weights
+    # Define weights based on inverse density
+    density_weights = np.exp(-0.5 * len(unique_labels) * normalized_densities)
+
+    # Adjust weights by cluster size to avoid over-sampling tiny, sparse clusters
+    size_factor = np.log1p(elements_per_cluster)
+
+    # Combine density-based weights with size-based weights
+    combined_weights = density_weights * size_factor
+    weights = combined_weights / combined_weights.sum()
 
     # Define number of samples to take from each cluster
     n_sample_min = 5
-    elements_per_cluster = [
-        len(clusters[clusters["label"] == label]) for label in unique_labels
-    ]
     total_samples = x.shape[0] // 10  # 10% of total points
     n_samples = np.repeat(n_sample_min, len(unique_labels))
     left_samples = total_samples - n_sample_min * len(unique_labels)
