@@ -1,5 +1,5 @@
 study_name: TPE
-trials: 100
+trials: 200
 seed: 42
 metric: val_loss
 direction: minimize
@@ -16,11 +16,11 @@ search_space:
       choices: [8, 16, 32]
     num_layers:
       type: categorical
-      choices: [2, 4]
+      choices: [2, 3, 4, 5]
   optimizer_config:
     lr:
       type: float
-      min: 4.e-2
+      min: 5.e-3
       max: 2.e-1
       log: true
   scheduler_config:
