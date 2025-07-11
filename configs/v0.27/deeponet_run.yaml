@@ -1,0 +1,21 @@
+project: NeuralHamilton_v1.25_DeepONet
+device: cuda:0
+net: model.DeepONet
+#optimizer: torch.optim.adamw.AdamW
+#optimizer: soap.SOAP
+optimizer: splus.SPlus
+scheduler: hyperbolic_lr.ExpHyperbolicLR
+epochs: 10
+batch_size: 100
+seeds: [89, 231, 928]
+net_config:
+  nodes: 512
+  layers: 4
+  branches: 32
+optimizer_config:
+  lr: 1.e-2
+  eps: 1.e-10
+scheduler_config:
+  upper_bound: 300
+  max_iter: 150
+  infimum_lr: 1.e-5
