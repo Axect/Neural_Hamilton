@@ -4,15 +4,7 @@ alembic==1.16.1
     # via optuna
 annotated-types==0.7.0
     # via pydantic
-annoy==1.17.3
-    # via pacmap
 beaupy==3.10.1
-bleach==6.2.0
-    # via panel
-bokeh==3.7.3
-    # via
-    #   holoviews
-    #   panel
 certifi==2025.4.26
     # via
     #   requests
@@ -21,19 +13,12 @@ charset-normalizer==3.4.2
     # via requests
 click==8.2.1
     # via wandb
-colorcet==3.1.0
-    # via
-    #   datashader
-    #   holoviews
 colorlog==6.9.0
     # via optuna
 contourpy==1.3.2
-    # via
-    #   bokeh
-    #   matplotlib
+    # via matplotlib
 cycler==0.12.1
     # via matplotlib
-datashader==0.18.1
 docker-pycreds==0.4.0
     # via wandb
 emoji==2.14.1
@@ -53,25 +38,16 @@ gitpython==3.1.44
     # via wandb
 greenlet==3.2.2
     # via sqlalchemy
-holoviews==1.20.2
 idna==3.10
     # via requests
-imageio==2.37.0
-    # via scikit-image
 jinja2==3.1.6
-    # via
-    #   bokeh
-    #   torch
+    # via torch
 joblib==1.5.1
     # via
     #   pynndescent
     #   scikit-learn
 kiwisolver==1.4.8
     # via matplotlib
-lazy-loader==0.4
-    # via scikit-image
-linkify-it-py==2.0.3
-    # via panel
 llvmlite==0.44.0
     # via
     #   numba
@@ -79,60 +55,34 @@ llvmlite==0.44.0
 mako==1.3.10
     # via alembic
 mambapy==1.2.0
-markdown==3.8
-    # via panel
 markdown-it-py==3.0.0
-    # via
-    #   mdit-py-plugins
-    #   panel
-    #   rich
+    # via rich
 markupsafe==3.0.2
     # via
     #   jinja2
     #   mako
 matplotlib==3.10.3
-    # via
-    #   scienceplots
-    #   seaborn
-mdit-py-plugins==0.4.2
-    # via panel
+    # via scienceplots
 mdurl==0.1.2
     # via markdown-it-py
 mpmath==1.3.0
     # via sympy
-multipledispatch==1.0.0
-    # via datashader
-narwhals==1.39.1
-    # via bokeh
 networkx==3.5
-    # via
-    #   scikit-image
-    #   torch
+    # via torch
 numba==0.61.2
     # via
-    #   datashader
-    #   pacmap
     #   pynndescent
     #   umap-learn
 numpy==2.2.6
     # via
-    #   bokeh
     #   contourpy
-    #   datashader
-    #   holoviews
-    #   imageio
     #   matplotlib
     #   numba
     #   optuna
-    #   pacmap
     #   pandas
-    #   scikit-image
     #   scikit-learn
     #   scipy
-    #   seaborn
-    #   tifffile
     #   umap-learn
-    #   xarray
 nvidia-cublas-cu12==12.6.4.1
     # via
     #   nvidia-cudnn-cu12
@@ -173,40 +123,12 @@ nvidia-nvtx-cu12==12.6.77
 optuna==4.3.0
 packaging==25.0
     # via
-    #   bokeh
-    #   datashader
-    #   holoviews
-    #   lazy-loader
     #   matplotlib
     #   optuna
-    #   panel
-    #   scikit-image
-    #   xarray
-pacmap==0.8.0
 pandas==2.2.3
-    # via
-    #   bokeh
-    #   datashader
-    #   fireducks
-    #   holoviews
-    #   panel
-    #   seaborn
-    #   xarray
-panel==1.6.3
-    # via holoviews
-param==2.2.0
-    # via
-    #   datashader
-    #   holoviews
-    #   panel
-    #   pyct
-    #   pyviz-comms
+    # via fireducks
 pillow==11.2.1
-    # via
-    #   bokeh
-    #   imageio
-    #   matplotlib
-    #   scikit-image
+    # via matplotlib
 platformdirs==4.3.8
     # via wandb
 polars==1.30.0
@@ -216,8 +138,6 @@ psutil==7.0.0
     # via wandb
 pyarrow==19.0.1
     # via fireducks
-pyct==0.5.0
-    # via datashader
 pydantic==2.11.5
     # via wandb
 pydantic-core==2.33.2
@@ -238,42 +158,29 @@ python-yakh==0.4.1
     #   questo
 pytz==2025.2
     # via pandas
-pyviz-comms==3.0.4
-    # via
-    #   holoviews
-    #   panel
 pyyaml==6.0.2
     # via
-    #   bokeh
     #   optuna
     #   wandb
 questo==0.4.1
     # via beaupy
 requests==2.32.3
-    # via
-    #   datashader
-    #   panel
-    #   wandb
+    # via wandb
 rich==14.0.0
     # via
     #   beaupy
     #   questo
-ruff==0.11.10
+schedulefree==1.4.1
 scienceplots==2.1.1
-scikit-image==0.25.2
 scikit-learn==1.6.1
     # via
-    #   pacmap
     #   pynndescent
     #   umap-learn
 scipy==1.15.3
     # via
-    #   datashader
     #   pynndescent
-    #   scikit-image
     #   scikit-learn
     #   umap-learn
-seaborn==0.13.2
 sentry-sdk==2.29.1
     # via wandb
 setproctitle==1.3.6
@@ -297,27 +204,22 @@ sympy==1.14.0
     # via torch
 threadpoolctl==3.6.0
     # via scikit-learn
-tifffile==2025.5.10
-    # via scikit-image
-toolz==1.0.0
-    # via datashader
 torch==2.7.0
-    # via mambapy
-tornado==6.5
-    # via bokeh
+    # via
+    #   mambapy
+    #   schedulefree
 tqdm==4.67.1
     # via
     #   optuna
-    #   panel
     #   umap-learn
 triton==3.3.0
     # via torch
-typing-extensions==4.13.2
+typing-extensions==4.14.0
     # via
     #   alembic
-    #   panel
     #   pydantic
     #   pydantic-core
+    #   schedulefree
     #   sqlalchemy
     #   torch
     #   typing-inspection
@@ -326,17 +228,9 @@ typing-inspection==0.4.1
     # via pydantic
 tzdata==2025.2
     # via pandas
-uc-micro-py==1.0.3
-    # via linkify-it-py
 umap-learn==0.5.7
 urllib3==2.4.0
     # via
     #   requests
     #   sentry-sdk
 wandb==0.19.11
-webencodings==0.5.1
-    # via bleach
-xarray==2025.4.0
-    # via datashader
-xyzservices==2025.4.0
-    # via bokeh
