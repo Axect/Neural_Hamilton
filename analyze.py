@@ -1020,28 +1020,28 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # Display loss info
             ax.text(
                 0.05,
-                0.5,
+                0.55,
                 f"Model Loss: {loss_model:.4e}",
                 transform=ax.transAxes,
                 fontsize=5,
             )
             ax.text(
                 0.05,
-                0.45,
+                0.50,
                 f"Y4 Loss: {loss_y4:.4e}",
                 transform=ax.transAxes,
                 fontsize=5,
             )
             ax.text(
                 0.05,
-                0.4,
+                0.45,
                 f"RK4 Loss: {loss_rk4:.4e}",
                 transform=ax.transAxes,
                 fontsize=5,
             )
             ax.text(
                 0.05,
-                0.35,
+                0.40,
                 f"GL4 Loss: {loss_gl4:.4e}",
                 transform=ax.transAxes,
                 fontsize=5,
@@ -1687,28 +1687,28 @@ def main():
 
                     ax.text(
                         0.05,
-                        0.5,
+                        0.55,
                         f"Model Loss: {loss_test:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
                     ax.text(
                         0.05,
-                        0.45,
+                        0.50,
                         f"Y4 Loss: {loss_y4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
                     ax.text(
                         0.05,
-                        0.4,
+                        0.45,
                         f"RK4 Loss: {loss_rk4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
                     ax.text(
                         0.05,
-                        0.35,
+                        0.40,
                         f"GL4 Loss: {loss_gl4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
