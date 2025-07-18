@@ -1,0 +1,30 @@
+study_name: Grid
+trials: 27
+seed: 42
+metric: val_loss
+direction: minimize
+
+sampler:
+  name: optuna.samplers.GridSampler
+  #kwargs:
+  #  n_startup_trials: 10
+
+#pruner:
+#  name: pruner.PFLPruner
+#  kwargs:
+#    n_startup_trials: 10
+#    n_warmup_epochs: 10
+#    top_k: 20
+#    target_epoch: 50
+
+search_space:
+  net_config:
+    num_layers1:
+      type: categorical
+      choices: [3, 4, 5]
+    n_head:
+      type: categorical
+      choices: [8, 16, 32]
+    num_layers2:
+      type: categorical
+      choices: [3, 4, 5]
