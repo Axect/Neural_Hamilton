@@ -8,6 +8,7 @@ const L: f64 = 1f64;
 const NSENSORS: usize = 100;
 const BOUNDARY: f64 = 0f64;
 const TSTEP: f64 = 1e-3;
+const NDIFFCONFIG: usize = 2; // Number of different configurations of time per potential
 
 // --- Yoshida 4th Order Coefficients ---
 const W0_4TH: f64 = -1.7024143839193153;
@@ -202,6 +203,8 @@ pub struct BoundedPotential {
 impl BoundedPotential {
     #[allow(non_snake_case)]
     pub fn generate_potential(n: usize, seed: u64, solver: Solver) -> Self {
+        let n = n / NDIFFCONFIG; // Divide by number of different configurations
+
         // Accept order
         let n_cand = (n as f64 * 1.1).round() as usize;
         let omega = 0.05;
@@ -278,6 +281,11 @@ impl BoundedPotential {
                     Err(_) => None,
                 }
             })
+            .collect::<Vec<_>>();
+
+        // Duplicate potential pairs for different time configurations
+        let bounded_potential_pairs = (0..NDIFFCONFIG)
+            .flat_map(|_| bounded_potential_pairs.clone())
             .collect::<Vec<_>>();
 
         // Time Domain (Length = NSENSORS)
