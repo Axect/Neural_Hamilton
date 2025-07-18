@@ -80,7 +80,7 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     normalized_densities = densities / densities.sum()
 
     # Define weights based on inverse density
-    density_weights = np.exp(-(len(unique_labels) / 10) ** 2 * normalized_densities)
+    density_weights = np.exp(- len(unique_labels) * normalized_densities)
 
     # Adjust weights by cluster size to avoid over-sampling tiny, sparse clusters
     size_factor = np.log1p(elements_per_cluster)
