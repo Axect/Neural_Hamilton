@@ -31,4 +31,5 @@ data-rk4:
 
 build: build-cargo
 
-all: install build-cargo data-gen data-filter data-rk4
+#all: install build-cargo data-gen data-filter data-rk4
+all: install build-cargo data-gen data-rk4

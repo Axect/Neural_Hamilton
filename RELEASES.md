@@ -1,3 +1,7 @@
+# Ver 1.29
+
+- Remove umap
+
 # Ver 1.28
 
 - Introduce `NDIFFCONFIG` to control the number of different time configurations per potential.
