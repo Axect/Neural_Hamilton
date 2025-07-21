@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => unreachable!(),
             };
             //let n_total_samples = 10 * n_total_samples; // For UMAP filtering
-            let n_total_samples = n_total_samples;
+            let n_total_samples = NDIFFCONFIG * n_total_samples;
 
             let train_ratio = 0.8;
             let n_train = (n_total_samples as f64 * train_ratio).round() as usize;
@@ -90,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         2 => {
             // Test
             //let n = 8000 * 10; // For UMAP filtering
-            let n = 8000;
+            let n = 8000 * NDIFFCONFIG;
             let folder = "data_test";
             let order = Solver::Yoshida4th;
             let seed = 8407;

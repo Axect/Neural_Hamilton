@@ -26,10 +26,11 @@ data-filter:
     mv "data_more/train_cand_samples.parquet" "data_more/train.parquet"
     mv "data_more/val_cand_samples.parquet" "data_more/val.parquet"
 
-data-rk4:
-    cargo run --release --bin rk4
+post-process:
+    julia -t 32 scripts/true_trajectories.jl # True data via Kahan-Li 8th order
+    cargo run --release --bin solvers # Various solvers to compare
 
 build: build-cargo
 
 #all: install build-cargo data-gen data-filter data-rk4
-all: install build-cargo data-gen data-rk4
+all: install build-cargo data-gen post-process

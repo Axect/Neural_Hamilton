@@ -1,3 +1,8 @@
+# Ver 1.30
+
+- Total data = n * NDIFFCONFIG
+- Batch size: 256
+
 # Ver 1.29
 
 - Remove umap
