@@ -5,7 +5,7 @@ net: model.MambONet
 optimizer: splus.SPlus
 scheduler: hyperbolic_lr.ExpHyperbolicLR
 epochs: 10
-batch_size: 100
+batch_size: 256
 seeds: [89]
 net_config:
   d_model: 128
@@ -14,9 +14,9 @@ net_config:
   num_layers2: 3
   d_ff: 1024
 optimizer_config:
-  lr: 0.16572534323326382
+  lr: 0.13650908408712956
   eps: 1.e-10
 scheduler_config:
   upper_bound: 300
-  max_iter: 150
-  infimum_lr: 0.00000377018977551265
+  max_iter: 50
+  infimum_lr: 0.00003858282650050329
