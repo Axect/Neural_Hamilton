@@ -112,7 +112,7 @@ def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0) -> tuple[pd
 
     density_weights = np.exp(-alpha * scaled_densities)
     size_factor = np.log1p(elements_per_cluster)
-    combined_weights = density_weights * size_factor
+    combined_weights = density_weights / size_factor
     
     if combined_weights.sum() < 1e-9:
         weights = np.ones_like(combined_weights) / len(combined_weights)
