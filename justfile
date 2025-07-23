@@ -32,5 +32,4 @@ post-process:
 
 build: build-cargo
 
-#all: install build-cargo data-gen data-filter data-rk4
-all: install build-cargo data-gen post-process
+all: install build-cargo data-gen data-filter post-process

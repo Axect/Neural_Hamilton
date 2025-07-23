@@ -320,7 +320,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="UMAP filtering for datasets with repeated potential blocks.")
     parser.add_argument("--data_file", type=str, required=True, help="Path to the data file (parquet format)")
-    parser.add_argument("--alpha", type=float, default=5.0, help="Hyperparameter for inverse density weighting.")
+    parser.add_argument("--alpha", type=float, default=0.5, help="Hyperparameter for inverse density weighting.")
     parser.add_argument("--ndiffconfig", type=int, default=2, help="Number of different time configurations per potential, as used in data generation.")
     args = parser.parse_args()
     
@@ -400,13 +400,23 @@ if __name__ == "__main__":
 
     # --- PLOTTING ---
     # Load relevant potentials for plotting
-    relevant_files = {"SHO": "data_analyze/sho.parquet", "Double Well": "data_analyze/double_well.parquet", "Morse": "data_analyze/morse.parquet"}
+    relevant_files = {
+            "SHO": "data_analyze/sho.parquet",
+            "Double Well": "data_analyze/double_well.parquet",
+            "Morse": "data_analyze/morse.parquet",
+            "ATW": "data_analyze/atw.parquet",
+            "STW": "data_analyze/stw.parquet",
+            "SSTW": "data_analyze/sstw.parquet",
+    }
     df_relevants = [load_data(path) for path in relevant_files.values() if os.path.exists(path)]
     potentials_relevant = [extract_column(df_rel, "V") for df_rel in df_relevants]
     relevants_metadata = [
         RelevantPotential(label="SHO", color="cyan", marker="o", umap1=0, umap2=0),
         RelevantPotential(label="Double Well", color="darkviolet", marker="s", umap1=0, umap2=0),
         RelevantPotential(label="Morse", color="lime", marker="^", umap1=0, umap2=0),
+        RelevantPotential(label="ATW", color="orange", marker="D", umap1=0, umap2=0),
+        RelevantPotential(label="STW", color="red", marker="P", umap1=0, umap2=0),
+        RelevantPotential(label="SSTW", color="deeppink", marker="*", umap1=0, umap2=0),
     ]
 
     # Plot results for the first block

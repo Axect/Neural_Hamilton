@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 _ => unreachable!(),
             };
             //let n_total_samples = 10 * n_total_samples; // For UMAP filtering
-            let n_total_samples = NDIFFCONFIG * n_total_samples;
+            let n_total_samples = NDIFFCONFIG * 10 * n_total_samples;
 
             let train_ratio = 0.8;
             let n_train = (n_total_samples as f64 * train_ratio).round() as usize;
@@ -73,8 +73,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (q_max, p_max) = ds_train.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
-            //ds_train.write_parquet(&format!("{}/train_cand.parquet", folder))?;
-            ds_train.write_parquet(&format!("{}/train.parquet", folder))?;
+            ds_train.write_parquet(&format!("{}/train_cand.parquet", folder))?;
+            //ds_train.write_parquet(&format!("{}/train.parquet", folder))?;
 
             println!("\nGenerate validation data (Order: {:?})...", order);
             let ds_val_gen = Dataset::generate(n_val, 456, order)?;
@@ -84,13 +84,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (q_max, p_max) = ds_val.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
-            //ds_val.write_parquet(&format!("{}/val_cand.parquet", folder))?;
-            ds_val.write_parquet(&format!("{}/val.parquet", folder))?;
+            ds_val.write_parquet(&format!("{}/val_cand.parquet", folder))?;
+            //ds_val.write_parquet(&format!("{}/val.parquet", folder))?;
         }
         2 => {
             // Test
             //let n = 8000 * 10; // For UMAP filtering
-            let n = 8000 * NDIFFCONFIG;
+            let n = 8000 * 10 * NDIFFCONFIG;
             let folder = "data_test";
             let order = Solver::Yoshida4th;
             let seed = 8407;
@@ -103,8 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (q_max, p_max) = ds_test.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
-            //ds_test.write_parquet(&format!("{}/test_cand.parquet", folder))?;
-            ds_test.write_parquet(&format!("{}/test.parquet", folder))?;
+            ds_test.write_parquet(&format!("{}/test_cand.parquet", folder))?;
+            //ds_test.write_parquet(&format!("{}/test.parquet", folder))?;
         }
         _ => unreachable!(),
     }
