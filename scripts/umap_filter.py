@@ -70,13 +70,17 @@ def cluster_data(embedding: np.ndarray, n_clusters) -> np.ndarray:
     return clustering.labels_
 
 
-def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0) -> tuple[pd.DataFrame, np.ndarray]:
+def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0, beta: float = 2.0) -> tuple[pd.DataFrame, np.ndarray]:
     """
-    Samples data points from clusters, prioritizing less dense regions.
+    Samples data points from clusters, prioritizing less dense and high-variance regions.
+
     Args:
         clusters (pd.DataFrame): DataFrame with umap1, umap2, and label columns.
         alpha (float): A hyperparameter to control the aggressiveness of inverse density weighting.
-                       Higher alpha means stronger preference for sparser regions.
+                       Higher alpha means stronger suppression of dense regions.
+        beta (float): A hyperparameter to control the weight of variance. 
+                      Higher beta gives more weight to high-variance clusters.
+
     Returns:
         tuple[pd.DataFrame, np.ndarray]: A tuple containing the sampled DataFrame and the number of samples per cluster.
     """
@@ -89,7 +93,7 @@ def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0) -> tuple[pd
     values = np.vstack([x, y])
     kernel = gaussian_kde(values)
 
-    # Find center of mass and count elements per cluster
+    # Find center of mass, count elements, and variance per cluster
     unique_labels = clusters["label"].unique()
     centers = []
     elements_per_cluster = []
@@ -108,6 +112,7 @@ def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0) -> tuple[pd
     variances_per_cluster = np.array(variances_per_cluster)
 
     # --- MODIFIED WEIGHTING LOGIC ---
+    # 1. Calculate and Weight by Density (Stronger Suppression)
     densities = kernel(centers.T)
     min_density, max_density = densities.min(), densities.max()
     
@@ -115,12 +120,26 @@ def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0) -> tuple[pd
         scaled_densities = (densities - min_density) / (max_density - min_density)
     else:
         scaled_densities = np.zeros_like(densities)
+    
+    # Use exponential decay to sharply decrease weight as density increases.
+    density_weights = np.exp(-alpha * scaled_densities)
 
-    #density_weights = np.exp(-alpha * scaled_densities ** 2)
-    density_weights = 1 / (1 + alpha * scaled_densities)  # Inverse density weighting
-    #size_factor = np.log1p(elements_per_cluster)
-    size_factor = np.sqrt(variances_per_cluster)  # Use variance as a size factor
-    combined_weights = density_weights * size_factor
+    # 2. Normalize and Weight by Variance (Increased Influence)
+    min_var, max_var = variances_per_cluster.min(), variances_per_cluster.max()
+    if max_var - min_var > 1e-9:
+        # Normalize variance to a [0, 1] range.
+        scaled_variances = (variances_per_cluster - min_var) / (max_var - min_var)
+    else:
+        # If all variances are the same, set weights to 1.
+        scaled_variances = np.ones_like(variances_per_cluster)
+    
+    # Use beta to emphasize clusters with high variance.
+    variance_weights = scaled_variances ** beta
+
+    # 3. Combine Weights
+    # Clusters that are both low-density (high density_weights) and 
+    # high-variance (high variance_weights) get a high combined weight.
+    combined_weights = density_weights * variance_weights
     
     if combined_weights.sum() < 1e-9:
         weights = np.ones_like(combined_weights) / len(combined_weights)
