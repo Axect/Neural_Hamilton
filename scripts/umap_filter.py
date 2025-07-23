@@ -93,13 +93,19 @@ def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0) -> tuple[pd
     unique_labels = clusters["label"].unique()
     centers = []
     elements_per_cluster = []
+    variances_per_cluster = []
     for label in unique_labels:
         cluster_points = clusters[clusters["label"] == label]
         elements_per_cluster.append(len(cluster_points))
         center = cluster_points[["umap1", "umap2"]].mean().to_numpy()
         centers.append(center)
+        # Variance calculation
+        variance = cluster_points[["umap1", "umap2"]].var().to_numpy()
+        variance_sum = np.sum(variance)
+        variances_per_cluster.append(variance_sum)
     centers = np.array(centers)
     elements_per_cluster = np.array(elements_per_cluster)
+    variances_per_cluster = np.array(variances_per_cluster)
 
     # --- MODIFIED WEIGHTING LOGIC ---
     densities = kernel(centers.T)
@@ -110,9 +116,11 @@ def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0) -> tuple[pd
     else:
         scaled_densities = np.zeros_like(densities)
 
-    density_weights = np.exp(-alpha * scaled_densities)
-    size_factor = np.log1p(elements_per_cluster)
-    combined_weights = density_weights / size_factor
+    #density_weights = np.exp(-alpha * scaled_densities ** 2)
+    density_weights = 1 / (1 + alpha * scaled_densities)  # Inverse density weighting
+    #size_factor = np.log1p(elements_per_cluster)
+    size_factor = np.sqrt(variances_per_cluster)  # Use variance as a size factor
+    combined_weights = density_weights * size_factor
     
     if combined_weights.sum() < 1e-9:
         weights = np.ones_like(combined_weights) / len(combined_weights)
@@ -320,7 +328,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="UMAP filtering for datasets with repeated potential blocks.")
     parser.add_argument("--data_file", type=str, required=True, help="Path to the data file (parquet format)")
-    parser.add_argument("--alpha", type=float, default=0.5, help="Hyperparameter for inverse density weighting.")
+    parser.add_argument("--alpha", type=float, default=1.0, help="Hyperparameter for inverse density weighting.")
     parser.add_argument("--ndiffconfig", type=int, default=2, help="Number of different time configurations per potential, as used in data generation.")
     args = parser.parse_args()
     
