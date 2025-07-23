@@ -1,7 +1,7 @@
 import umap
 import matplotlib.pyplot as plt
 import scienceplots
-import pandas as pd # fireducks.pandas is not a standard library, using pandas
+import fireducks.pandas as pd
 import numpy as np
 import random
 from sklearn.cluster import MiniBatchKMeans
