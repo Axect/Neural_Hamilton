@@ -70,7 +70,7 @@ def cluster_data(embedding: np.ndarray, n_clusters) -> np.ndarray:
     return clustering.labels_
 
 
-def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0, beta: float = 2.0) -> tuple[pd.DataFrame, np.ndarray]:
+def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 1.0, beta: float = 0.5) -> tuple[pd.DataFrame, np.ndarray]:
     """
     Samples data points from clusters, prioritizing less dense and high-variance regions.
 
@@ -122,7 +122,7 @@ def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0, beta: float
         scaled_densities = np.zeros_like(densities)
     
     # Use exponential decay to sharply decrease weight as density increases.
-    density_weights = np.exp(-alpha * scaled_densities)
+    density_weights = np.exp(-alpha * scaled_densities ** 2)
 
     # 2. Normalize and Weight by Variance (Increased Influence)
     min_var, max_var = variances_per_cluster.min(), variances_per_cluster.max()
@@ -139,7 +139,8 @@ def sample_from_clusters(clusters: pd.DataFrame, alpha: float = 5.0, beta: float
     # 3. Combine Weights
     # Clusters that are both low-density (high density_weights) and 
     # high-variance (high variance_weights) get a high combined weight.
-    combined_weights = density_weights * variance_weights
+    #combined_weights = density_weights * variance_weights
+    combined_weights = density_weights
     
     if combined_weights.sum() < 1e-9:
         weights = np.ones_like(combined_weights) / len(combined_weights)
