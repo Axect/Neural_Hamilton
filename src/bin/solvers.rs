@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dh.print();
 
-    dh.write_parquet("data_analyze/test_solvers.parquet", CompressionOptions::Snappy)?;
+    dh.write_parquet("data_analyze/test_solvers.parquet", SNAPPY)?;
 
     Ok(())
 }

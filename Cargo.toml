@@ -6,6 +6,6 @@ edition = "2021"
 [dependencies]
 dialoguer = "0.11.0"
 indicatif = { version = "0.17", features = ["rayon"] }
-peroxide = { version = "0.39", features = ["parquet"] }
+peroxide = { version = "0.40", features = ["parquet"] }
 rayon = "1.10.0"
 rugfield = "0.2.3"
