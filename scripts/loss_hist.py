@@ -33,7 +33,7 @@ def choose_projects_to_plot():
 
 def losses_from_projects(projects: List[str]):
     losses = []
-    df = pl.read_parquet(os.path.join(projects[0], "losses.parquet"))
+    df = pl.read_parquet(os.path.join(projects[2], "losses.parquet"))
     losses.append(df["y4_loss"].to_numpy())
     losses.append(df["rk4_loss"].to_numpy())
     for project in projects:
