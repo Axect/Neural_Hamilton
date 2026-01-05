@@ -2,8 +2,10 @@ use indicatif::{ParallelProgressIterator, ProgressBar, ProgressIterator};
 use peroxide::fuga::*;
 use rayon::prelude::*;
 use rugfield::{grf_with_rng, Kernel};
+use std::path::Path;
 
 const V0: f64 = 2f64;
+const CHUNK_SIZE: usize = 100_000; // Process 100k potentials at a time to limit memory
 const L: f64 = 1f64;
 const NSENSORS: usize = 100;
 const BOUNDARY: f64 = 0f64;
@@ -58,13 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     match selection {
-        0 | 1 => {
-            // Normal, More (Train/Val with exact target counts)
-            let (target_train, target_val, folder, order) = match selection {
-                0 => (TARGET_TRAIN, TARGET_VAL, "data_normal", Solver::Yoshida4th),
-                1 => (TARGET_TRAIN * 10, TARGET_VAL * 10, "data_more", Solver::Yoshida4th),
-                _ => unreachable!(),
-            };
+        0 => {
+            // Normal mode (Train/Val with exact target counts) - fits in memory
+            let (target_train, target_val, folder, order) =
+                (TARGET_TRAIN, TARGET_VAL, "data_normal", Solver::Yoshida4th);
 
             // Generate candidates with safety margin
             let n_train_cand = (target_train as f64 * SAFETY_FACTOR).ceil() as usize;
@@ -103,6 +102,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
             ds_val.write_parquet(&format!("{}/val_cand.parquet", folder))?;
+        }
+        1 => {
+            // More mode (10x data) - use chunked generation to avoid OOM
+            let target_train = TARGET_TRAIN * 10;
+            let target_val = TARGET_VAL * 10;
+            let folder = "data_more";
+            let order = Solver::Yoshida4th;
+
+            // Generate candidates with safety margin
+            let n_train_cand = (target_train as f64 * SAFETY_FACTOR).ceil() as usize;
+            let n_val_cand = (target_val as f64 * SAFETY_FACTOR).ceil() as usize;
+
+            println!("\n=== Using chunked generation for large dataset ===");
+            println!("Chunk size: {} potentials per chunk", CHUNK_SIZE);
+
+            println!("\nGenerate training data (Order: {:?})...", order);
+            println!("Target: {}, Generating candidates: {}", target_train, n_train_cand);
+            let train_count = Dataset::generate_chunked(
+                n_train_cand,
+                123,
+                order,
+                &format!("{}/train_cand.parquet", folder),
+                target_train,
+            )?;
+            assert!(
+                train_count >= target_train,
+                "Not enough training data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
+                train_count,
+                target_train
+            );
+            println!("Training data: {} (exact)", train_count);
+
+            println!("\nGenerate validation data (Order: {:?})...", order);
+            println!("Target: {}, Generating candidates: {}", target_val, n_val_cand);
+            let val_count = Dataset::generate_chunked(
+                n_val_cand,
+                456,
+                order,
+                &format!("{}/val_cand.parquet", folder),
+                target_val,
+            )?;
+            assert!(
+                val_count >= target_val,
+                "Not enough validation data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
+                val_count,
+                target_val
+            );
+            println!("Validation data: {} (exact)", val_count);
         }
         2 => {
             // Test with exact target count
@@ -167,6 +214,148 @@ impl Dataset {
     pub fn generate(n: usize, seed: u64, order: Solver) -> anyhow::Result<Self> {
         let potential_generator = BoundedPotential::generate_potential(n, seed, order);
         potential_generator.generate_data()
+    }
+
+    /// Generate data in chunks and write directly to disk to avoid OOM
+    /// Returns the total number of generated samples
+    pub fn generate_chunked(
+        n: usize,
+        seed: u64,
+        order: Solver,
+        output_path: &str,
+        target: usize,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let parent = Path::new(output_path).parent().unwrap();
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // Generate all potentials first (this is relatively memory-efficient)
+        println!("Generating potential functions...");
+        let potential_generator = BoundedPotential::generate_potential(n, seed, order);
+        let total_potentials = potential_generator.potential_pair.len();
+        println!("Generated {} potential functions", total_potentials);
+
+        // Process in chunks
+        let num_chunks = (total_potentials + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        let mut total_generated: usize = 0;
+        let mut chunk_files: Vec<String> = Vec::new();
+
+        println!(
+            "Processing {} potentials in {} chunks of up to {} each...",
+            total_potentials, num_chunks, CHUNK_SIZE
+        );
+
+        for chunk_idx in 0..num_chunks {
+            let start = chunk_idx * CHUNK_SIZE;
+            let end = std::cmp::min(start + CHUNK_SIZE, total_potentials);
+            let chunk_potentials: Vec<_> = potential_generator.potential_pair[start..end].to_vec();
+
+            println!(
+                "\nChunk {}/{}: Processing potentials {} to {}",
+                chunk_idx + 1,
+                num_chunks,
+                start,
+                end
+            );
+
+            // Process this chunk
+            let chunk_data = BoundedPotential::generate_data_from_potentials(&chunk_potentials)
+                .map_err(|e| -> Box<dyn std::error::Error> { Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) })?;
+            let chunk_count = chunk_data.data.len();
+            total_generated += chunk_count;
+
+            println!(
+                "Chunk {}: Generated {} samples (total so far: {})",
+                chunk_idx + 1,
+                chunk_count,
+                total_generated
+            );
+
+            // Write chunk to temporary file
+            let chunk_path = format!("{}.chunk_{:04}.parquet", output_path, chunk_idx);
+            chunk_data.write_parquet(&chunk_path)?;
+            chunk_files.push(chunk_path);
+
+            // Check if we have enough data
+            if total_generated >= target {
+                println!(
+                    "Reached target {} (generated {}), stopping early",
+                    target, total_generated
+                );
+                break;
+            }
+        }
+
+        // Concatenate all chunk files into final output
+        println!("\nConcatenating {} chunk files...", chunk_files.len());
+        Self::concatenate_parquet_files(&chunk_files, output_path, target)?;
+
+        // Clean up chunk files
+        println!("Cleaning up temporary chunk files...");
+        for chunk_file in &chunk_files {
+            if Path::new(chunk_file).exists() {
+                std::fs::remove_file(chunk_file)?;
+            }
+        }
+
+        println!("Final output written to: {}", output_path);
+        Ok(std::cmp::min(total_generated, target))
+    }
+
+    /// Concatenate multiple parquet files into one, taking only up to `target` rows
+    fn concatenate_parquet_files(
+        chunk_files: &[String],
+        output_path: &str,
+        target: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut all_v: Vec<f64> = Vec::new();
+        let mut all_t: Vec<f64> = Vec::new();
+        let mut all_q: Vec<f64> = Vec::new();
+        let mut all_p: Vec<f64> = Vec::new();
+
+        let mut rows_collected = 0;
+        let rows_per_sample = NSENSORS; // Each sample has NSENSORS rows in the flat format
+
+        for chunk_file in chunk_files {
+            if rows_collected >= target {
+                break;
+            }
+
+            let df = DataFrame::read_parquet(chunk_file)?;
+            let v_col: Vec<f64> = df["V"].to_vec();
+            let t_col: Vec<f64> = df["t"].to_vec();
+            let q_col: Vec<f64> = df["q"].to_vec();
+            let p_col: Vec<f64> = df["p"].to_vec();
+
+            let samples_in_chunk = v_col.len() / rows_per_sample;
+            let samples_needed = target - rows_collected;
+            let samples_to_take = std::cmp::min(samples_in_chunk, samples_needed);
+            let rows_to_take = samples_to_take * rows_per_sample;
+
+            all_v.extend_from_slice(&v_col[..rows_to_take]);
+            all_t.extend_from_slice(&t_col[..rows_to_take]);
+            all_q.extend_from_slice(&q_col[..rows_to_take]);
+            all_p.extend_from_slice(&p_col[..rows_to_take]);
+
+            rows_collected += samples_to_take;
+        }
+
+        // Write final concatenated file
+        let mut df = DataFrame::new(vec![]);
+        df.push("V", Series::new(all_v));
+        df.push("t", Series::new(all_t));
+        df.push("q", Series::new(all_q));
+        df.push("p", Series::new(all_p));
+
+        println!(
+            "Final dataset: {} samples ({} rows)",
+            rows_collected,
+            rows_collected * rows_per_sample
+        );
+        df.write_parquet(output_path, SNAPPY)?;
+
+        Ok(())
     }
 
     #[allow(non_snake_case)]
@@ -456,6 +645,102 @@ impl BoundedPotential {
             .collect();
 
         println!("Generated data: {} (from {} unique potentials)", data_vec.len(), data_vec.len() / NDIFFCONFIG);
+        Ok(Dataset::new(data_vec))
+    }
+
+    /// Generate data from a given slice of potential pairs (used for chunked processing)
+    #[allow(non_snake_case)]
+    pub fn generate_data_from_potentials(
+        potential_pairs: &[(Vec<f64>, Vec<f64>)],
+    ) -> anyhow::Result<Dataset> {
+        let q_domain = linspace(0f64, L, NSENSORS);
+
+        let data_vec: Vec<Data> = potential_pairs
+            .par_iter()
+            .progress_with(ProgressBar::new(potential_pairs.len() as u64))
+            .filter_map(|potential_pair_item| {
+                // Solve long trajectory (0 to T_TOTAL)
+                let long_traj = match solve_hamilton_long(potential_pair_item.clone()) {
+                    Ok(traj) => traj,
+                    Err(_) => return None,
+                };
+
+                // Check if trajectory stays bounded over entire T_TOTAL
+                let check_points = linspace(0f64, T_TOTAL, (T_TOTAL / TSTEP) as usize);
+                let q_check = long_traj.cs_q.eval_vec(&check_points);
+                if q_check
+                    .iter()
+                    .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
+                {
+                    return None;
+                }
+
+                // Check V values
+                if long_traj.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64) {
+                    return None;
+                }
+
+                // Check energy conservation over entire trajectory
+                let V_spline = match cubic_hermite_spline(&q_domain, &long_traj.V, Quadratic) {
+                    Ok(s) => s,
+                    Err(_) => return None,
+                };
+                let p_check = long_traj.cs_p.eval_vec(&check_points);
+                let E: Vec<f64> = q_check
+                    .iter()
+                    .zip(p_check.iter())
+                    .map(|(&q, &p)| V_spline.eval(q) + p * p / 2f64)
+                    .collect();
+                let E_max = E.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                let E_min = E.iter().cloned().fold(f64::INFINITY, f64::min);
+                let E_delta = (E_max - E_min) / (E_max + E_min).max(1e-10);
+                if E_delta >= 0.001 {
+                    return None;
+                }
+
+                // Generate NDIFFCONFIG windows with different start times
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+
+                let mut hasher = DefaultHasher::new();
+                for &v in &long_traj.V {
+                    v.to_bits().hash(&mut hasher);
+                }
+                let seed = hasher.finish();
+                let mut rng = stdrng_from_seed(seed);
+
+                let uniform_t_start = Uniform(0f64, T_TOTAL - T_WINDOW);
+                let uniform_t_sample = Uniform(0f64, T_WINDOW);
+
+                let windows: Vec<Data> = (0..NDIFFCONFIG)
+                    .filter_map(|_| {
+                        let t_start = uniform_t_start.sample_with_rng(&mut rng, 1)[0];
+                        let mut t_domain = uniform_t_sample.sample_with_rng(&mut rng, NSENSORS - 2);
+                        t_domain.insert(0, 0f64);
+                        t_domain.push(T_WINDOW);
+                        t_domain.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+                        let data = long_traj.extract_window(t_start, &t_domain);
+
+                        if data.q.iter().any(|&x| !x.is_finite())
+                            || data.p.iter().any(|&x| !x.is_finite())
+                        {
+                            return None;
+                        }
+
+                        Some(data)
+                    })
+                    .collect();
+
+                if windows.len() == NDIFFCONFIG {
+                    Some(windows)
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+
         Ok(Dataset::new(data_vec))
     }
 }
