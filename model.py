@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 import math
 from mambapy.mamba import Mamba, MambaConfig
 
@@ -270,6 +271,140 @@ class TraONet(nn.Module):
 
         # Decoding
         o = self.trunk_net(y, memory)
+        return o[:, :, 0], o[:, :, 1]
+
+
+# ┌──────────────────────────────────────────────────────────┐
+#  Fourier Neural Operator (FNO)
+# └──────────────────────────────────────────────────────────┘
+class SpectralConv1d(nn.Module):
+    """1D Spectral Convolution Layer - learns weights in Fourier space."""
+
+    def __init__(self, in_channels, out_channels, modes):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes = modes  # Number of Fourier modes to keep
+
+        # Complex weights for Fourier modes
+        scale = 1 / (in_channels * out_channels)
+        self.weights = nn.Parameter(
+            scale * torch.randn(in_channels, out_channels, modes, dtype=torch.cfloat)
+        )
+
+    def forward(self, x):
+        """
+        - x: (B, C_in, W)
+        - out: (B, C_out, W)
+        """
+        B, C, W = x.shape
+
+        # FFT
+        x_ft = torch.fft.rfft(x, dim=-1)
+
+        # Multiply relevant Fourier modes
+        out_ft = torch.zeros(
+            B, self.out_channels, W // 2 + 1, device=x.device, dtype=torch.cfloat
+        )
+        out_ft[:, :, : self.modes] = torch.einsum(
+            "bcm,com->bom", x_ft[:, :, : self.modes], self.weights
+        )
+
+        # Inverse FFT
+        out = torch.fft.irfft(out_ft, n=W, dim=-1)
+        return out
+
+
+class FourierLayer(nn.Module):
+    """Single Fourier layer: spectral conv + pointwise conv + residual."""
+
+    def __init__(self, channels, modes):
+        super().__init__()
+        self.spectral_conv = SpectralConv1d(channels, channels, modes)
+        self.pointwise_conv = nn.Conv1d(channels, channels, kernel_size=1)
+
+    def forward(self, x):
+        """
+        - x: (B, C, W)
+        - out: (B, C, W)
+        """
+        x1 = self.spectral_conv(x)
+        x2 = self.pointwise_conv(x)
+        return F.gelu(x1 + x2)
+
+
+class FNOEncoder(nn.Module):
+    """Fourier Neural Operator encoder for processing potential functions."""
+
+    def __init__(self, d_model, num_layers, modes):
+        super().__init__()
+
+        # Lifting layer: 1 -> d_model
+        self.lifting = nn.Linear(1, d_model)
+
+        # Fourier layers
+        self.layers = nn.ModuleList(
+            [FourierLayer(d_model, modes) for _ in range(num_layers)]
+        )
+
+        # Layer norm for stability
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, x):
+        """
+        - x: (B, W, 1)
+        - out: (B, W, d_model)
+        """
+        # Lift to higher dimension
+        x = self.lifting(x)  # (B, W, d_model)
+
+        # Apply Fourier layers (need channel-first format)
+        x = x.permute(0, 2, 1)  # (B, d_model, W)
+        for layer in self.layers:
+            x = layer(x)
+        x = x.permute(0, 2, 1)  # (B, W, d_model)
+
+        # Normalize
+        x = self.norm(x)
+        return x
+
+
+class FNO(nn.Module):
+    """
+    Fourier Neural Operator for Hamiltonian mechanics.
+    Uses FNO encoder for potential and Transformer decoder for time queries.
+    """
+
+    def __init__(self, hparams):
+        super().__init__()
+
+        d_model = hparams["d_model"]
+        num_layers1 = hparams["num_layers1"]  # FNO encoder layers
+        modes = hparams["modes"]  # Number of Fourier modes
+        n_head = hparams["n_head"]
+        num_layers2 = hparams["num_layers2"]  # Decoder layers
+        d_ff = hparams["d_ff"]
+        dropout = hparams.get("dropout", 0.0)
+
+        self.encoder = FNOEncoder(d_model, num_layers1, modes)
+        self.decoder = TFDecoder(d_model, n_head, num_layers2, d_ff, dropout)
+
+    def forward(self, u, y):
+        """
+        - u: (B, W1) - potential function values (100 points)
+        - y: (B, W2) - time query points
+        - returns: (q, p) each (B, W2)
+        """
+        B, W1 = u.shape
+        _, W2 = y.shape
+        u = u.view(B, W1, 1)
+        y = y.view(B, W2, 1)
+
+        # Encode potential with FNO
+        memory = self.encoder(u)
+
+        # Decode to (q, p) at time points
+        o = self.decoder(y, memory)
         return o[:, :, 0], o[:, :, 1]
 
 
