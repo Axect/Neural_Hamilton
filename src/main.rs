@@ -9,6 +9,14 @@ const NSENSORS: usize = 100;
 const BOUNDARY: f64 = 0f64;
 const TSTEP: f64 = 1e-3;
 const NDIFFCONFIG: usize = 2; // Number of different configurations of time per potential
+const T_TOTAL: f64 = 4f64; // Total integration time for long trajectory
+const T_WINDOW: f64 = 2f64; // Time window size for each sample
+
+// Target data counts (exact output after filtering)
+const TARGET_TRAIN: usize = 80_000 * 10;   // 800,000
+const TARGET_VAL: usize = 20_000 * 10;     // 200,000
+const TARGET_TEST: usize = 10_000 * 10;    // 100,000
+const SAFETY_FACTOR: f64 = 2.0;            // Generate 2x candidates to account for filtering (~50% pass rate)
 
 // --- Yoshida 4th Order Coefficients ---
 const W0_4TH: f64 = -1.7024143839193153;
@@ -51,60 +59,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match selection {
         0 | 1 => {
-            // Normal, More, Much (all Y4 for Train/Val)
-            let (n_total_samples, folder, order) = match selection {
-                0 => (10000, "data_normal", Solver::Yoshida4th),
-                1 => (100000, "data_more", Solver::Yoshida4th),
-                //2 => (1000000, "data_much", Solver::Yoshida4th),
+            // Normal, More (Train/Val with exact target counts)
+            let (target_train, target_val, folder, order) = match selection {
+                0 => (TARGET_TRAIN, TARGET_VAL, "data_normal", Solver::Yoshida4th),
+                1 => (TARGET_TRAIN * 10, TARGET_VAL * 10, "data_more", Solver::Yoshida4th),
                 _ => unreachable!(),
             };
-            //let n_total_samples = 10 * n_total_samples; // For UMAP filtering
-            let n_total_samples = NDIFFCONFIG * 10 * n_total_samples;
 
-            let train_ratio = 0.8;
-            let n_train = (n_total_samples as f64 * train_ratio).round() as usize;
-            let n_val = n_total_samples - n_train;
+            // Generate candidates with safety margin
+            let n_train_cand = (target_train as f64 * SAFETY_FACTOR).ceil() as usize;
+            let n_val_cand = (target_val as f64 * SAFETY_FACTOR).ceil() as usize;
 
             println!("\nGenerate training data (Order: {:?})...", order);
-            let ds_train_gen = Dataset::generate(n_train, 123, order)?;
-            let ds_train = ds_train_gen.take(n_train);
-            println!("Take training data: {}", ds_train.data.len());
+            println!("Target: {}, Generating candidates: {}", target_train, n_train_cand);
+            let ds_train_gen = Dataset::generate(n_train_cand, 123, order)?;
+            let ds_train = ds_train_gen.take(target_train);
+            assert!(
+                ds_train.data.len() == target_train,
+                "Not enough training data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
+                ds_train.data.len(),
+                target_train
+            );
+            println!("Training data: {} (exact)", ds_train.data.len());
             if !ds_train.data.is_empty() {
                 let (q_max, p_max) = ds_train.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
             ds_train.write_parquet(&format!("{}/train_cand.parquet", folder))?;
-            //ds_train.write_parquet(&format!("{}/train.parquet", folder))?;
 
             println!("\nGenerate validation data (Order: {:?})...", order);
-            let ds_val_gen = Dataset::generate(n_val, 456, order)?;
-            let ds_val = ds_val_gen.take(n_val);
-            println!("Take validation data: {}", ds_val.data.len());
+            println!("Target: {}, Generating candidates: {}", target_val, n_val_cand);
+            let ds_val_gen = Dataset::generate(n_val_cand, 456, order)?;
+            let ds_val = ds_val_gen.take(target_val);
+            assert!(
+                ds_val.data.len() == target_val,
+                "Not enough validation data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
+                ds_val.data.len(),
+                target_val
+            );
+            println!("Validation data: {} (exact)", ds_val.data.len());
             if !ds_val.data.is_empty() {
                 let (q_max, p_max) = ds_val.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
             ds_val.write_parquet(&format!("{}/val_cand.parquet", folder))?;
-            //ds_val.write_parquet(&format!("{}/val.parquet", folder))?;
         }
         2 => {
-            // Test
-            //let n = 8000 * 10; // For UMAP filtering
-            let n = 8000 * 10 * NDIFFCONFIG;
+            // Test with exact target count
+            let target_test = TARGET_TEST;
+            let n_test_cand = (target_test as f64 * SAFETY_FACTOR).ceil() as usize;
             let folder = "data_test";
             let order = Solver::Yoshida4th;
             let seed = 8407;
 
             println!("\nGenerate test data (Order: {:?})...", order);
-            let ds_test_gen = Dataset::generate(n, seed, order)?;
-            let ds_test = ds_test_gen.take(n);
-            println!("Take test data: {}", ds_test.data.len());
+            println!("Target: {}, Generating candidates: {}", target_test, n_test_cand);
+            let ds_test_gen = Dataset::generate(n_test_cand, seed, order)?;
+            let ds_test = ds_test_gen.take(target_test);
+            assert!(
+                ds_test.data.len() == target_test,
+                "Not enough test data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
+                ds_test.data.len(),
+                target_test
+            );
+            println!("Test data: {} (exact)", ds_test.data.len());
             if !ds_test.data.is_empty() {
                 let (q_max, p_max) = ds_test.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
             ds_test.write_parquet(&format!("{}/test_cand.parquet", folder))?;
-            //ds_test.write_parquet(&format!("{}/test.parquet", folder))?;
         }
         _ => unreachable!(),
     }
@@ -184,7 +207,7 @@ impl Dataset {
         df.push("q", Series::new(q));
         df.push("p", Series::new(p));
         df.print();
-        df.write_parquet(path, CompressionOptions::Snappy)?;
+        df.write_parquet(path, SNAPPY)?;
         Ok(())
     }
 }
@@ -196,6 +219,36 @@ pub struct Data {
     pub t: Vec<f64>,
     pub q: Vec<f64>,
     pub p: Vec<f64>,
+}
+
+/// Long trajectory with spline interpolation for window extraction
+#[allow(non_snake_case)]
+pub struct LongTrajectory {
+    pub V: Vec<f64>,           // Potential values at uniform q grid
+    pub cs_q: CubicHermiteSpline,  // Spline for q(t)
+    pub cs_p: CubicHermiteSpline,  // Spline for p(t)
+    pub t_max: f64,            // Maximum time of trajectory
+}
+
+impl LongTrajectory {
+    /// Extract a window from the long trajectory
+    /// t_start: start time of window (in original time)
+    /// t_domain: desired output time points (relative to window, i.e., [0, T_WINDOW])
+    #[allow(non_snake_case)]
+    pub fn extract_window(&self, t_start: f64, t_domain: &[f64]) -> Data {
+        // t_domain is in [0, T_WINDOW], shift to [t_start, t_start + T_WINDOW]
+        let t_shifted: Vec<f64> = t_domain.iter().map(|&t| t + t_start).collect();
+
+        let q_vec = self.cs_q.eval_vec(&t_shifted);
+        let p_vec = self.cs_p.eval_vec(&t_shifted);
+
+        Data {
+            V: self.V.clone(),
+            t: t_domain.to_vec(),  // Output normalized time [0, T_WINDOW]
+            q: q_vec,
+            p: p_vec,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -288,108 +341,121 @@ impl BoundedPotential {
             })
             .collect::<Vec<_>>();
 
-        // Duplicate potential pairs for different time configurations
-        let bounded_potential_pairs = (0..NDIFFCONFIG)
-            .flat_map(|_| bounded_potential_pairs.clone())
-            .collect::<Vec<_>>();
-
-        // Time Domain (Length = NSENSORS)
-        let uniform_t = Uniform(0f64, 2f64);
-        let t_domain_vec = (0..bounded_potential_pairs.len())
-            .map(|_| {
-                let mut t_domain = uniform_t.sample_with_rng(&mut rng, NSENSORS - 2);
-                t_domain.insert(0, 0f64);
-                t_domain.push(2f64);
-                t_domain.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                t_domain
-            })
-            .collect::<Vec<_>>();
+        // No longer duplicate potentials - time shift will handle NDIFFCONFIG
+        // t_domain_vec is now generated per window in generate_data
 
         BoundedPotential {
             potential_pair: bounded_potential_pairs,
             solver: solver,
-            t_domain_vec: Some(t_domain_vec),
+            t_domain_vec: None,  // Will be generated during window extraction
         }
     }
 
     #[allow(non_snake_case)]
     pub fn generate_data(&self) -> anyhow::Result<Dataset> {
-        // No order param needed here
         println!(
-            "Generate data (Order: {:?}). Candidates: {}",
-            self.solver,
-            self.potential_pair.len()
+            "Generate data with time shift. Unique potentials: {}, Windows per potential: {}",
+            self.potential_pair.len(),
+            NDIFFCONFIG
         );
+
         let q_domain = linspace(0f64, L, NSENSORS);
-        let data_vec = self
+
+        // Process each potential: solve long trajectory, extract NDIFFCONFIG windows
+        let data_vec: Vec<Data> = self
             .potential_pair
             .par_iter()
-            .zip(self.t_domain_vec.as_ref().unwrap().par_iter())
             .progress_with(ProgressBar::new(self.potential_pair.len() as u64))
-            .filter_map(|(potential_pair_item, t_domain)| {
-                //let solvers = [Solver::Yoshida4th, Solver::RK4, Solver::GL4];
-                let solvers = [Solver::GL4];
-                let solutions = solvers
-                    .iter()
-                    .map(|&solver| {
-                        solve_hamilton_equation(
-                            potential_pair_item.clone(),
-                            solver,
-                            Some(t_domain.clone()),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                if solutions.iter().any(|res| res.is_err()) {
-                    println!("Error in solving Hamilton equation for potential pair");
-                    None
-                } else {
-                    // Filter solvers
-                    let mut valid_solvers = vec![];
-                    for (i, res) in solutions.iter().enumerate() {
-                        if let Ok(data) = res {
-                            if data
-                                .q
-                                .iter()
-                                .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
-                                || data.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64)
-                            {
-                                continue;
-                            } else {
-                                valid_solvers.push((solvers[i], data.clone()));
-                            }
-                        }
-                    }
+            .filter_map(|potential_pair_item| {
+                // Solve long trajectory (0 to T_TOTAL)
+                let long_traj = match solve_hamilton_long(potential_pair_item.clone()) {
+                    Ok(traj) => traj,
+                    Err(_) => return None,
+                };
 
-                    let result = valid_solvers
-                        .into_iter()
-                        .map(|(_, data)| {
-                            let V_splien =
-                                cubic_hermite_spline(&q_domain, &data.V, Quadratic).unwrap();
-                            let p_square = data.p.fmap(|p| p * p / 2f64);
-                            let E = V_splien.eval_vec(&data.q).add_v(&p_square);
-                            let E_max = E.max();
-                            let E_min = E.min();
-                            (data, (E_max - E_min) / (E_max + E_min).max(1e-10))
-                        })
-                        .fold(None, |acc, (data, E_delta_max)| {
-                            if let Some((_, max_delta)) = acc {
-                                if E_delta_max < max_delta {
-                                    Some((data, E_delta_max))
-                                } else {
-                                    acc
-                                }
-                            } else {
-                                Some((data, E_delta_max))
-                            }
-                        });
-                    match result {
-                        Some((data, E_delta_max)) if E_delta_max < 0.001 => Some(data),
-                        _ => None,
-                    }
+                // Check if trajectory stays bounded over entire T_TOTAL
+                let check_points = linspace(0f64, T_TOTAL, (T_TOTAL / TSTEP) as usize);
+                let q_check = long_traj.cs_q.eval_vec(&check_points);
+                if q_check
+                    .iter()
+                    .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
+                {
+                    return None;
+                }
+
+                // Check V values
+                if long_traj.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64) {
+                    return None;
+                }
+
+                // Check energy conservation over entire trajectory
+                let V_spline = match cubic_hermite_spline(&q_domain, &long_traj.V, Quadratic) {
+                    Ok(s) => s,
+                    Err(_) => return None,
+                };
+                let p_check = long_traj.cs_p.eval_vec(&check_points);
+                let E: Vec<f64> = q_check
+                    .iter()
+                    .zip(p_check.iter())
+                    .map(|(&q, &p)| V_spline.eval(q) + p * p / 2f64)
+                    .collect();
+                let E_max = E.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                let E_min = E.iter().cloned().fold(f64::INFINITY, f64::min);
+                let E_delta = (E_max - E_min) / (E_max + E_min).max(1e-10);
+                if E_delta >= 0.001 {
+                    return None;
+                }
+
+                // Generate NDIFFCONFIG windows with different start times
+                // Use deterministic RNG seeded from potential data for reproducibility
+                use std::hash::{Hash, Hasher};
+                use std::collections::hash_map::DefaultHasher;
+
+                let mut hasher = DefaultHasher::new();
+                for &v in &long_traj.V {
+                    v.to_bits().hash(&mut hasher);
+                }
+                let seed = hasher.finish();
+                let mut rng = stdrng_from_seed(seed);
+
+                let uniform_t_start = Uniform(0f64, T_TOTAL - T_WINDOW);
+                let uniform_t_sample = Uniform(0f64, T_WINDOW);
+
+                let windows: Vec<Data> = (0..NDIFFCONFIG)
+                    .filter_map(|_| {
+                        // Random start time for this window
+                        let t_start = uniform_t_start.sample_with_rng(&mut rng, 1)[0];
+
+                        // Generate random time points within window [0, T_WINDOW]
+                        let mut t_domain = uniform_t_sample.sample_with_rng(&mut rng, NSENSORS - 2);
+                        t_domain.insert(0, 0f64);
+                        t_domain.push(T_WINDOW);
+                        t_domain.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+                        // Extract window
+                        let data = long_traj.extract_window(t_start, &t_domain);
+
+                        // Verify window data is valid
+                        if data.q.iter().any(|&x| !x.is_finite())
+                            || data.p.iter().any(|&x| !x.is_finite())
+                        {
+                            return None;
+                        }
+
+                        Some(data)
+                    })
+                    .collect();
+
+                if windows.len() == NDIFFCONFIG {
+                    Some(windows)
+                } else {
+                    None
                 }
             })
-            .collect::<Vec<_>>();
-        println!("Generated data: {}", data_vec.len());
+            .flatten()
+            .collect();
+
+        println!("Generated data: {} (from {} unique potentials)", data_vec.len(), data_vec.len() / NDIFFCONFIG);
         Ok(Dataset::new(data_vec))
     }
 }
@@ -618,4 +684,41 @@ pub fn solve_hamilton_equation(
             })
         }
     }
+}
+
+/// Solve Hamilton equation and return LongTrajectory with splines for window extraction
+#[allow(non_snake_case)]
+pub fn solve_hamilton_long(
+    potential_pair: (Vec<f64>, Vec<f64>),
+) -> anyhow::Result<LongTrajectory> {
+    let hamilton_eq = HamiltonEquation::new(potential_pair)?;
+
+    // Use GL4 for long trajectory (best energy conservation)
+    let integrator = GL4 {
+        solver: ImplicitSolver::Broyden,
+        tol: 1e-6,
+        max_step_iter: 100,
+    };
+    let initial_condition = vec![0f64, 0f64];
+    let solver = BasicODESolver::new(integrator);
+    let (t_vec, x_vec) = solver.solve(&hamilton_eq, (0f64, T_TOTAL), TSTEP, &initial_condition)?;
+
+    let x_mat = py_matrix(x_vec);
+    let q_vec = x_mat.col(0);
+    let p_vec = x_mat.col(1);
+
+    // Create splines for interpolation
+    let cs_q = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
+    let cs_p = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
+
+    // Get V at uniform q grid
+    let q_uniform = linspace(0f64, L, NSENSORS);
+    let V_out = hamilton_eq.eval_vec(&q_uniform);
+
+    Ok(LongTrajectory {
+        V: V_out,
+        cs_q,
+        cs_p,
+        t_max: T_TOTAL,
+    })
 }

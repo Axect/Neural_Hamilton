@@ -5,13 +5,18 @@ install:
     uv venv
     sh install_requirements.sh
 
+# Build only the required binaries (neural_hamilton, relevant, solvers)
 build-cargo:
+    cargo build --release --bin neural_hamilton --bin relevant --bin solvers
+
+# Build all binaries including experimental ones
+build-cargo-all:
     cargo build --release
 
 data-gen:
     for i in {0..2}; do \
         cargo run --release --bin neural_hamilton -- $i; \
-    done 
+    done
     cargo run --release --bin relevant
 
 data-filter:
@@ -33,3 +38,15 @@ post-process:
 build: build-cargo
 
 all: install build-cargo data-gen data-filter post-process
+
+# ============================================================
+# Experimental/Utility binaries (not part of main pipeline)
+# ============================================================
+# These binaries are available but not used in the main workflow:
+#   - adjust_eta_inf: Learning rate adjustment utility
+#   - unbounded: Unbounded potential experiment
+#   - cliff: Cliff potential experiment
+#   - is_conserved: Energy conservation verification
+#   - rk4: RK4 standalone test (functionality in solvers.rs)
+#   - gl4: GL4 standalone test (functionality in solvers.rs)
+#   - rkf78: RKF78 adaptive integrator test
