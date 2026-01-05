@@ -1,3 +1,17 @@
+"""
+UMAP Filtering Script
+
+Performs UMAP dimensionality reduction on potential functions V(q),
+clusters them, and samples representative examples using KDE-weighted sampling.
+
+This script handles INTERLEAVED data layout from Rust generator:
+    [pot0_win0, pot0_win1, pot1_win0, pot1_win1, ...]
+
+Usage:
+    python scripts/umap_filter.py --data_file="data_test/test_cand.parquet"
+    python scripts/umap_filter.py --data_file="data_normal/train_cand.parquet" --ndiffconfig=2
+"""
+
 import umap
 import matplotlib.pyplot as plt
 import scienceplots
@@ -49,6 +63,53 @@ def umap_fit(V: np.ndarray, n_neighbors: int = 15, min_dist: float = 0.1) -> uma
 
 
 # ┌──────────────────────────────────────────────────────────┐
+#  Interleaved Data Handling
+# └──────────────────────────────────────────────────────────┘
+def deinterleave_data(data: np.ndarray, ndiffconfig: int) -> list[np.ndarray]:
+    """
+    Convert interleaved data to list of blocks by config.
+
+    Input layout (interleaved):
+        [pot0_win0, pot0_win1, pot1_win0, pot1_win1, ...]
+
+    Output: list of arrays, one per config
+        blocks[0] = [pot0_win0, pot1_win0, pot2_win0, ...]  (all config 0)
+        blocks[1] = [pot0_win1, pot1_win1, pot2_win1, ...]  (all config 1)
+    """
+    n_total = data.shape[0]
+    assert n_total % ndiffconfig == 0, f"Data length {n_total} not divisible by ndiffconfig {ndiffconfig}"
+
+    blocks = []
+    for i in range(ndiffconfig):
+        # Extract every ndiffconfig-th element starting from i
+        indices = np.arange(i, n_total, ndiffconfig)
+        blocks.append(data[indices])
+
+    return blocks
+
+
+def interleave_samples(blocks: list[np.ndarray], sample_indices: np.ndarray) -> np.ndarray:
+    """
+    Given sample indices (potential indices), reconstruct interleaved data.
+
+    Args:
+        blocks: list of arrays, one per config (from deinterleave_data)
+        sample_indices: indices of selected potentials
+
+    Returns:
+        Interleaved array: [pot_i_win0, pot_i_win1, pot_j_win0, pot_j_win1, ...]
+    """
+    ndiffconfig = len(blocks)
+    result = []
+
+    for idx in sample_indices:
+        for config in range(ndiffconfig):
+            result.append(blocks[config][idx])
+
+    return np.array(result)
+
+
+# ┌──────────────────────────────────────────────────────────┐
 #  Clustering and Sampling
 # └──────────────────────────────────────────────────────────┘
 def cluster_data(embedding: np.ndarray, n_clusters) -> np.ndarray:
@@ -56,7 +117,7 @@ def cluster_data(embedding: np.ndarray, n_clusters) -> np.ndarray:
     return clustering.labels_
 
 
-def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
+def sample_from_clusters(clusters: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
     # KDE
     x = clusters["umap1"].to_numpy()
     y = clusters["umap2"].to_numpy()
@@ -76,10 +137,10 @@ def sample_from_clusters(clusters: pd.DataFrame) -> pd.DataFrame:
     densities = kernel(centers.T)
     density_min = densities.min()
     density_max = densities.max()
-    normalized_densities = (densities - density_min) / (density_max - density_min)
+    normalized_densities = (densities - density_min) / (density_max - density_min + 1e-10)
 
-    # Define weights based on density
-    weights = np.exp(- 1.0 * normalized_densities ** 2)
+    # Define weights based on density (lower density = higher weight)
+    weights = np.exp(-1.0 * normalized_densities ** 2)
     weights /= weights.sum()  # Normalize weights
 
     # Define number of samples to take from each cluster
@@ -172,7 +233,7 @@ def select_data_option() -> str:
 #  Plot
 # └──────────────────────────────────────────────────────────┘
 def hist_n_samples(n_samples: np.ndarray, data_quant, data_type: str):
-    bins = len(np.unique(n_samples)) // 4
+    bins = max(len(np.unique(n_samples)) // 4, 10)
     with plt.style.context(["science", "nature"]):
         fig, ax = plt.subplots()
         ax.hist(n_samples, bins=bins, edgecolor="black", linewidth=1.2, histtype="step")
@@ -323,16 +384,13 @@ if __name__ == "__main__":
     # Create figs directory if it doesn't exist
     os.makedirs("figs", exist_ok=True)
 
-    # Interactive
-    # data_file = select_data_option()
-
     # Non-interactive
     parser = argparse.ArgumentParser(description="UMAP and clustering on data files.")
     parser.add_argument(
         "--data_file", type=str, help="Path to the data file (parquet format)"
     )
     parser.add_argument(
-        "--ndiffconfig", type=int, default=2, help="Number of different configurations to consider"
+        "--ndiffconfig", type=int, default=2, help="Number of different configurations per potential"
     )
     args = parser.parse_args()
     data_file = args.data_file
@@ -340,81 +398,90 @@ if __name__ == "__main__":
     data_quant = data_file.split("/")[0].split("_")[-1]
     data_type = data_file.split("/")[-1].split(".")[0]
     print(f"Processing file: {data_file}")
+    print(f"NDIFFCONFIG: {ndiffconfig}")
 
     # Load data
     df = load_data(data_file)
-    V = extract_column(df, "V")
-    t = extract_column(df, "t")
-    q = extract_column(df, "q")
-    p = extract_column(df, "p")
-    console.print(f"Data shape: {V.shape}")
+    V_full = extract_column(df, "V")
+    t_full = extract_column(df, "t")
+    q_full = extract_column(df, "q")
+    p_full = extract_column(df, "p")
+    console.print(f"Total samples: {V_full.shape[0]}")
+    console.print(f"Unique potentials: {V_full.shape[0] // ndiffconfig}")
 
-    # Split data into configurations
-    VBLOCKS = []
-    tBLOCKS = []
-    qBLOCKS = []
-    pBLOCKS = []
-    assert V.shape[0] % ndiffconfig == 0, "Data length must be divisible by ndiffconfig"
-    block_size = V.shape[0] // ndiffconfig
-    for i in range(ndiffconfig):
-        start = i * block_size
-        end = (i + 1) * block_size
-        VBLOCKS.append(V[start:end])
-        tBLOCKS.append(t[start:end])
-        qBLOCKS.append(q[start:end])
-        pBLOCKS.append(p[start:end])
+    # Deinterleave data into blocks by config
+    # Input: [pot0_win0, pot0_win1, pot1_win0, pot1_win1, ...]
+    # Output: VBLOCKS[0] = [pot0_win0, pot1_win0, ...], VBLOCKS[1] = [pot0_win1, pot1_win1, ...]
+    VBLOCKS = deinterleave_data(V_full, ndiffconfig)
+    tBLOCKS = deinterleave_data(t_full, ndiffconfig)
+    qBLOCKS = deinterleave_data(q_full, ndiffconfig)
+    pBLOCKS = deinterleave_data(p_full, ndiffconfig)
 
-    # Use the first block for UMAP
+    # Use the first config for UMAP (all potentials have same V across configs)
     V = VBLOCKS[0]
     t = tBLOCKS[0]
     q = qBLOCKS[0]
     p = pBLOCKS[0]
-    console.print(f"Using first block for UMAP: {V.shape}")
+    n_potentials = V.shape[0]
+    console.print(f"Using config 0 for UMAP: {V.shape}")
 
-    # Load relevant potentials
-    df_relevants = [
-        load_data("data_analyze/sho.parquet"),
-        load_data("data_analyze/double_well.parquet"),
-        load_data("data_analyze/morse.parquet"),
-        load_data("data_analyze/atw.parquet"),
-        load_data("data_analyze/stw.parquet"),
-        load_data("data_analyze/sstw.parquet"),
-    ]
-    potentials = [extract_column(df, "V") for df in df_relevants]
-    labels = ["SHO", "Double Well", "Morse", "ATW", "STW", "SSTW"]
-    colors = ["cyan", "darkviolet", "lime", "orange", "red", "deeppink"]
-    markers = ["o", "s", "^", "D", "P", "*"]
+    # Load relevant potentials for reference
+    relevants = []
+    try:
+        df_relevants = [
+            load_data("data_analyze/sho.parquet"),
+            load_data("data_analyze/double_well.parquet"),
+            load_data("data_analyze/morse.parquet"),
+            load_data("data_analyze/atw.parquet"),
+            load_data("data_analyze/stw.parquet"),
+            load_data("data_analyze/sstw.parquet"),
+        ]
+        potentials_ref = [extract_column(df, "V") for df in df_relevants]
+        labels_ref = ["SHO", "Double Well", "Morse", "ATW", "STW", "SSTW"]
+        colors_ref = ["cyan", "darkviolet", "lime", "orange", "red", "deeppink"]
+        markers_ref = ["o", "s", "^", "D", "P", "*"]
+        has_relevants = True
+    except FileNotFoundError:
+        console.print("[yellow]Warning: Reference potential files not found, skipping relevant plots[/yellow]")
+        has_relevants = False
 
     # Fit UMAP and cluster the data
+    console.print("Fitting UMAP...")
     mapper = umap_fit(V)
     embedding = mapper.transform(V)
-    V_labels = cluster_data(embedding, n_clusters=embedding.shape[0] // 1000)
+    n_clusters = max(n_potentials // 1000, 10)
+    V_labels = cluster_data(embedding, n_clusters=n_clusters)
     console.print(f"UMAP embedding shape: {embedding.shape}")
-    embedding_potentials = [mapper.transform(potential) for potential in potentials]
-    relevants = [
-        RelevantPotential(
-            label=label,
-            color=color,
-            marker=marker,
-            umap1=embedding_potential[0, 0],
-            umap2=embedding_potential[0, 1],
-        )
-        for embedding_potential, label, color, marker in zip(
-            embedding_potentials, labels, colors, markers
-        )
-    ]
+    console.print(f"Number of clusters: {n_clusters}")
+
+    # Transform reference potentials if available
+    if has_relevants:
+        embedding_potentials = [mapper.transform(potential) for potential in potentials_ref]
+        relevants = [
+            RelevantPotential(
+                label=label,
+                color=color,
+                marker=marker,
+                umap1=embedding_potential[0, 0],
+                umap2=embedding_potential[0, 1],
+            )
+            for embedding_potential, label, color, marker in zip(
+                embedding_potentials, labels_ref, colors_ref, markers_ref
+            )
+        ]
 
     # Convert embedding to DataFrame
     embedding_df = embedding_to_df(embedding)
     embedding_df["label"] = V_labels
-    embedding_df["number"] = np.arange(embedding_df.shape[0])
+    embedding_df["number"] = np.arange(n_potentials)  # Potential index (not sample index)
     print(embedding_df)
     unique_labels = np.unique(V_labels)
     console.print(f"Unique labels found: {len(unique_labels)}")
 
     # Sample from clusters
     samples, n_samples = sample_from_clusters(embedding_df)
-    print(f"Number of samples taken: {samples.shape[0]}")
+    print(f"Number of unique potentials sampled: {samples.shape[0]}")
+    print(f"Total samples (with all configs): {samples.shape[0] * ndiffconfig}")
     print(samples)
     hist_n_samples(n_samples, data_quant, data_type)
 
@@ -435,28 +502,29 @@ if __name__ == "__main__":
     plot_density_of_embedding(embedding_df, data_quant, data_type)
     plot_embedding(samples, data_quant, data_type + "_samples")
     plot_density_of_embedding(samples, data_quant, data_type + "_samples")
-    plot_density_of_embedding_with_relevant(
-        embedding_df, data_quant, data_type, relevants
-    )
-    plot_density_of_embedding_with_relevant(
-        samples, data_quant, data_type + "_samples", relevants
-    )
+    if has_relevants:
+        plot_density_of_embedding_with_relevant(
+            embedding_df, data_quant, data_type, relevants
+        )
+        plot_density_of_embedding_with_relevant(
+            samples, data_quant, data_type + "_samples", relevants
+        )
 
-    # Reconstruct DataFrame with samples
+    # Reconstruct DataFrame with samples (interleaved format)
+    # numbers are potential indices, we need all configs for each selected potential
     numbers = samples["number"].to_numpy()
     V_samples = []
     t_samples = []
     q_samples = []
     p_samples = []
-    for i in range(ndiffconfig):
-        VBLOCK = VBLOCKS[i]
-        tBLOCK = tBLOCKS[i]
-        qBLOCK = qBLOCKS[i]
-        pBLOCK = pBLOCKS[i]
-        V_samples.extend(VBLOCK[numbers].flatten())
-        t_samples.extend(tBLOCK[numbers].flatten())
-        q_samples.extend(qBLOCK[numbers].flatten())
-        p_samples.extend(pBLOCK[numbers].flatten())
+
+    # For each selected potential, get all its configs in interleaved order
+    for num in numbers:
+        for config_idx in range(ndiffconfig):
+            V_samples.extend(VBLOCKS[config_idx][num].flatten())
+            t_samples.extend(tBLOCKS[config_idx][num].flatten())
+            q_samples.extend(qBLOCKS[config_idx][num].flatten())
+            p_samples.extend(pBLOCKS[config_idx][num].flatten())
 
     samples_df = pd.DataFrame(
         {
@@ -467,30 +535,43 @@ if __name__ == "__main__":
         }
     )
     print(f"Samples DataFrame shape: {samples_df.shape}")
+    print(f"  - Unique potentials: {len(numbers)}")
+    print(f"  - Total samples: {len(numbers) * ndiffconfig}")
+    print(f"  - Rows (samples * NCOLS): {samples_df.shape[0]}")
     print(samples_df)
     modified_data_file = data_file.replace(".parquet", "_samples.parquet")
     samples_df.to_parquet(modified_data_file, index=False, compression=None)
+    console.print(f"[green]Saved filtered data to: {modified_data_file}[/green]")
 
-    # UMAP again on samples
+    # UMAP again on samples for visualization
     samples_mat = extract_column(samples_df, "V")
-    mapper_samples = umap_fit(samples_mat)
-    embedding_samples = mapper_samples.transform(samples_mat)
-    embedding_potentials = [
-        mapper_samples.transform(potential) for potential in potentials
-    ]
-    relevants = [
-        RelevantPotential(
-            label=label,
-            color=color,
-            marker=marker,
-            umap1=embedding_potential[0, 0],
-            umap2=embedding_potential[0, 1],
-        )
-        for embedding_potential, label, color, marker in zip(
-            embedding_potentials, labels, colors, markers
-        )
-    ]
+    # Only use first config for UMAP (same V across configs)
+    samples_mat_unique = samples_mat[::ndiffconfig]
+    mapper_samples = umap_fit(samples_mat_unique)
+    embedding_samples = mapper_samples.transform(samples_mat_unique)
+
+    if has_relevants:
+        embedding_potentials = [
+            mapper_samples.transform(potential) for potential in potentials_ref
+        ]
+        relevants = [
+            RelevantPotential(
+                label=label,
+                color=color,
+                marker=marker,
+                umap1=embedding_potential[0, 0],
+                umap2=embedding_potential[0, 1],
+            )
+            for embedding_potential, label, color, marker in zip(
+                embedding_potentials, labels_ref, colors_ref, markers_ref
+            )
+        ]
+
     embedding_samples_df = embedding_to_df(embedding_samples)
-    plot_density_of_embedding_with_relevant(
-        embedding_samples_df, data_quant, data_type + "_embedding_samples", relevants
-    )
+    plot_density_of_embedding(embedding_samples_df, data_quant, data_type + "_final")
+    if has_relevants:
+        plot_density_of_embedding_with_relevant(
+            embedding_samples_df, data_quant, data_type + "_final", relevants
+        )
+
+    console.print("[bold green]UMAP filtering completed![/bold green]")
