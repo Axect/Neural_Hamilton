@@ -45,6 +45,10 @@ def load_relevant_data(potential: str):
     df = pl.read_parquet(file_name)
     V = df["V"].to_numpy()
     t = df["t"].to_numpy()
+
+    # Physical potentials start from (0, 0)
+    ic = torch.tensor([[0.0, 0.0]], dtype=torch.float32)
+
     q_y4 = df["q_y4"].to_numpy()
     p_y4 = df["p_y4"].to_numpy()
     ds_y4 = TensorDataset(
@@ -52,6 +56,7 @@ def load_relevant_data(potential: str):
         torch.tensor(t, dtype=torch.float32).unsqueeze(0),
         torch.tensor(q_y4, dtype=torch.float32).unsqueeze(0),
         torch.tensor(p_y4, dtype=torch.float32).unsqueeze(0),
+        ic,
     )
 
     q_rk4 = df["q_rk4"].to_numpy()
@@ -61,6 +66,7 @@ def load_relevant_data(potential: str):
         torch.tensor(t, dtype=torch.float32).unsqueeze(0),
         torch.tensor(q_rk4, dtype=torch.float32).unsqueeze(0),
         torch.tensor(p_rk4, dtype=torch.float32).unsqueeze(0),
+        ic,
     )
 
     q_gl4 = df["q_gl4"].to_numpy()
@@ -70,6 +76,7 @@ def load_relevant_data(potential: str):
         torch.tensor(t, dtype=torch.float32).unsqueeze(0),
         torch.tensor(q_gl4, dtype=torch.float32).unsqueeze(0),
         torch.tensor(p_gl4, dtype=torch.float32).unsqueeze(0),
+        ic,
     )
 
     # Load true data (high-order symplectic integrator results from Julia)
@@ -82,6 +89,7 @@ def load_relevant_data(potential: str):
         torch.tensor(t, dtype=torch.float32).unsqueeze(0),
         torch.tensor(q_true, dtype=torch.float32).unsqueeze(0),
         torch.tensor(p_true, dtype=torch.float32).unsqueeze(0),
+        ic,
     )
     return ds_true, ds_y4, ds_rk4, ds_gl4  # True, Y4, RK4, GL4
 
@@ -97,6 +105,11 @@ def load_test_data_with_true():
     t = df["t"].to_numpy()
     q = df["q"].to_numpy()
     p = df["p"].to_numpy()
+
+    # Extract initial conditions from test data
+    q_reshaped = torch.tensor(q, dtype=torch.float32).reshape(-1, NSENSORS)
+    p_reshaped = torch.tensor(p, dtype=torch.float32).reshape(-1, NSENSORS)
+    ic = torch.stack([q_reshaped[:, 0], p_reshaped[:, 0]], dim=1)  # (N, 2)
 
     # Load KahanLi8 reference data
     true_file_name = "./data_true/test_kl8.parquet"
@@ -114,12 +127,13 @@ def load_test_data_with_true():
     q_gl4 = df_solvers["q_gl4"].to_numpy()
     p_gl4 = df_solvers["p_gl4"].to_numpy()
 
-    # Create TensorDatasets
+    # Create TensorDatasets with IC
     ds_true = TensorDataset(
         torch.tensor(V, dtype=torch.float32).reshape(-1, NSENSORS),
         torch.tensor(t, dtype=torch.float32).reshape(-1, NSENSORS),
         torch.tensor(q_true, dtype=torch.float32).reshape(-1, NSENSORS),
         torch.tensor(p_true, dtype=torch.float32).reshape(-1, NSENSORS),
+        ic,
     )
 
     ds_y4 = TensorDataset(
@@ -127,6 +141,7 @@ def load_test_data_with_true():
         torch.tensor(t, dtype=torch.float32).reshape(-1, NSENSORS),
         torch.tensor(q_y4, dtype=torch.float32).reshape(-1, NSENSORS),
         torch.tensor(p_y4, dtype=torch.float32).reshape(-1, NSENSORS),
+        ic,
     )
 
     ds_rk4 = TensorDataset(
@@ -134,6 +149,7 @@ def load_test_data_with_true():
         torch.tensor(t, dtype=torch.float32).reshape(-1, NSENSORS),
         torch.tensor(q_rk4, dtype=torch.float32).reshape(-1, NSENSORS),
         torch.tensor(p_rk4, dtype=torch.float32).reshape(-1, NSENSORS),
+        ic,
     )
 
     ds_gl4 = TensorDataset(
@@ -141,6 +157,7 @@ def load_test_data_with_true():
         torch.tensor(t, dtype=torch.float32).reshape(-1, NSENSORS),
         torch.tensor(q_gl4, dtype=torch.float32).reshape(-1, NSENSORS),
         torch.tensor(p_gl4, dtype=torch.float32).reshape(-1, NSENSORS),
+        ic,
     )
 
     return ds_true, ds_y4, ds_rk4, ds_gl4
@@ -174,20 +191,21 @@ class TestResults:
         total_time_vec = []
 
         with torch.no_grad():
-            for V, t, q, p in self.dl_val:
-                V, t, q, p = (
+            for V, t, q, p, ic in self.dl_val:
+                V, t, q, p, ic = (
                     V.to(self.device),
                     t.to(self.device),
                     q.to(self.device),
                     p.to(self.device),
+                    ic.to(self.device),
                 )
 
                 t_start = time.time()
                 if not self.variational:
                     self.reparameterize = False
-                    q_pred, p_pred = self.model(V, t)
+                    q_pred, p_pred = self.model(V, t, ic)
                 else:
-                    q_pred, p_pred, _, _ = self.model(V, t)
+                    q_pred, p_pred, _, _ = self.model(V, t, ic)
                 t_total = (time.time() - t_start) / V.shape[0]
 
                 loss_q = criterion(q_pred, q).item()
@@ -494,23 +512,23 @@ def calculate_comparison_results(
     # Compare each potential
     for true_batch, y4_batch, rk4_batch, gl4_batch in zip(dl_true, dl_y4, dl_rk4, dl_gl4):
         # True data (KahanLi8)
-        V, t, q_true, p_true = [x.to(device) for x in true_batch]
+        V, t, q_true, p_true, ic = [x.to(device) for x in true_batch]
 
         # Y4 data
-        _, _, q_y4, p_y4 = [x.to(device) for x in y4_batch]
+        _, _, q_y4, p_y4, _ = [x.to(device) for x in y4_batch]
 
         # RK4 data
-        _, _, q_rk4, p_rk4 = [x.to(device) for x in rk4_batch]
+        _, _, q_rk4, p_rk4, _ = [x.to(device) for x in rk4_batch]
 
         # GL4 data
-        _, _, q_gl4, p_gl4 = [x.to(device) for x in gl4_batch]
+        _, _, q_gl4, p_gl4, _ = [x.to(device) for x in gl4_batch]
 
         # Model predictions
         with torch.no_grad():
             if not variational:
-                q_pred, p_pred = model(V, t)
+                q_pred, p_pred = model(V, t, ic)
             else:
-                q_pred, p_pred, _, _ = model(V, t)
+                q_pred, p_pred, _, _ = model(V, t, ic)
 
         # Calculate MSE loss (against KahanLi8 reference)
         # Model
@@ -1728,6 +1746,76 @@ def main():
                         bbox_inches="tight",
                     )
                     plt.close(fig)
+
+
+def autoregressive_predict(model, V, n_windows, window_size=100, dt=0.02, device="cpu", variational=False):
+    """
+    Predict long trajectory using autoregressive rollout.
+
+    Args:
+        model: Trained Neural Hamilton model
+        V: Potential function values (1, 100) or (100,)
+        n_windows: Number of windows to predict
+        window_size: Number of time points per window
+        dt: Time step between points
+        device: torch device
+        variational: Whether the model is VaRONet
+
+    Returns:
+        q_full: Full position trajectory (numpy array)
+        p_full: Full momentum trajectory (numpy array)
+        t_full: Full time array (numpy array)
+    """
+    model.eval()
+
+    # Ensure V is correct shape
+    if V.dim() == 1:
+        V = V.unsqueeze(0)
+    V = V.to(device)
+
+    q_full = []
+    p_full = []
+    t_full = []
+
+    # Initial condition (start from origin)
+    ic = torch.tensor([[0.0, 0.0]], device=device)
+
+    t_current = 0.0
+
+    with torch.no_grad():
+        for i in range(n_windows):
+            # Generate time queries for this window
+            t_window = torch.linspace(0, (window_size - 1) * dt, window_size, device=device)
+            t_window = t_window.unsqueeze(0)  # (1, window_size)
+
+            # Predict trajectory for this window
+            if not variational:
+                q_pred, p_pred = model(V, t_window, ic)
+            else:
+                q_pred, p_pred, _, _ = model(V, t_window, ic)
+
+            # Store results (skip first point if not first window to avoid overlap)
+            if i == 0:
+                q_full.append(q_pred.cpu())
+                p_full.append(p_pred.cpu())
+                t_full.append(t_window.cpu() + t_current)
+            else:
+                # Skip first point (overlap with previous window)
+                q_full.append(q_pred[:, 1:].cpu())
+                p_full.append(p_pred[:, 1:].cpu())
+                t_full.append((t_window[:, 1:] + t_current).cpu())
+
+            # Update initial condition for next window (use last predicted values)
+            ic = torch.stack([q_pred[:, -1], p_pred[:, -1]], dim=-1)  # (1, 2)
+
+            # Advance time
+            t_current += (window_size - 1) * dt
+
+    q_full = torch.cat(q_full, dim=1).squeeze(0).numpy()
+    p_full = torch.cat(p_full, dim=1).squeeze(0).numpy()
+    t_full = torch.cat(t_full, dim=1).squeeze(0).numpy()
+
+    return q_full, p_full, t_full
 
 
 if __name__ == "__main__":

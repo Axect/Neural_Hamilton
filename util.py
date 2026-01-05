@@ -19,12 +19,22 @@ import math
 
 
 def load_data(file_path: str):
+    """
+    Load data from parquet file.
+
+    Returns:
+        TensorDataset with (V, t, q, p, ic) where ic = (q0, p0)
+    """
     df = pl.read_parquet(file_path)
-    tensors = [
-        torch.tensor(df[col].to_numpy().reshape(-1, 100), dtype=torch.float32)
-        for col in df.columns
-    ]
-    return TensorDataset(*tensors)
+    V = torch.tensor(df["V"].to_numpy().reshape(-1, 100), dtype=torch.float32)
+    t = torch.tensor(df["t"].to_numpy().reshape(-1, 100), dtype=torch.float32)
+    q = torch.tensor(df["q"].to_numpy().reshape(-1, 100), dtype=torch.float32)
+    p = torch.tensor(df["p"].to_numpy().reshape(-1, 100), dtype=torch.float32)
+
+    # Extract initial conditions (first time point of each sample)
+    ic = torch.stack([q[:, 0], p[:, 0]], dim=1)  # (N, 2)
+
+    return TensorDataset(V, t, q, p, ic)
 
 
 def set_seed(seed: int):
@@ -313,18 +323,18 @@ class Trainer:
         else:
             self.early_stopping = None
 
-    def step(self, V, t):
-        return self.model(V, t)
+    def step(self, V, t, ic):
+        return self.model(V, t, ic)
 
-    def _obtain_loss(self, V, t, q, p):
-        q_pred, p_pred = self.step(V, t)
+    def _obtain_loss(self, V, t, q, p, ic):
+        q_pred, p_pred = self.step(V, t, ic)
         loss_q = self.criterion(q_pred, q)
         loss_p = self.criterion(p_pred, p)
         loss = 0.5 * (loss_q + loss_p)
         return loss
 
-    def _obtain_vae_loss(self, V, t, q, p):
-        q_pred, p_pred, mu, logvar = self.step(V, t)
+    def _obtain_vae_loss(self, V, t, q, p, ic):
+        q_pred, p_pred, mu, logvar = self.step(V, t, ic)
 
         # Flatten
         mu_vec = mu.view((mu.shape[0], -1))
@@ -349,15 +359,16 @@ class Trainer:
         if any(keyword in self.optimizer.__class__.__name__ for keyword in ["ScheduleFree", "SPlus"]):
             self.optimizer.train()
         train_loss = 0
-        for V, t, q, p in dl_train:
+        for V, t, q, p, ic in dl_train:
             V = V.to(self.device)
             t = t.to(self.device)
             q = q.to(self.device)
             p = p.to(self.device)
+            ic = ic.to(self.device)
             if not self.variational:
-                loss = self._obtain_loss(V, t, q, p)
+                loss = self._obtain_loss(V, t, q, p, ic)
             else:
-                loss = self._obtain_vae_loss(V, t, q, p)
+                loss = self._obtain_vae_loss(V, t, q, p, ic)
             train_loss += loss.item()
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -372,15 +383,16 @@ class Trainer:
             self.optimizer.eval()
         val_loss = 0
         with torch.no_grad():
-            for V, t, q, p in dl_val:
+            for V, t, q, p, ic in dl_val:
                 V = V.to(self.device)
                 t = t.to(self.device)
                 q = q.to(self.device)
                 p = p.to(self.device)
+                ic = ic.to(self.device)
                 if not self.variational:
-                    loss = self._obtain_loss(V, t, q, p)
+                    loss = self._obtain_loss(V, t, q, p, ic)
                 else:
-                    loss = self._obtain_vae_loss(V, t, q, p)
+                    loss = self._obtain_vae_loss(V, t, q, p, ic)
                 val_loss += loss.item()
         val_loss /= len(dl_val)
         return val_loss

@@ -14,6 +14,23 @@ def create_net(sizes):
     return nn.Sequential(*net)
 
 
+class ICEmbedding(nn.Module):
+    """Embeds initial conditions (q0, p0) into a conditioning vector."""
+
+    def __init__(self, d_model, hidden_dim=None):
+        super().__init__()
+        hidden_dim = hidden_dim or d_model
+        self.net = nn.Sequential(
+            nn.Linear(2, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, d_model),
+        )
+
+    def forward(self, ic):
+        # ic: (B, 2) -> (B, d_model)
+        return self.net(ic)
+
+
 @torch.compile
 class DeepONet(nn.Module):
     def __init__(self, hparams):
@@ -33,7 +50,19 @@ class DeepONet(nn.Module):
         )
         self.bias = nn.Parameter(torch.randn(2), requires_grad=True)
 
-    def forward(self, u, y):
+        # IC embedding: (q0, p0) -> output offset
+        self.ic_embed = nn.Sequential(
+            nn.Linear(2, nodes),
+            nn.GELU(),
+            nn.Linear(nodes, 2),
+        )
+
+    def forward(self, u, y, ic):
+        """
+        - u: (B, 100) - potential function
+        - y: (B, W) - time query points
+        - ic: (B, 2) - initial conditions (q0, p0)
+        """
         B, _ = u.shape
         window = y.shape[1]
         branch_out = self.branch_net(u)  # B x 2p
@@ -45,6 +74,11 @@ class DeepONet(nn.Module):
         pred = torch.einsum("bpq,bpqw->bqw", branch_out, trunk_out)
         pred = pred.permute(0, 2, 1)  # B x W x 2
         pred = pred + self.bias
+
+        # Additive IC conditioning
+        ic_offset = self.ic_embed(ic).unsqueeze(1)  # (B, 1, 2)
+        pred = pred + ic_offset
+
         return pred[:, :, 0], pred[:, :, 1]
 
 
@@ -115,7 +149,15 @@ class VaRONet(nn.Module):
         self.kl_weight = kl_weight
         self.reparametrize = True
 
-    def forward(self, u, y):
+        # IC embedding for hidden state conditioning
+        self.ic_embed = ICEmbedding(hidden_size)
+
+    def forward(self, u, y, ic):
+        """
+        - u: (B, 100) - potential function
+        - y: (B, W) - time query points
+        - ic: (B, 2) - initial conditions (q0, p0)
+        """
         B, W1 = u.shape
         _, W2 = y.shape
         u = u.view(B, W1, 1)
@@ -136,9 +178,12 @@ class VaRONet(nn.Module):
         else:
             z = mu
 
-        # Decoding
-        hz_x = self.fc_z_x(z)  # B, D * L, H
-        hz_p = self.fc_z_p(z)  # B, D * L, H
+        # IC embedding
+        ic_emb = self.ic_embed(ic).unsqueeze(1)  # (B, 1, H)
+
+        # Decoding with IC conditioning
+        hz_x = self.fc_z_x(z) + ic_emb  # B, D * L, H
+        hz_p = self.fc_z_p(z) + ic_emb  # B, D * L, H
         hzp_x = hz_x.permute(1, 0, 2).contiguous()  # D * L, B, H
         hzp_p = hz_p.permute(1, 0, 2).contiguous()  # D * L, B, H
         h_c_x = (hzp_x, c0)
@@ -208,7 +253,7 @@ class TFDecoder(nn.Module):
         self.d_model = d_model
         self.embedding = nn.Linear(1, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
-        # self.pos_encoder = LearnablePositionalEncoding(d_model)
+        self.ic_embed = ICEmbedding(d_model)
         self.decoder_layer = nn.TransformerDecoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -221,16 +266,22 @@ class TFDecoder(nn.Module):
         )
         self.fc = nn.Linear(d_model, 2)
 
-    def forward(self, x, memory):
+    def forward(self, x, memory, ic):
         """
         - x: (B, W2, 1)
         - x (after embedding): (B, W2, d_model)
         - memory: (B, W1, d_model)
+        - ic: (B, 2) - initial conditions (q0, p0)
         - out: (B, W2, d_model)
         - out (after fc): (B, W2, 2)
         """
         x = self.embedding(x) * math.sqrt(self.d_model)
         x = self.pos_encoder(x)
+
+        # Additive IC conditioning: broadcast to all time steps
+        ic_emb = self.ic_embed(ic).unsqueeze(1)  # (B, 1, d_model)
+        x = x + ic_emb
+
         out = self.transformer_decoder(x, memory)
         out = self.fc(out)
         return out
@@ -252,14 +303,11 @@ class TraONet(nn.Module):
         )
         self.trunk_net = TFDecoder(d_model, nhead, num_layers, dim_feedforward, dropout)
 
-    def forward(self, u, y):
+    def forward(self, u, y, ic):
         """
-        - u: (B, W1)
-        - y: (B, W2)
-        - u (after reshape): (B, W1, 1)
-        - y (after reshape): (B, W2, 1)
-        - memory: (B, W1, d_model)
-        - o: (B, W2)
+        - u: (B, W1) - potential function
+        - y: (B, W2) - time query points
+        - ic: (B, 2) - initial conditions (q0, p0)
         """
         B, W1 = u.shape
         _, W2 = y.shape
@@ -269,8 +317,8 @@ class TraONet(nn.Module):
         # Encoding
         memory = self.branch_net(u)
 
-        # Decoding
-        o = self.trunk_net(y, memory)
+        # Decoding with IC
+        o = self.trunk_net(y, memory, ic)
         return o[:, :, 0], o[:, :, 1]
 
 
@@ -389,10 +437,11 @@ class FNO(nn.Module):
         self.encoder = FNOEncoder(d_model, num_layers1, modes)
         self.decoder = TFDecoder(d_model, n_head, num_layers2, d_ff, dropout)
 
-    def forward(self, u, y):
+    def forward(self, u, y, ic):
         """
         - u: (B, W1) - potential function values (100 points)
         - y: (B, W2) - time query points
+        - ic: (B, 2) - initial conditions (q0, p0)
         - returns: (q, p) each (B, W2)
         """
         B, W1 = u.shape
@@ -403,8 +452,8 @@ class FNO(nn.Module):
         # Encode potential with FNO
         memory = self.encoder(u)
 
-        # Decode to (q, p) at time points
-        o = self.decoder(y, memory)
+        # Decode to (q, p) at time points with IC
+        o = self.decoder(y, memory, ic)
         return o[:, :, 0], o[:, :, 1]
 
 
@@ -446,14 +495,11 @@ class MambONet(nn.Module):
         self.encoder = MambaEncoder(d_model, num_layers1)
         self.decoder = TFDecoder(d_model, n_head, num_layers2, d_ff, 0.0)
 
-    def forward(self, u, y):
+    def forward(self, u, y, ic):
         """
-        - u: (B, W1)
-        - y: (B, W2)
-        - u (after reshape): (B, W1, 1)
-        - y (after reshape): (B, W2, 1)
-        - memory: (B, W1, d_model)
-        - o: (B, W2)
+        - u: (B, W1) - potential function
+        - y: (B, W2) - time query points
+        - ic: (B, 2) - initial conditions (q0, p0)
         """
         B, W1 = u.shape
         _, W2 = y.shape
@@ -463,6 +509,6 @@ class MambONet(nn.Module):
         # Encoding
         memory = self.encoder(u)
 
-        # Decoding
-        o = self.decoder(y, memory)
+        # Decoding with IC
+        o = self.decoder(y, memory, ic)
         return o[:, :, 0], o[:, :, 1]
