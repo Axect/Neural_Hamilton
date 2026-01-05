@@ -19,7 +19,9 @@ macro_rules! solve_hamilton_eq {
                 let V = test_V[i * 100..(i + 1) * 100].to_vec();
                 let q_true = test_q[i * 100..(i + 1) * 100].to_vec();
                 let p_true = test_p[i * 100..(i + 1) * 100].to_vec();
-                let initial_condition = vec![0f64, 0f64];
+                // Use actual initial condition from data (not origin)
+                // Data is extracted from random time windows, so (q[0], p[0]) != (0, 0)
+                let initial_condition = vec![q_true[0], p_true[0]];
                 let ode = PotentialODE::new(&V)?;
                 let integrator = $integrator;
                 let solver = BasicODESolver::new(integrator);

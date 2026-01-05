@@ -188,7 +188,7 @@ end
 #  Loading Test Data and Generating Reference Data
 # └─────────────────────────────────────────────────────────┘
 
-# Read V data from Parquet2 file
+# Read V, t, q, p data from Parquet2 file
 function load_test_potentials(file_path)
     tbl = Parquet2.readfile(file_path)
     df = DataFrame(tbl)
@@ -197,64 +197,69 @@ function load_test_potentials(file_path)
     if any(ismissing, df.V) || any(ismissing, df.t)
         error("Missing values found in the input data.")
     end
-    
-    # Extract V field and divide into NSENSORS-sized chunks
+
+    # Extract fields and divide into NSENSORS-sized chunks
     V_values = Float64.(df.V)
     t_values = Float64.(df.t)
+    q_values = Float64.(df.q)
+    p_values = Float64.(df.p)
     num_potentials = div(length(V_values), NSENSORS)
-    
+
     potentials = []
     ts = []
+    qs = []
+    ps = []
     for i in 1:num_potentials
         start_idx = (i-1) * NSENSORS + 1
         end_idx = i * NSENSORS
         push!(potentials, V_values[start_idx:end_idx])
         push!(ts, t_values[start_idx:end_idx])
+        push!(qs, q_values[start_idx:end_idx])
+        push!(ps, p_values[start_idx:end_idx])
     end
-    
-    return potentials, ts
+
+    return potentials, ts, qs, ps
 end
 
-# Run simulation for given potential
-function run_simulation_kl8(V_values, t_values)
+# Run simulation for given potential with initial conditions from data
+function run_simulation_kl8(V_values, t_values, q0, p0)
     # Set interval and time
     tspan = (0.0, 2.0)
     dt = 1e-4  # Very small timestep to ensure accuracy
-    
+
     # Uniform q coordinates (0.0 ~ 1.0)
     q_range = range(0.0, 1.0, length=NSENSORS)
-    
+
     # Create spline for potential derivative calculation
     V_spline = Interpolator(q_range, V_values; extrapolate=true)
     dV_spline(q) = ForwardDiff.derivative(V_spline, q)
-    
+
     # Define Hamiltonian system
     function hamiltonian_dp(p, q, params, t)
         q_val = clamp(q, 0.0, 1.0)
         return -dV_spline(q_val)  # Negative potential derivative
     end
-    
+
     function hamiltonian_dq(p, q, params, t)
         return p  # Mass m=1
     end
-    
-    # Initial conditions
-    q0 = 0.0
-    p0 = 0.0
-    
+
+    # Initial conditions from data (not origin)
+    # Data is extracted from random time windows, so (q[0], p[0]) != (0, 0)
+
     # Define differential equation problem
     prob = DynamicalODEProblem(hamiltonian_dp, hamiltonian_dq, p0, q0, tspan, nothing)
-    
+
     # Solve with Kahan-Li 8th order symplectic integrator
     sol = solve(prob, KahanLi8(), dt=dt, adaptive=false)
-    
+
     # Sample at t_values
     solution = sol.(t_values)
-    
+
     # Extract results
     p_values = getindex.(solution, 1)  # Momentum values
     q_values = getindex.(solution, 2)  # Position values
-    
+
     return q_values, p_values
 end
 
@@ -352,7 +357,7 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
     file_path = input_path
 
     @printf "Loading test potentials from %s...\n" file_path
-    potentials, ts = load_test_potentials(file_path)
+    potentials, ts, qs, ps = load_test_potentials(file_path)
     @printf "Loaded %d potentials\n" length(potentials)
 
     n_total = length(potentials) * NSENSORS
@@ -367,17 +372,20 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
     Threads.@threads for i in 1:length(potentials)
         V_values = potentials[i]
         t_values = ts[i]
-        q_values, p_values = run_simulation_kl8(V_values, t_values)
-        
+        # Use initial conditions from data (q[1], p[1] in Julia is the first element)
+        q0 = qs[i][1]
+        p0 = ps[i][1]
+        q_values, p_values = run_simulation_kl8(V_values, t_values, q0, p0)
+
         # Store results in the preallocated arrays
         start_idx = (i-1) * NSENSORS + 1
         end_idx = i * NSENSORS
-        
+
         all_V[start_idx:end_idx] = V_values
         all_t[start_idx:end_idx] = t_values
         all_q_true[start_idx:end_idx] = q_values
         all_p_true[start_idx:end_idx] = p_values
-        
+
         # Update progress bar
         next!(pb)
     end
