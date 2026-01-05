@@ -180,7 +180,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         df.push("p_gl4", Series::new(p_gl4));
         df.print();
         let file_name = format!("data_analyze/{}.parquet", potential_name);
-        df.write_parquet(file_name.as_str(), CompressionOptions::Uncompressed)?;
+        df.write_parquet(file_name.as_str(), SNAPPY)?;
     }
 
     Ok(())
