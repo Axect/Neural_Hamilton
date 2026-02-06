@@ -2,6 +2,7 @@ use indicatif::{ParallelProgressIterator, ProgressBar, ProgressIterator};
 use peroxide::fuga::*;
 use rayon::prelude::*;
 use rugfield::{grf_with_rng, Kernel};
+use std::collections::HashMap;
 use std::path::Path;
 
 const V0: f64 = 2f64;
@@ -14,11 +15,13 @@ const NDIFFCONFIG: usize = 2; // Number of different configurations of time per 
 const T_TOTAL: f64 = 4f64; // Total integration time for long trajectory
 const T_WINDOW: f64 = 2f64; // Time window size for each sample
 
-// Target data counts (exact output after filtering)
-const TARGET_TRAIN: usize = 80_000 * 10;   // 800,000
-const TARGET_VAL: usize = 20_000 * 10;     // 200,000
-const TARGET_TEST: usize = 10_000 * 10;    // 100,000
-const SAFETY_FACTOR: f64 = 2.0;            // Generate 2x candidates to account for filtering (~50% pass rate)
+// Target data counts (exact output — diversity filter runs before trajectory simulation)
+const TARGET_TRAIN: usize = 80_000;
+const TARGET_VAL: usize = 20_000;
+const TARGET_TEST: usize = 10_000;
+const SAFETY_FACTOR: f64 = 2.5;            // Generate 2.5x candidates to account for trajectory filtering
+const DIVERSITY_FACTOR: f64 = 2.5;         // GRF oversample for diversity selection before trajectories
+const N_BINS: usize = 8;                   // Bins per feature dimension for diversity hashing
 
 // --- Yoshida 4th Order Coefficients ---
 const W0_4TH: f64 = -1.7024143839193153;
@@ -84,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (q_max, p_max) = ds_train.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
-            ds_train.write_parquet(&format!("{}/train_cand.parquet", folder))?;
+            ds_train.write_parquet(&format!("{}/train.parquet", folder))?;
 
             println!("\nGenerate validation data (Order: {:?})...", order);
             println!("Target: {}, Generating candidates: {}", target_val, n_val_cand);
@@ -101,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (q_max, p_max) = ds_val.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
-            ds_val.write_parquet(&format!("{}/val_cand.parquet", folder))?;
+            ds_val.write_parquet(&format!("{}/val.parquet", folder))?;
         }
         1 => {
             // More mode (10x data) - use chunked generation to avoid OOM
@@ -123,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 n_train_cand,
                 123,
                 order,
-                &format!("{}/train_cand.parquet", folder),
+                &format!("{}/train.parquet", folder),
                 target_train,
             )?;
             assert!(
@@ -140,7 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 n_val_cand,
                 456,
                 order,
-                &format!("{}/val_cand.parquet", folder),
+                &format!("{}/val.parquet", folder),
                 target_val,
             )?;
             assert!(
@@ -174,7 +177,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (q_max, p_max) = ds_test.max();
                 println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
             }
-            ds_test.write_parquet(&format!("{}/test_cand.parquet", folder))?;
+            ds_test.write_parquet(&format!("{}/test.parquet", folder))?;
         }
         _ => unreachable!(),
     }
@@ -452,26 +455,27 @@ impl BoundedPotential {
     pub fn generate_potential(n: usize, seed: u64, solver: Solver) -> Self {
         let n = n / NDIFFCONFIG; // Divide by number of different configurations
 
-        // Accept order
-        let n_cand = (n as f64 * 1.1).round() as usize;
+        // Generate more GRFs than needed so the diversity filter has candidates to choose from
+        let n_grf = (n as f64 * DIVERSITY_FACTOR * 1.1).round() as usize;
         let omega = 0.05;
-        let u_b = Uniform(2, 7);
-        let u_l = Uniform(0.01, 0.2);
         let degree = 3;
         let mut rng = stdrng_from_seed(seed);
 
-        let b = u_b
-            .sample_with_rng(&mut rng, n_cand)
-            .into_iter()
-            .map(|x| x.ceil() as usize)
-            .collect::<Vec<_>>();
-        let l = u_l.sample_with_rng(&mut rng, n_cand);
+        // Use LHS for better parameter coverage instead of uniform sampling
+        let bl_pairs = lhs_sample_bl(n_grf, &mut rng);
+        let b: Vec<usize> = bl_pairs.iter().map(|&(b, _)| b).collect();
+        let l: Vec<f64> = bl_pairs.iter().map(|&(_, l)| l).collect();
+
+        println!(
+            "Generating {} GRF potentials (LHS) to select {} diverse...",
+            n_grf, n
+        );
 
         let grf_vec = b
             .iter()
-            .zip(l)
-            .progress_with(ProgressBar::new(n_cand as u64))
-            .map(|(&b, l)| grf_with_rng(&mut rng, b, Kernel::SquaredExponential(l)))
+            .zip(l.iter())
+            .progress_with(ProgressBar::new(n_grf as u64))
+            .map(|(&b, &l)| grf_with_rng(&mut rng, b, Kernel::SquaredExponential(l)))
             .collect::<Vec<_>>();
 
         let grf_max_vec = grf_vec.iter().map(|grf| grf.max()).collect::<Vec<_>>();
@@ -507,10 +511,10 @@ impl BoundedPotential {
             grf.push(V0);
         });
 
-        let bounded_potential_pairs = q_vec
+        let all_potential_pairs: Vec<(Vec<f64>, Vec<f64>)> = q_vec
             .par_iter()
             .zip(grf_scaled_vec.par_iter())
-            .progress_with(ProgressBar::new(n_cand as u64))
+            .progress_with(ProgressBar::new(n_grf as u64))
             .filter_map(|(q_coords, V_coords)| {
                 let control_points = q_coords
                     .iter()
@@ -528,15 +532,30 @@ impl BoundedPotential {
                     Err(_) => None,
                 }
             })
-            .collect::<Vec<_>>();
+            .collect();
 
-        // No longer duplicate potentials - time shift will handle NDIFFCONFIG
-        // t_domain_vec is now generated per window in generate_data
+        println!(
+            "B-spline creation: {} succeeded out of {} GRFs",
+            all_potential_pairs.len(),
+            n_grf
+        );
+
+        // Apply diversity filter to select n potentials from the candidates
+        let selected_indices = diversity_filter(&all_potential_pairs, n, seed + 1000);
+        let bounded_potential_pairs: Vec<(Vec<f64>, Vec<f64>)> = selected_indices
+            .into_iter()
+            .map(|i| all_potential_pairs[i].clone())
+            .collect();
+
+        println!(
+            "After diversity filter: {} potentials selected",
+            bounded_potential_pairs.len()
+        );
 
         BoundedPotential {
             potential_pair: bounded_potential_pairs,
-            solver: solver,
-            t_domain_vec: None,  // Will be generated during window extraction
+            solver,
+            t_domain_vec: None, // Will be generated during window extraction
         }
     }
 
@@ -743,6 +762,316 @@ impl BoundedPotential {
 
         Ok(Dataset::new(data_vec))
     }
+}
+
+// ============================================================
+// Diversity filtering: LHS sampling + feature-hashing filter
+// ============================================================
+
+/// Lightweight statistical features extracted from a potential V(x).
+/// Used for diversity filtering before expensive trajectory simulation.
+struct PotentialFeatures {
+    mean: f64,
+    variance: f64,
+    skewness: f64,
+    kurtosis: f64,
+    n_local_minima: f64,
+    n_local_maxima: f64,
+    mean_abs_gradient: f64,
+}
+
+impl PotentialFeatures {
+    /// Extract 7 statistical features from a potential V(x) evaluated at uniform grid.
+    fn extract(v: &[f64]) -> Self {
+        let n = v.len() as f64;
+
+        // Mean
+        let mean = v.iter().sum::<f64>() / n;
+
+        // Variance
+        let variance = v.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n;
+        let std_dev = variance.sqrt().max(1e-15);
+
+        // Skewness & kurtosis (standardized moments)
+        let skewness = v.iter().map(|&x| ((x - mean) / std_dev).powi(3)).sum::<f64>() / n;
+        let kurtosis = v.iter().map(|&x| ((x - mean) / std_dev).powi(4)).sum::<f64>() / n;
+
+        // Count local minima and maxima
+        let mut n_local_minima = 0usize;
+        let mut n_local_maxima = 0usize;
+        for i in 1..v.len() - 1 {
+            if v[i] < v[i - 1] && v[i] < v[i + 1] {
+                n_local_minima += 1;
+            }
+            if v[i] > v[i - 1] && v[i] > v[i + 1] {
+                n_local_maxima += 1;
+            }
+        }
+
+        // Mean absolute gradient (finite differences)
+        let mean_abs_gradient = v
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .sum::<f64>()
+            / (n - 1.0);
+
+        PotentialFeatures {
+            mean,
+            variance,
+            skewness,
+            kurtosis,
+            n_local_minima: n_local_minima as f64,
+            n_local_maxima: n_local_maxima as f64,
+            mean_abs_gradient,
+        }
+    }
+
+    fn as_array(&self) -> [f64; 7] {
+        [
+            self.mean,
+            self.variance,
+            self.skewness,
+            self.kurtosis,
+            self.n_local_minima,
+            self.n_local_maxima,
+            self.mean_abs_gradient,
+        ]
+    }
+}
+
+/// Latin Hypercube Sampling for (b, l) parameter pairs.
+///
+/// - `b` is discrete in {2, 3, 4, 5, 6, 7}: equal allocation across 6 values
+/// - `l` is continuous in [0.01, 0.2]: stratified within each b-group
+///
+/// Returns Vec<(usize, f64)> of (b, l) pairs.
+fn lhs_sample_bl(n: usize, rng: &mut StdRng) -> Vec<(usize, f64)> {
+    let b_values: Vec<usize> = vec![2, 3, 4, 5, 6, 7];
+    let n_b = b_values.len();
+    let per_b = n / n_b;
+    let remainder = n % n_b;
+
+    let l_min = 0.01f64;
+    let l_max = 0.2f64;
+
+    let mut pairs: Vec<(usize, f64)> = Vec::with_capacity(n);
+
+    for (i, &b_val) in b_values.iter().enumerate() {
+        let count = if i < remainder { per_b + 1 } else { per_b };
+        if count == 0 {
+            continue;
+        }
+        let stratum_width = (l_max - l_min) / count as f64;
+
+        for j in 0..count {
+            // Stratified sample within [l_min + j*w, l_min + (j+1)*w]
+            let lo = l_min + j as f64 * stratum_width;
+            let hi = lo + stratum_width;
+            let u = Uniform(lo, hi);
+            let l_val = u.sample_with_rng(rng, 1)[0];
+            pairs.push((b_val, l_val));
+        }
+    }
+
+    // Fisher-Yates shuffle for random ordering
+    let len = pairs.len();
+    for i in (1..len).rev() {
+        let j = Uniform(0.0, (i + 1) as f64).sample_with_rng(rng, 1)[0] as usize;
+        pairs.swap(i, j);
+    }
+
+    pairs
+}
+
+/// Diversity filter using feature-hashing with binned features.
+///
+/// Algorithm:
+/// 1. Extract features for all potentials (parallel)
+/// 2. Min-max normalize each feature
+/// 3. Quantize to N_BINS bins per feature → pack into u64 key
+/// 4. Group by bin key, allocate inversely proportional to density
+/// 5. Deterministic sampling within each bin to hit exact target count
+///
+/// Returns indices of selected potentials.
+fn diversity_filter(
+    potentials: &[(Vec<f64>, Vec<f64>)],
+    target: usize,
+    seed: u64,
+) -> Vec<usize> {
+    if potentials.len() <= target {
+        return (0..potentials.len()).collect();
+    }
+
+    // 1. Extract features in parallel (only need V values, second element of pair)
+    let features: Vec<[f64; 7]> = potentials
+        .par_iter()
+        .map(|(_q, v)| PotentialFeatures::extract(v).as_array())
+        .collect();
+
+    // 2. Compute min/max per feature for normalization
+    let n_features = 7;
+    let mut feat_min = [f64::INFINITY; 7];
+    let mut feat_max = [f64::NEG_INFINITY; 7];
+    for f in &features {
+        for j in 0..n_features {
+            if f[j] < feat_min[j] {
+                feat_min[j] = f[j];
+            }
+            if f[j] > feat_max[j] {
+                feat_max[j] = f[j];
+            }
+        }
+    }
+
+    // 3. Quantize to bins and pack into u64 key
+    //    With 7 features × 8 bins = 7×3 = 21 bits, fits easily in u64
+    let bin_keys: Vec<u64> = features
+        .iter()
+        .map(|f| {
+            let mut key: u64 = 0;
+            for j in 0..n_features {
+                let range = feat_max[j] - feat_min[j];
+                let normalized = if range > 1e-15 {
+                    ((f[j] - feat_min[j]) / range).clamp(0.0, 1.0 - 1e-10)
+                } else {
+                    0.5
+                };
+                let bin = (normalized * N_BINS as f64) as u64;
+                key = key * N_BINS as u64 + bin;
+            }
+            key
+        })
+        .collect();
+
+    // 4. Group indices by bin key
+    let mut bins: HashMap<u64, Vec<usize>> = HashMap::new();
+    for (idx, &key) in bin_keys.iter().enumerate() {
+        bins.entry(key).or_default().push(idx);
+    }
+
+    let n_occupied = bins.len();
+    let total = potentials.len();
+
+    println!(
+        "Diversity filter: {} potentials → {} target, {} occupied bins",
+        total, target, n_occupied
+    );
+
+    // 5. Allocate inversely proportional to density
+    //    Weight of bin = 1 / count_in_bin → normalized so sum = target
+    let total_weight: f64 = bins.values().map(|v| 1.0 / v.len() as f64).sum();
+    let mut allocations: Vec<(u64, usize)> = bins
+        .iter()
+        .map(|(&key, members)| {
+            let weight = 1.0 / members.len() as f64;
+            let alloc = ((weight / total_weight) * target as f64).floor() as usize;
+            // Don't allocate more than available
+            (key, alloc.min(members.len()))
+        })
+        .collect();
+
+    // Sort by key for determinism
+    allocations.sort_by_key(|&(key, _)| key);
+
+    // Greedy adjustment to hit exact target
+    let mut current_total: usize = allocations.iter().map(|(_, a)| a).sum();
+
+    // If we're short, add one to bins with lowest density (most room) first
+    if current_total < target {
+        // Sort bins by density ascending (sparse bins get priority)
+        let mut bin_density: Vec<(u64, f64, usize)> = allocations
+            .iter()
+            .map(|&(key, alloc)| {
+                let cap = bins[&key].len();
+                let density = cap as f64;
+                (key, density, alloc)
+            })
+            .collect();
+        bin_density.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        let mut alloc_map: HashMap<u64, usize> =
+            allocations.iter().cloned().collect();
+
+        for (key, _density, _) in &bin_density {
+            if current_total >= target {
+                break;
+            }
+            let cap = bins[key].len();
+            let current = alloc_map[key];
+            if current < cap {
+                *alloc_map.get_mut(key).unwrap() += 1;
+                current_total += 1;
+            }
+        }
+
+        // If still short after one pass, keep cycling
+        while current_total < target {
+            let mut added = false;
+            for (key, _density, _) in &bin_density {
+                if current_total >= target {
+                    break;
+                }
+                let cap = bins[key].len();
+                let current = alloc_map[key];
+                if current < cap {
+                    *alloc_map.get_mut(key).unwrap() += 1;
+                    current_total += 1;
+                    added = true;
+                }
+            }
+            if !added {
+                break; // All bins full
+            }
+        }
+
+        allocations = alloc_map.into_iter().collect();
+        allocations.sort_by_key(|&(key, _)| key);
+    }
+
+    // If we're over, trim from densest bins
+    while current_total > target {
+        // Find bin with largest allocation that has allocation > 0
+        if let Some(pos) = allocations
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, a))| *a > 0)
+            .max_by_key(|(_, (key, _))| bins[key].len())
+            .map(|(i, _)| i)
+        {
+            allocations[pos].1 -= 1;
+            current_total -= 1;
+        } else {
+            break;
+        }
+    }
+
+    // 6. Deterministic sampling within each bin
+    let mut rng = stdrng_from_seed(seed);
+    let mut selected: Vec<usize> = Vec::with_capacity(target);
+
+    for (key, alloc) in &allocations {
+        if *alloc == 0 {
+            continue;
+        }
+        let members = &bins[key];
+        if *alloc >= members.len() {
+            selected.extend(members);
+        } else {
+            // Reservoir sampling with deterministic RNG
+            let mut candidates = members.clone();
+            // Partial Fisher-Yates to select `alloc` elements
+            for i in 0..*alloc {
+                let j = i + (Uniform(0.0, (candidates.len() - i) as f64)
+                    .sample_with_rng(&mut rng, 1)[0] as usize);
+                candidates.swap(i, j);
+            }
+            selected.extend_from_slice(&candidates[..*alloc]);
+        }
+    }
+
+    // Sort selected indices for stable ordering
+    selected.sort_unstable();
+    selected
 }
 
 #[allow(non_snake_case)]

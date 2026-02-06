@@ -37,7 +37,7 @@ post-process:
 
 build: build-cargo
 
-all: install build-cargo data-gen data-filter post-process
+all: install build-cargo data-gen post-process
 
 # ============================================================
 # Experimental/Utility binaries (not part of main pipeline)
