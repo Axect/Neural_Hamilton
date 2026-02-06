@@ -16,8 +16,9 @@ const T_TOTAL: f64 = 4f64; // Total integration time for long trajectory
 const T_WINDOW: f64 = 2f64; // Time window size for each sample
 
 // Target data counts (exact output — diversity filter runs before trajectory simulation)
-const TARGET_TRAIN: usize = 80_000;
-const TARGET_VAL: usize = 20_000;
+// Normal: 8k train + 2k val = 10k total; More (×10): 80k + 20k = 100k total
+const TARGET_TRAIN: usize = 8_000;
+const TARGET_VAL: usize = 2_000;
 const TARGET_TEST: usize = 10_000;
 const SAFETY_FACTOR: f64 = 2.5;            // Generate 2.5x candidates to account for trajectory filtering
 const DIVERSITY_FACTOR: f64 = 2.5;         // GRF oversample for diversity selection before trajectories
