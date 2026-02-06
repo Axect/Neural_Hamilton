@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 const V0: f64 = 2f64;
-const CHUNK_SIZE: usize = 100_000; // Process 100k potentials at a time to limit memory
+const CHUNK_SIZE: usize = 10_000; // Process 10k potentials at a time to limit memory
 const L: f64 = 1f64;
 const NSENSORS: usize = 100;
 const BOUNDARY: f64 = 0f64;
