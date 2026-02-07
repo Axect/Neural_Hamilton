@@ -104,7 +104,7 @@ class SPlus(Optimizer):
                     m = m @ state['q_sides'][1] if state['q_sides'][1] is not None else m
                     state['sides'][0] = torch.lerp(state['sides'][0], grad @ grad.T, 1 - group['b2']) if state['sides'][0] is not None else None
                     state['sides'][1] = torch.lerp(state['sides'][1], grad.T @ grad, 1 - group['b2']) if state['sides'][1] is not None else None
-                    u = torch.sign(m)
+                    u = torch.sgn(m)
                     u = state['q_sides'][0] @ u if state['q_sides'][0] is not None else u
                     u = u @ state['q_sides'][1].T if state['q_sides'][1] is not None else u
 
@@ -121,7 +121,7 @@ class SPlus(Optimizer):
                         # If the eigendecomposition fails, return infinite loss
                         raise RuntimeError(f"Failed to compute eigendecomposition: {e}")
                 else:
-                    u = torch.sign(m)
+                    u = torch.sgn(m)
 
                 p.add_(u, alpha=-scaled_lr)
                 state['ema'].lerp_(p, 1 - group['ema_rate'])
