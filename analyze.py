@@ -40,7 +40,7 @@ def np_mse_loss(pred, target):
 
 
 def load_relevant_data(potential: str):
-    # Load existing data (Y4, RK4, GL4)
+    # Load existing data (Y4, RK4)
     file_name = f"./data_analyze/{potential}.parquet"
     df = pl.read_parquet(file_name)
     V = df["V"].to_numpy()
@@ -69,16 +69,6 @@ def load_relevant_data(potential: str):
         ic,
     )
 
-    q_gl4 = df["q_gl4"].to_numpy()
-    p_gl4 = df["p_gl4"].to_numpy()
-    ds_gl4 = TensorDataset(
-        torch.tensor(V, dtype=torch.float32).unsqueeze(0),
-        torch.tensor(t, dtype=torch.float32).unsqueeze(0),
-        torch.tensor(q_gl4, dtype=torch.float32).unsqueeze(0),
-        torch.tensor(p_gl4, dtype=torch.float32).unsqueeze(0),
-        ic,
-    )
-
     # Load true data (high-order symplectic integrator results from Julia)
     true_file_name = f"./data_true/{potential}.parquet"
     df_true = pl.read_parquet(true_file_name)
@@ -91,7 +81,7 @@ def load_relevant_data(potential: str):
         torch.tensor(p_true, dtype=torch.float32).unsqueeze(0),
         ic,
     )
-    return ds_true, ds_y4, ds_rk4, ds_gl4  # True, Y4, RK4, GL4
+    return ds_true, ds_y4, ds_rk4
 
 
 def load_test_data_with_true():
@@ -117,15 +107,13 @@ def load_test_data_with_true():
     q_true = df_true["q_true"].to_numpy()
     p_true = df_true["p_true"].to_numpy()
 
-    # Load Solvers data (Y4, RK4, GL4)
+    # Load Solvers data (Y4, RK4)
     solvers_file_name = "./data_analyze/test_solvers.parquet"
     df_solvers = pl.read_parquet(solvers_file_name)
     q_y4 = df_solvers["q_y4"].to_numpy()
     p_y4 = df_solvers["p_y4"].to_numpy()
     q_rk4 = df_solvers["q_rk4"].to_numpy()
     p_rk4 = df_solvers["p_rk4"].to_numpy()
-    q_gl4 = df_solvers["q_gl4"].to_numpy()
-    p_gl4 = df_solvers["p_gl4"].to_numpy()
 
     # Create TensorDatasets with IC
     ds_true = TensorDataset(
@@ -152,15 +140,7 @@ def load_test_data_with_true():
         ic,
     )
 
-    ds_gl4 = TensorDataset(
-        torch.tensor(V, dtype=torch.float32).reshape(-1, NSENSORS),
-        torch.tensor(t, dtype=torch.float32).reshape(-1, NSENSORS),
-        torch.tensor(q_gl4, dtype=torch.float32).reshape(-1, NSENSORS),
-        torch.tensor(p_gl4, dtype=torch.float32).reshape(-1, NSENSORS),
-        ic,
-    )
-
-    return ds_true, ds_y4, ds_rk4, ds_gl4
+    return ds_true, ds_y4, ds_rk4
 
 
 # RK4 Solver
@@ -491,7 +471,7 @@ class TestResults:
 
 
 def calculate_comparison_results(
-    model, device, dl_true, dl_y4, dl_rk4, dl_gl4, variational=False
+    model, device, dl_true, dl_y4, dl_rk4, variational=False
 ):
     """
     Compare model, Y4, and RK4 performance against KahanLi8 reference
@@ -503,14 +483,13 @@ def calculate_comparison_results(
         "true": {"q": [], "p": []},
         "y4": {"q": [], "p": [], "loss_q": [], "loss_p": [], "loss": []},
         "rk4": {"q": [], "p": [], "loss_q": [], "loss_p": [], "loss": []},
-        "gl4": {"q": [], "p": [], "loss_q": [], "loss_p": [], "loss": []},
     }
 
     all_V = []
     all_t = []
 
     # Compare each potential
-    for true_batch, y4_batch, rk4_batch, gl4_batch in zip(dl_true, dl_y4, dl_rk4, dl_gl4):
+    for true_batch, y4_batch, rk4_batch in zip(dl_true, dl_y4, dl_rk4):
         # True data (KahanLi8)
         V, t, q_true, p_true, ic = [x.to(device) for x in true_batch]
 
@@ -519,9 +498,6 @@ def calculate_comparison_results(
 
         # RK4 data
         _, _, q_rk4, p_rk4, _ = [x.to(device) for x in rk4_batch]
-
-        # GL4 data
-        _, _, q_gl4, p_gl4, _ = [x.to(device) for x in gl4_batch]
 
         # Model predictions
         with torch.no_grad():
@@ -546,11 +522,6 @@ def calculate_comparison_results(
         loss_p_rk4 = criterion(p_rk4, p_true).item()
         loss_rk4 = 0.5 * (loss_q_rk4 + loss_p_rk4)
 
-        # GL4
-        loss_q_gl4 = criterion(q_gl4, q_true).item()
-        loss_p_gl4 = criterion(p_gl4, p_true).item()
-        loss_gl4 = 0.5 * (loss_q_gl4 + loss_p_gl4)
-
         # Store results
         test_results_dict["model"]["q"].extend(q_pred.cpu().numpy())
         test_results_dict["model"]["p"].extend(p_pred.cpu().numpy())
@@ -573,12 +544,6 @@ def calculate_comparison_results(
         test_results_dict["rk4"]["loss_p"].append(loss_p_rk4)
         test_results_dict["rk4"]["loss"].append(loss_rk4)
 
-        test_results_dict["gl4"]["q"].extend(q_gl4.cpu().numpy())
-        test_results_dict["gl4"]["p"].extend(p_gl4.cpu().numpy())
-        test_results_dict["gl4"]["loss_q"].append(loss_q_gl4)
-        test_results_dict["gl4"]["loss_p"].append(loss_p_gl4)
-        test_results_dict["gl4"]["loss"].append(loss_gl4)
-
         # Collect V and t for plotting
         all_V.append(V.cpu().numpy())
         all_t.append(t.cpu().numpy())
@@ -591,7 +556,6 @@ def calculate_comparison_results(
     print(f"Model Loss: {np.mean(test_results_dict['model']['loss']):.4e}")
     print(f"Y4 Loss: {np.mean(test_results_dict['y4']['loss']):.4e}")
     print(f"RK4 Loss: {np.mean(test_results_dict['rk4']['loss']):.4e}")
-    print(f"GL4 Loss: {np.mean(test_results_dict['gl4']['loss']):.4e}")
 
     return test_results_dict, all_V, all_t
 
@@ -604,10 +568,9 @@ def plot_comparison_histograms(results_dict, fig_dir):
     model_losses = np.array(results_dict["model"]["loss"])
     y4_losses = np.array(results_dict["y4"]["loss"])
     rk4_losses = np.array(results_dict["rk4"]["loss"])
-    gl4_losses = np.array(results_dict["gl4"]["loss"])
 
     # Calculate min/max log scale range
-    all_losses = np.concatenate([model_losses, y4_losses, rk4_losses, gl4_losses])
+    all_losses = np.concatenate([model_losses, y4_losses, rk4_losses])
     min_loss = all_losses.min()
     min_loss = min_loss if min_loss != 0 else 1e-10  # Avoid log(0)
     loss_min_log = (
@@ -630,7 +593,6 @@ def plot_comparison_histograms(results_dict, fig_dir):
             "model_loss": model_losses,
             "y4_loss": y4_losses,
             "rk4_loss": rk4_losses,
-            "gl4_loss": gl4_losses,
         }
     )
     df_losses.write_parquet(f"{fig_dir}/losses.parquet")
@@ -667,29 +629,18 @@ def plot_comparison_histograms(results_dict, fig_dir):
         fig.savefig(f"{fig_dir}/00_3_Loss_rk4_hist.png", dpi=600, bbox_inches="tight")
         plt.close(fig)
 
-        # GL4 histogram
-        fig, ax = plt.subplots()
-        ax.hist(gl4_losses, bins=logbins)
-        ax.axvline(gl4_losses.mean(), color="red", linestyle="--")
-        ax.set_xlabel("Loss (vs KahanLi8)")
-        ax.set_ylabel("Count")
-        ax.set_xscale("log")
-        fig.savefig(f"{fig_dir}/00_5_Loss_gl4_hist.png", dpi=600, bbox_inches="tight")
-        plt.close(fig)
-
         # Combined histogram - compare distributions
         fig, ax = plt.subplots()
         ax.hist(
-            [model_losses, y4_losses, rk4_losses, gl4_losses],
+            [model_losses, y4_losses, rk4_losses],
             bins=logbins,
             histtype="step",
-            label=["Model", "Y4", "RK4", "GL4"],
+            label=["Model", "Y4", "RK4"],
             alpha=0.6,
         )
         ax.axvline(model_losses.mean(), color="C0", linestyle="--")
         ax.axvline(y4_losses.mean(), color="C1", linestyle="--")
         ax.axvline(rk4_losses.mean(), color="C2", linestyle="--")
-        ax.axvline(gl4_losses.mean(), color="C3", linestyle="--")
         ax.set_xlabel("Loss (vs KahanLi8)")
         ax.set_ylabel("Count")
         ax.set_xscale("log")
@@ -734,8 +685,6 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
         p_y4_i = results_dict["y4"]["p"][idx]
         q_rk4_i = results_dict["rk4"]["q"][idx]
         p_rk4_i = results_dict["rk4"]["p"][idx]
-        q_gl4_i = results_dict["gl4"]["q"][idx]
-        p_gl4_i = results_dict["gl4"]["p"][idx]
 
         # Loss values
         loss_model = results_dict["model"]["loss"][idx]
@@ -747,9 +696,6 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
         loss_rk4 = results_dict["rk4"]["loss"][idx]
         loss_q_rk4 = results_dict["rk4"]["loss_q"][idx]
         loss_p_rk4 = results_dict["rk4"]["loss_p"][idx]
-        loss_gl4 = results_dict["gl4"]["loss"][idx]
-        loss_q_gl4 = results_dict["gl4"]["loss_q"][idx]
-        loss_p_gl4 = results_dict["gl4"]["loss_p"][idx]
 
         # Color settings
         cmap = plt.get_cmap("gist_heat")
@@ -782,7 +728,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
                 zorder=0,
             )
 
-            # Y4, RK4, GL4 (lines)
+            # Y4, RK4 (lines)
             ax.plot(
                 t_array,
                 q_y4_i,
@@ -799,16 +745,6 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
                 color="green",
                 linestyle="--",
                 label=r"$q$ (RK4)",
-                alpha=0.6,
-                linewidth=1,
-                zorder=1,
-            )
-            ax.plot(
-                t_array,
-                q_gl4_i,
-                color="orange",
-                linestyle="-.",
-                label=r"$q$ (GL4)",
                 alpha=0.6,
                 linewidth=1,
                 zorder=1,
@@ -852,13 +788,6 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
                 transform=ax.transAxes,
                 fontsize=5,
             )
-            ax.text(
-                0.05,
-                0.80,
-                f"GL4 Loss: {loss_q_gl4:.4e}",
-                transform=ax.transAxes,
-                fontsize=5,
-            )
 
             # Adjust legend
             handles, labels = ax.get_legend_handles_labels()
@@ -884,7 +813,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
                 zorder=0,
             )
 
-            # Y4, RK4, GL4 (lines)
+            # Y4, RK4 (lines)
             ax.plot(
                 t_array,
                 p_y4_i,
@@ -901,16 +830,6 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
                 color="green",
                 linestyle="--",
                 label=r"$p$ (RK4)",
-                alpha=0.6,
-                linewidth=1,
-                zorder=1,
-            )
-            ax.plot(
-                t_array,
-                p_gl4_i,
-                color="orange",
-                linestyle="-.",
-                label=r"$p$ (GL4)",
                 alpha=0.6,
                 linewidth=1,
                 zorder=1,
@@ -954,13 +873,6 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
                 transform=ax.transAxes,
                 fontsize=5,
             )
-            ax.text(
-                0.05,
-                0.05,
-                f"GL4 Loss: {loss_p_gl4:.4e}",
-                transform=ax.transAxes,
-                fontsize=5,
-            )
 
             # Adjust legend
             handles, labels = ax.get_legend_handles_labels()
@@ -987,7 +899,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
                 zorder=0,
             )
 
-            # Y4, RK4, GL4 (lines)
+            # Y4, RK4 (lines)
             ax.plot(
                 q_y4_i,
                 p_y4_i,
@@ -1004,16 +916,6 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
                 color="green",
                 linestyle="--",
                 label=r"$(q,p)$ (RK4)",
-                alpha=0.6,
-                linewidth=1,
-                zorder=1,
-            )
-            ax.plot(
-                q_gl4_i,
-                p_gl4_i,
-                color="orange",
-                linestyle="-.",
-                label=r"$(q,p)$ (GL4)",
                 alpha=0.6,
                 linewidth=1,
                 zorder=1,
@@ -1054,13 +956,6 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
                 0.05,
                 0.45,
                 f"RK4 Loss: {loss_rk4:.4e}",
-                transform=ax.transAxes,
-                fontsize=5,
-            )
-            ax.text(
-                0.05,
-                0.40,
-                f"GL4 Loss: {loss_gl4:.4e}",
                 transform=ax.transAxes,
                 fontsize=5,
             )
@@ -1308,20 +1203,19 @@ def main():
         )
 
         try:
-            # Load KahanLi8, Y4, RK4, GL4 data
-            ds_true, ds_y4, ds_rk4, ds_gl4 = load_test_data_with_true()
+            # Load KahanLi8, Y4, RK4 data
+            ds_true, ds_y4, ds_rk4 = load_test_data_with_true()
 
             # Create dataloaders
             batch_size = 1  # Appropriate batch size
             dl_true = DataLoader(ds_true, batch_size=batch_size)
             dl_y4 = DataLoader(ds_y4, batch_size=batch_size)
             dl_rk4 = DataLoader(ds_rk4, batch_size=batch_size)
-            dl_gl4 = DataLoader(ds_gl4, batch_size=batch_size)
 
             # Compare model with reference data
             console.print("[bold green]Analyzing model performance...[/bold green]")
             results_dict, V, t = calculate_comparison_results(
-                model, device, dl_true, dl_y4, dl_rk4, dl_gl4, variational
+                model, device, dl_true, dl_y4, dl_rk4, variational
             )
 
             # Visualize results
@@ -1368,7 +1262,7 @@ def main():
             "sstw": "SSTW",
         }
         results = [load_relevant_data(name) for name in potentials.keys()]
-        ds_trues, ds_y4s, ds_rk4s, ds_gl4s = zip(*results)
+        ds_trues, ds_y4s, ds_rk4s = zip(*results)
         tests_name = list(potentials.values())
 
         for i in range(len(ds_trues)):
@@ -1377,13 +1271,11 @@ def main():
             ds_true = ds_trues[i]
             ds_y4 = ds_y4s[i]
             ds_rk4 = ds_rk4s[i]
-            ds_gl4 = ds_gl4s[i]
             test_name = tests_name[i]
 
             dl_true = DataLoader(ds_true, batch_size=1)
             dl_y4 = DataLoader(ds_y4, batch_size=1)
             dl_rk4 = DataLoader(ds_rk4, batch_size=1)
-            dl_gl4 = DataLoader(ds_gl4, batch_size=1)
 
             test_results = TestResults(model, dl_true, device, variational)
             test_results.print_results()
@@ -1397,11 +1289,10 @@ def main():
             test_results.plot_p(f"{fig_dir}/{i:02}_{test_name}_2_p_plot", 0)
             test_results.plot_phase(f"{fig_dir}/{i:02}_{test_name}_3_phase_plot", 0)
 
-            for batch_data in zip(dl_true, dl_y4, dl_rk4, dl_gl4):
-                (_, _, q_true, p_true) = batch_data[0]
-                (_, _, q_y4, p_y4) = batch_data[1]
-                (_, _, q_rk4, p_rk4) = batch_data[2]
-                (_, _, q_gl4, p_gl4) = batch_data[3]
+            for batch_data in zip(dl_true, dl_y4, dl_rk4):
+                (_, _, q_true, p_true, _) = batch_data[0]
+                (_, _, q_y4, p_y4, _) = batch_data[1]
+                (_, _, q_rk4, p_rk4, _) = batch_data[2]
 
                 q_true = q_true.numpy().astype(np.float64).reshape(-1)
                 p_true = p_true.numpy().astype(np.float64).reshape(-1)
@@ -1409,8 +1300,6 @@ def main():
                 p_y4 = p_y4.numpy().astype(np.float64).reshape(-1)
                 q_rk4 = q_rk4.numpy().astype(np.float64).reshape(-1)
                 p_rk4 = p_rk4.numpy().astype(np.float64).reshape(-1)
-                q_gl4 = q_gl4.numpy().astype(np.float64).reshape(-1)
-                p_gl4 = p_gl4.numpy().astype(np.float64).reshape(-1)
                 q_test = test_results.q_preds.astype(np.float64)
                 p_test = test_results.p_preds.astype(np.float64)
 
@@ -1426,14 +1315,9 @@ def main():
                 loss_p_rk4 = np_mse_loss(p_rk4, p_true)
                 loss_rk4 = 0.5 * (loss_q_rk4 + loss_p_rk4)
 
-                loss_q_gl4 = np_mse_loss(q_gl4, q_true)
-                loss_p_gl4 = np_mse_loss(p_gl4, p_true)
-                loss_gl4 = 0.5 * (loss_q_gl4 + loss_p_gl4)
-
                 print(f"Model Loss: {loss_test:.4e}")
                 print(f"Y4 Loss: {loss_y4:.4e}")
                 print(f"RK4 Loss: {loss_rk4:.4e}")
-                print(f"GL4 Loss: {loss_gl4:.4e}")
 
                 t = np.linspace(0, 2, len(q_true))
                 cmap = plt.get_cmap("gist_heat")
@@ -1473,16 +1357,6 @@ def main():
                         linewidth=1,
                         zorder=1,
                     )
-                    ax.plot(
-                        t,
-                        q_gl4,
-                        color="orange",
-                        linestyle="-.",
-                        label=r"$q$ (GL4)",
-                        alpha=0.6,
-                        linewidth=1,
-                        zorder=1,
-                    )
 
                     ax.scatter(
                         t,
@@ -1517,13 +1391,6 @@ def main():
                         0.05,
                         0.85,
                         f"RK4 Loss: {loss_q_rk4:.4e}",
-                        transform=ax.transAxes,
-                        fontsize=5,
-                    )
-                    ax.text(
-                        0.05,
-                        0.80,
-                        f"GL4 Loss: {loss_q_gl4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
@@ -1575,16 +1442,6 @@ def main():
                         linewidth=1,
                         zorder=1,
                     )
-                    ax.plot(
-                        t,
-                        p_gl4,
-                        color="orange",
-                        linestyle="-.",
-                        label=r"$p$ (GL4)",
-                        alpha=0.6,
-                        linewidth=1,
-                        zorder=1,
-                    )
 
                     ax.scatter(
                         t,
@@ -1619,13 +1476,6 @@ def main():
                         0.05,
                         0.10,
                         f"RK4 Loss: {loss_p_rk4:.4e}",
-                        transform=ax.transAxes,
-                        fontsize=5,
-                    )
-                    ax.text(
-                        0.05,
-                        0.05,
-                        f"GL4 Loss: {loss_p_gl4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
@@ -1677,16 +1527,6 @@ def main():
                         linewidth=1,
                         zorder=1,
                     )
-                    ax.plot(
-                        q_gl4,
-                        p_gl4,
-                        color="orange",
-                        linestyle="-.",
-                        label=r"$(q,p)$ (GL4)",
-                        alpha=0.6,
-                        linewidth=1,
-                        zorder=1,
-                    )
 
                     ax.scatter(
                         q_test,
@@ -1721,13 +1561,6 @@ def main():
                         0.05,
                         0.45,
                         f"RK4 Loss: {loss_rk4:.4e}",
-                        transform=ax.transAxes,
-                        fontsize=5,
-                    )
-                    ax.text(
-                        0.05,
-                        0.40,
-                        f"GL4 Loss: {loss_gl4:.4e}",
                         transform=ax.transAxes,
                         fontsize=5,
                     )
