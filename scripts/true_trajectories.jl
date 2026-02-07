@@ -10,6 +10,8 @@ using ProgressMeter
 using Base.Threads
 
 const NSENSORS = 100
+const NDENSE = 1000
+const NDENSE_LONGTERM = 10000
 const PI = π
 
 # ┌─────────────────────────────────────────────────────────┐
@@ -253,14 +255,20 @@ function run_simulation_kl8(V_values, t_values, q0, p0)
     # Solve with Kahan-Li 8th order symplectic integrator
     sol = solve(prob, KahanLi8(), dt=dt, adaptive=false)
 
-    # Sample at t_values
+    # Sample at t_values (sparse, for loss computation)
     solution = sol.(t_values)
 
     # Extract results
     p_values = getindex.(solution, 1)  # Momentum values
     q_values = getindex.(solution, 2)  # Position values
 
-    return q_values, p_values
+    # Dense sampling for smooth plotting
+    t_dense = collect(range(0.0, 2.0, length=NDENSE))
+    solution_dense = sol.(t_dense)
+    p_dense = getindex.(solution_dense, 1)
+    q_dense = getindex.(solution_dense, 2)
+
+    return q_values, p_values, t_dense, q_dense, p_dense
 end
 
 # ┌─────────────────────────────────────────────────────────┐
@@ -313,6 +321,12 @@ function run_simulation(potential_name, p_fn_ham, q_fn_ham, initial_condition, p
         V_values = [V_ATW(q_v, atw_params_local) for q_v in q_range_for_V]
     end
 
+    # Dense sampling for smooth plotting
+    t_dense = collect(range(tspan[1], tspan[2], length=NDENSE))
+    solution_dense = sol(t_dense)
+    p_dense = [solution_dense[1, i] for i in 1:NDENSE]
+    q_dense = [solution_dense[2, i] for i in 1:NDENSE]
+
     # Convert results to DataFrame
     df = DataFrame(
         V = V_values,      # Potential shape over a fixed q_range [0,1]
@@ -321,7 +335,13 @@ function run_simulation(potential_name, p_fn_ham, q_fn_ham, initial_condition, p
         p_true = p_values  # Simulated trajectory momenta
     )
 
-    return df
+    df_dense = DataFrame(
+        t = t_dense,
+        q_true = q_dense,
+        p_true = p_dense
+    )
+
+    return df, df_dense
 end
 
 function run_all_simulations()
@@ -342,15 +362,112 @@ function run_all_simulations()
 
     for (name, p_fn, q_fn, init_cond, params_obj) in potentials
         @printf "Running simulation for %s...\n" name
-        df = run_simulation(name, p_fn, q_fn, init_cond, params_obj, (0.0, 2.0))
+        df, df_dense = run_simulation(name, p_fn, q_fn, init_cond, params_obj, (0.0, 2.0))
 
         # Save as Parquet2 file
         output_file = "data_true/$(name).parquet"
         Parquet2.writefile(output_file, df)
         @printf "Saved to %s\n" output_file
+
+        # Save dense data for smooth plotting
+        dense_file = "data_true/$(name)_dense.parquet"
+        Parquet2.writefile(dense_file, df_dense)
+        @printf "Saved dense to %s\n" dense_file
     end
 
     println("All simulations completed!")
+end
+
+function run_simulation_longterm(potential_name, p_fn_ham, q_fn_ham, initial_condition, params, tspan)
+    q_initial = initial_condition[1]
+    p_initial = initial_condition[2]
+
+    prob = DynamicalODEProblem(p_fn_ham, q_fn_ham, p_initial, q_initial, tspan, params)
+
+    dt = 1e-4
+    sol = solve(prob, KahanLi8(), dt=dt, adaptive=false)
+
+    # Sample at uniform time intervals (NSENSORS points for sparse data)
+    t_uniform = range(tspan[1], tspan[2], length=NSENSORS)
+    solution = sol(t_uniform)
+
+    p_values = [solution[1, i] for i in 1:NSENSORS]
+    q_values = [solution[2, i] for i in 1:NSENSORS]
+
+    # Calculate potential values (based on q range)
+    q_range_for_V = range(0.0, 1.0, length=NSENSORS)
+    V_values = zeros(NSENSORS)
+
+    if potential_name == "sho"
+        V_values = [V_SHO(q_v) for q_v in q_range_for_V]
+    elseif potential_name == "double_well"
+        V_values = [V_DoubleWell(q_v) for q_v in q_range_for_V]
+    elseif potential_name == "morse"
+        morse_params_local = MorseParams()
+        V_values = [V_Morse(q_v, morse_params_local) for q_v in q_range_for_V]
+    elseif potential_name == "pendulum"
+        pendulum_params_local = PendulumParams()
+        V_values = [V_Pendulum(q_v, pendulum_params_local) for q_v in q_range_for_V]
+    elseif potential_name == "stw"
+        V_values = [V_MirroredFreeFall(q_v) for q_v in q_range_for_V]
+    elseif potential_name == "sstw"
+        V_values = [V_SoftenedMirroredFreeFall(q_v) for q_v in q_range_for_V]
+    elseif potential_name == "atw"
+        atw_params_local = ATWParams()
+        V_values = [V_ATW(q_v, atw_params_local) for q_v in q_range_for_V]
+    end
+
+    # Dense sampling for smooth plotting (NDENSE_LONGTERM points)
+    t_dense = collect(range(tspan[1], tspan[2], length=NDENSE_LONGTERM))
+    solution_dense = sol(t_dense)
+    p_dense = [solution_dense[1, i] for i in 1:NDENSE_LONGTERM]
+    q_dense = [solution_dense[2, i] for i in 1:NDENSE_LONGTERM]
+
+    df = DataFrame(
+        V = V_values,
+        t = collect(t_uniform),
+        q_true = q_values,
+        p_true = p_values
+    )
+
+    df_dense = DataFrame(
+        t = t_dense,
+        q_true = q_dense,
+        p_true = p_dense
+    )
+
+    return df, df_dense
+end
+
+function run_all_longterm_simulations()
+    mkpath("data_true")
+
+    potentials = [
+        ("sho", hamiltonian_sho_p, hamiltonian_sho_q, [0.0, 0.0], nothing),
+        ("double_well", hamiltonian_double_well_p, hamiltonian_double_well_q, [0.0, 0.0], nothing),
+        ("morse", hamiltonian_morse_p, hamiltonian_morse_q, [0.0, 0.0], MorseParams()),
+        ("pendulum", hamiltonian_pendulum_p, hamiltonian_pendulum_q, [0.0, 0.0], PendulumParams()),
+        ("stw", hamiltonian_stw_p, hamiltonian_stw_q, [0.0, 0.0], nothing),
+        ("sstw", hamiltonian_sstw_p, hamiltonian_sstw_q, [0.0, 0.0], nothing),
+        ("atw", hamiltonian_atw_p, hamiltonian_atw_q, [0.0, 0.0], ATWParams())
+    ]
+
+    tspan = (0.0, 100.0)
+
+    for (name, p_fn, q_fn, init_cond, params_obj) in potentials
+        @printf "Running long-term simulation for %s (T=100s)...\n" name
+        df, df_dense = run_simulation_longterm(name, p_fn, q_fn, init_cond, params_obj, tspan)
+
+        output_file = "data_true/$(name)_longterm.parquet"
+        Parquet2.writefile(output_file, df)
+        @printf "Saved to %s\n" output_file
+
+        dense_file = "data_true/$(name)_longterm_dense.parquet"
+        Parquet2.writefile(dense_file, df_dense)
+        @printf "Saved dense to %s\n" dense_file
+    end
+
+    println("All long-term simulations completed!")
 end
 
 function run_simulation_reference(input_path::String = "data_test/test.parquet", output_path::String = "data_true/test_kl8.parquet")
@@ -366,6 +483,12 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
     all_q_true = Vector{Float64}(undef, n_total)
     all_p_true = Vector{Float64}(undef, n_total)
 
+    # Dense arrays for smooth plotting
+    n_dense_total = length(potentials) * NDENSE
+    all_t_dense = Vector{Float64}(undef, n_dense_total)
+    all_q_dense = Vector{Float64}(undef, n_dense_total)
+    all_p_dense = Vector{Float64}(undef, n_dense_total)
+
     pb = Progress(length(potentials), desc="Obtain: ", showspeed=true)
 
     # Parallelize the simulation
@@ -375,9 +498,9 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
         # Use initial conditions from data (q[1], p[1] in Julia is the first element)
         q0 = qs[i][1]
         p0 = ps[i][1]
-        q_values, p_values = run_simulation_kl8(V_values, t_values, q0, p0)
+        q_values, p_values, t_dense, q_dense, p_dense = run_simulation_kl8(V_values, t_values, q0, p0)
 
-        # Store results in the preallocated arrays
+        # Store sparse results in the preallocated arrays
         start_idx = (i-1) * NSENSORS + 1
         end_idx = i * NSENSORS
 
@@ -385,6 +508,13 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
         all_t[start_idx:end_idx] = t_values
         all_q_true[start_idx:end_idx] = q_values
         all_p_true[start_idx:end_idx] = p_values
+
+        # Store dense results
+        dense_start = (i-1) * NDENSE + 1
+        dense_end = i * NDENSE
+        all_t_dense[dense_start:dense_end] = t_dense
+        all_q_dense[dense_start:dense_end] = q_dense
+        all_p_dense[dense_start:dense_end] = p_dense
 
         # Update progress bar
         next!(pb)
@@ -403,14 +533,26 @@ function run_simulation_reference(input_path::String = "data_test/test.parquet",
     output_file = output_path
     @printf "Saving to %s...\n" output_file
     Parquet2.writefile(output_file, df)
-
     @printf "Saved to %s\n" output_file
+
+    # Save dense data for smooth plotting
+    df_dense = DataFrame(
+        t = all_t_dense,
+        q_true = all_q_dense,
+        p_true = all_p_dense
+    )
+    dense_output = replace(output_path, ".parquet" => "_dense.parquet")
+    @printf "Saving dense to %s...\n" dense_output
+    Parquet2.writefile(dense_output, df_dense)
+    @printf "Saved dense to %s\n" dense_output
 
     @printf "Reference simulation completed!\n"
 end
 
 # Run all simulations
 run_all_simulations()
+# Run long-term simulations (T=100s)
+run_all_longterm_simulations()
 # Run reference simulation (test)
 run_simulation_reference("data_test/test.parquet", "data_true/test_kl8.parquet")
 ## Run reference simulation (normal)

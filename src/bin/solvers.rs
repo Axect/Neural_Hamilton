@@ -61,6 +61,46 @@ macro_rules! solve_hamilton_eq {
     }}
 }
 
+macro_rules! solve_native {
+    ($integrator:expr, $df:expr) => {{
+        let test_V: Vec<f64> = $df["V"].to_vec();
+        let test_q: Vec<f64> = $df["q"].to_vec();
+        let test_p: Vec<f64> = $df["p"].to_vec();
+        let samples = test_V.len() / 100;
+
+        let results = (0..samples)
+            .into_par_iter()
+            .progress_count(samples as u64)
+            .map(|i| -> Result<_, anyhow::Error> {
+                let V = test_V[i * 100..(i + 1) * 100].to_vec();
+                let q_true = test_q[i * 100..(i + 1) * 100].to_vec();
+                let p_true = test_p[i * 100..(i + 1) * 100].to_vec();
+                let initial_condition = vec![q_true[0], p_true[0]];
+                let ode = PotentialODE::new(&V)?;
+                let integrator = $integrator;
+                let solver = BasicODESolver::new(integrator);
+                let (t_vec, qp_vec) = solver.solve(&ode, (0f64, 2f64), TSTEP, &initial_condition)?;
+                let (q_vec, p_vec): (Vec<f64>, Vec<f64>) = qp_vec.iter().map(|v| (v[0], v[1])).unzip();
+
+                // Return native grid values directly (NO spline interpolation)
+                Ok((t_vec, q_vec, p_vec))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Collect results
+        let mut t_total = vec![];
+        let mut q_total = vec![];
+        let mut p_total = vec![];
+        for (t_vec, q_vec, p_vec) in results {
+            t_total.extend(t_vec);
+            q_total.extend(q_vec);
+            p_total.extend(p_vec);
+        }
+
+        (t_total, q_total, p_total)
+    }}
+}
+
 #[allow(non_snake_case)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let test_data = "data_test/test.parquet";
@@ -107,6 +147,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     dh.print();
 
     dh.write_parquet("data_analyze/test_solvers.parquet", SNAPPY)?;
+
+    // Native grid output (no spline interpolation) for fair comparison
+    println!("Generating native grid data (no spline)...");
+    let (t_native, q_native_y4, p_native_y4) = solve_native!(YoshidaSolver, &df);
+    let (_, q_native_rk4, p_native_rk4) = solve_native!(RK4, &df);
+
+    let mut dh_native = DataFrame::new(vec![]);
+    dh_native.push("t", Series::new(t_native));
+    dh_native.push("q_y4", Series::new(q_native_y4));
+    dh_native.push("p_y4", Series::new(p_native_y4));
+    dh_native.push("q_rk4", Series::new(q_native_rk4));
+    dh_native.push("p_rk4", Series::new(p_native_rk4));
+
+    dh_native.print();
+    dh_native.write_parquet("data_analyze/test_solvers_native.parquet", SNAPPY)?;
 
     Ok(())
 }

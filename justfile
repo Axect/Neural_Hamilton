@@ -32,7 +32,7 @@ data-filter:
     mv "data_more/val_cand_samples.parquet" "data_more/val.parquet"
 
 post-process:
-    julia -t 32 scripts/true_trajectories.jl # True data via Kahan-Li 8th order
+    julia -t auto scripts/true_trajectories.jl # True data via Kahan-Li 8th order
     cargo run --release --bin solvers # Various solvers to compare
 
 build: build-cargo

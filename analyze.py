@@ -24,6 +24,7 @@ from util import (
     log_cosh_loss,
     np_log_cosh_loss
 )
+from fair_compare import run_fair_comparison, longterm_comparison
 
 
 torch.set_float32_matmul_precision("medium")
@@ -143,16 +144,44 @@ def load_test_data_with_true():
     return ds_true, ds_y4, ds_rk4
 
 
+NDENSE = 1000
+
+
+def load_test_dense_kl8():
+    """Load dense KL8 data for test potentials. Returns None if not found."""
+    try:
+        df = pl.read_parquet("./data_true/test_kl8_dense.parquet")
+        t_dense = df["t"].to_numpy().reshape(-1, NDENSE)
+        q_dense = df["q_true"].to_numpy().reshape(-1, NDENSE)
+        p_dense = df["p_true"].to_numpy().reshape(-1, NDENSE)
+        return t_dense, q_dense, p_dense
+    except FileNotFoundError:
+        return None
+
+
+def load_relevant_dense_data(potential: str):
+    """Load dense KL8 data for a physical potential. Returns None if not found."""
+    try:
+        df = pl.read_parquet(f"./data_true/{potential}_dense.parquet")
+        t_dense = df["t"].to_numpy()
+        q_dense = df["q_true"].to_numpy()
+        p_dense = df["p_true"].to_numpy()
+        return t_dense, q_dense, p_dense
+    except FileNotFoundError:
+        return None
+
+
 # RK4 Solver
 NSENSORS = 100  # Global constant needed for dataset reshaping
 
 
 class TestResults:
-    def __init__(self, model, dl_val, device, variational=False):
+    def __init__(self, model, dl_val, device, variational=False, dense_kl8=None):
         self.model = model
         self.dl_val = dl_val
         self.device = device
         self.variational = variational
+        self.dense_kl8 = dense_kl8  # (t_dense, q_dense, p_dense) or None
         self.run_test()
 
     def run_test(self):
@@ -264,15 +293,17 @@ class TestResults:
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(
-                t,
-                self.q_targets[index],
-                color="gray",
-                label=r"$q$",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
+            if self.dense_kl8 is not None:
+                t_d, q_d, _ = self.dense_kl8
+                ax.plot(
+                    t_d, q_d,
+                    color="gray", label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
+            else:
+                ax.plot(
+                    t, self.q_targets[index],
+                    color="gray", label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
             ax.scatter(
                 t,
                 self.q_preds[index],
@@ -304,15 +335,17 @@ class TestResults:
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(
-                t,
-                self.p_targets[index],
-                color="gray",
-                label=r"$p$",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
+            if self.dense_kl8 is not None:
+                t_d, _, p_d = self.dense_kl8
+                ax.plot(
+                    t_d, p_d,
+                    color="gray", label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
+            else:
+                ax.plot(
+                    t, self.p_targets[index],
+                    color="gray", label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
             ax.scatter(
                 t,
                 self.p_preds[index],
@@ -344,15 +377,17 @@ class TestResults:
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(
-                self.q_targets[index],
-                self.p_targets[index],
-                color="gray",
-                label=r"$(q,p)$",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
+            if self.dense_kl8 is not None:
+                _, q_d, p_d = self.dense_kl8
+                ax.plot(
+                    q_d, p_d,
+                    color="gray", label=r"$(q,p)$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
+            else:
+                ax.plot(
+                    self.q_targets[index], self.p_targets[index],
+                    color="gray", label=r"$(q,p)$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
             ax.scatter(
                 self.q_preds[index],
                 self.p_preds[index],
@@ -394,15 +429,17 @@ class TestResults:
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(
-                t,
-                self.q_targets[index],
-                color="gray",
-                label=r"$q$",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
+            if self.dense_kl8 is not None:
+                t_d, q_d, _ = self.dense_kl8
+                ax.plot(
+                    t_d, q_d,
+                    color="gray", label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
+            else:
+                ax.plot(
+                    t, self.q_targets[index],
+                    color="gray", label=r"$q$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
             ax.scatter(
                 t,
                 self.q_preds[index],
@@ -435,15 +472,17 @@ class TestResults:
         colors = cmap(np.linspace(0, 0.75, len(t)))
         with plt.style.context(["science", "nature"]):
             fig, ax = plt.subplots()
-            ax.plot(
-                t,
-                self.p_targets[index],
-                color="gray",
-                label=r"$p$",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
+            if self.dense_kl8 is not None:
+                t_d, _, p_d = self.dense_kl8
+                ax.plot(
+                    t_d, p_d,
+                    color="gray", label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
+            else:
+                ax.plot(
+                    t, self.p_targets[index],
+                    color="gray", label=r"$p$", alpha=0.5, linewidth=1.75, zorder=0,
+                )
             ax.scatter(
                 t,
                 self.p_preds[index],
@@ -655,7 +694,7 @@ def plot_comparison_histograms(results_dict, fig_dir):
         plt.close(fig)
 
 
-def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
+def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None, dense_kl8=None):
     """
     Generate comparison plots for selected potentials
     """
@@ -717,16 +756,18 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # 2. Position (q) comparison plot
             fig, ax = plt.subplots()
 
-            # True (KahanLi8)
-            ax.plot(
-                t_array,
-                q_true_i,
-                color="gray",
-                label=r"$q$ (KL8)",
-                alpha=0.4,
-                linewidth=2.0,
-                zorder=0,
-            )
+            # True (KahanLi8) - use dense if available
+            if dense_kl8 is not None:
+                t_d, q_d, _ = dense_kl8
+                ax.plot(
+                    t_d[idx], q_d[idx],
+                    color="gray", label=r"$q$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                )
+            else:
+                ax.plot(
+                    t_array, q_true_i,
+                    color="gray", label=r"$q$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                )
 
             # Y4, RK4 (lines)
             ax.plot(
@@ -802,16 +843,18 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # 3. Momentum (p) comparison plot
             fig, ax = plt.subplots()
 
-            # True (KahanLi8)
-            ax.plot(
-                t_array,
-                p_true_i,
-                color="gray",
-                label=r"$p$ (KL8)",
-                alpha=0.4,
-                linewidth=2.0,
-                zorder=0,
-            )
+            # True (KahanLi8) - use dense if available
+            if dense_kl8 is not None:
+                t_d, _, p_d = dense_kl8
+                ax.plot(
+                    t_d[idx], p_d[idx],
+                    color="gray", label=r"$p$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                )
+            else:
+                ax.plot(
+                    t_array, p_true_i,
+                    color="gray", label=r"$p$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                )
 
             # Y4, RK4 (lines)
             ax.plot(
@@ -888,16 +931,18 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             # 4. Phase space (q-p) comparison plot
             fig, ax = plt.subplots()
 
-            # True (KahanLi8)
-            ax.plot(
-                q_true_i,
-                p_true_i,
-                color="gray",
-                label=r"$(q,p)$ (KL8)",
-                alpha=0.4,
-                linewidth=2.0,
-                zorder=0,
-            )
+            # True (KahanLi8) - use dense if available
+            if dense_kl8 is not None:
+                _, q_d, p_d = dense_kl8
+                ax.plot(
+                    q_d[idx], p_d[idx],
+                    color="gray", label=r"$(q,p)$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                )
+            else:
+                ax.plot(
+                    q_true_i, p_true_i,
+                    color="gray", label=r"$(q,p)$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                )
 
             # Y4, RK4 (lines)
             ax.plot(
@@ -972,7 +1017,7 @@ def plot_detailed_comparisons(results_dict, V, t, fig_dir, indices=None):
             plt.close(fig)
 
 
-def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
+def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None, dense_kl8=None):
     """
     Generate plots showing only KahanLi8 reference and Model predictions
     """
@@ -1024,16 +1069,18 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
             # 2. Position (q) plot - KL8 vs Model only
             fig, ax = plt.subplots()
 
-            # True (KahanLi8)
-            ax.plot(
-                t_array,
-                q_true_i,
-                color="gray",
-                label=r"$q$ (KL8)",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
+            # True (KahanLi8) - use dense if available
+            if dense_kl8 is not None:
+                t_d, q_d, _ = dense_kl8
+                ax.plot(
+                    t_d[idx], q_d[idx],
+                    color="gray", label=r"$q$ (KL8)", alpha=0.5, linewidth=1.75, zorder=0,
+                )
+            else:
+                ax.plot(
+                    t_array, q_true_i,
+                    color="gray", label=r"$q$ (KL8)", alpha=0.5, linewidth=1.75, zorder=0,
+                )
 
             # Model predictions (points)
             ax.scatter(
@@ -1073,16 +1120,18 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
             # 3. Momentum (p) plot - KL8 vs Model only
             fig, ax = plt.subplots()
 
-            # True (KahanLi8)
-            ax.plot(
-                t_array,
-                p_true_i,
-                color="gray",
-                label=r"$p$ (KL8)",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
+            # True (KahanLi8) - use dense if available
+            if dense_kl8 is not None:
+                t_d, _, p_d = dense_kl8
+                ax.plot(
+                    t_d[idx], p_d[idx],
+                    color="gray", label=r"$p$ (KL8)", alpha=0.5, linewidth=1.75, zorder=0,
+                )
+            else:
+                ax.plot(
+                    t_array, p_true_i,
+                    color="gray", label=r"$p$ (KL8)", alpha=0.5, linewidth=1.75, zorder=0,
+                )
 
             # Model predictions (points)
             ax.scatter(
@@ -1122,16 +1171,18 @@ def plot_kl8_model_only(results_dict, V, t, fig_dir, indices=None):
             # 4. Phase space (q-p) plot - KL8 vs Model only
             fig, ax = plt.subplots()
 
-            # True (KahanLi8)
-            ax.plot(
-                q_true_i,
-                p_true_i,
-                color="gray",
-                label=r"$(q,p)$ (KL8)",
-                alpha=0.5,
-                linewidth=1.75,
-                zorder=0,
-            )
+            # True (KahanLi8) - use dense if available
+            if dense_kl8 is not None:
+                _, q_d, p_d = dense_kl8
+                ax.plot(
+                    q_d[idx], p_d[idx],
+                    color="gray", label=r"$(q,p)$ (KL8)", alpha=0.5, linewidth=1.75, zorder=0,
+                )
+            else:
+                ax.plot(
+                    q_true_i, p_true_i,
+                    color="gray", label=r"$(q,p)$ (KL8)", alpha=0.5, linewidth=1.75, zorder=0,
+                )
 
             # Model predictions (points)
             ax.scatter(
@@ -1188,7 +1239,7 @@ def main():
     if "VaRONet" in config.net:
         variational = True
 
-    test_options = ["test", "physical"]
+    test_options = ["test", "physical", "fair comparison", "longterm comparison"]
     console.print("Select a test option:")
     test_option = beaupy.select(test_options)
     if test_option == "test":
@@ -1205,6 +1256,7 @@ def main():
         try:
             # Load KahanLi8, Y4, RK4 data
             ds_true, ds_y4, ds_rk4 = load_test_data_with_true()
+            dense_kl8 = load_test_dense_kl8()
 
             # Create dataloaders
             batch_size = 1  # Appropriate batch size
@@ -1235,13 +1287,13 @@ def main():
                 indices.append(worst_idx)
 
             # Generate comparison plots (all methods)
-            plot_detailed_comparisons(results_dict, V, t, fig_dir, indices)
+            plot_detailed_comparisons(results_dict, V, t, fig_dir, indices, dense_kl8=dense_kl8)
 
             # Generate KL8 vs Model only plots
             console.print(
                 "[bold green]Generating KL8 vs Model plots...[/bold green]"
             )
-            plot_kl8_model_only(results_dict, V, t, fig_dir, indices)
+            plot_kl8_model_only(results_dict, V, t, fig_dir, indices, dense_kl8=dense_kl8)
 
             console.print("[bold green]Analysis complete![/bold green]")
 
@@ -1263,6 +1315,7 @@ def main():
         }
         results = [load_relevant_data(name) for name in potentials.keys()]
         ds_trues, ds_y4s, ds_rk4s = zip(*results)
+        dense_results = [load_relevant_dense_data(name) for name in potentials.keys()]
         tests_name = list(potentials.values())
 
         for i in range(len(ds_trues)):
@@ -1277,7 +1330,7 @@ def main():
             dl_y4 = DataLoader(ds_y4, batch_size=1)
             dl_rk4 = DataLoader(ds_rk4, batch_size=1)
 
-            test_results = TestResults(model, dl_true, device, variational)
+            test_results = TestResults(model, dl_true, device, variational, dense_kl8=dense_results[i])
             test_results.print_results()
 
             fig_dir = f"figs/{project}/{test_name}"
@@ -1323,19 +1376,23 @@ def main():
                 cmap = plt.get_cmap("gist_heat")
                 colors = cmap(np.linspace(0, 0.75, len(t)))
 
+                dense_i = dense_results[i]
+
                 with plt.style.context(["science", "nature"]):
                     fig, ax = plt.subplots()
 
-                    # True plot
-                    ax.plot(
-                        t,
-                        q_true,
-                        color="gray",
-                        label=r"$q$ (KL8)",
-                        alpha=0.4,
-                        linewidth=2.0,
-                        zorder=0,
-                    )
+                    # True plot - use dense if available
+                    if dense_i is not None:
+                        t_d, q_d, _ = dense_i
+                        ax.plot(
+                            t_d, q_d,
+                            color="gray", label=r"$q$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                        )
+                    else:
+                        ax.plot(
+                            t, q_true,
+                            color="gray", label=r"$q$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                        )
 
                     ax.plot(
                         t,
@@ -1412,15 +1469,18 @@ def main():
 
                     fig, ax = plt.subplots()
 
-                    ax.plot(
-                        t,
-                        p_true,
-                        color="gray",
-                        label=r"$p$ (KL8)",
-                        alpha=0.4,
-                        linewidth=2.0,
-                        zorder=0,
-                    )
+                    # True plot - use dense if available
+                    if dense_i is not None:
+                        t_d, _, p_d = dense_i
+                        ax.plot(
+                            t_d, p_d,
+                            color="gray", label=r"$p$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                        )
+                    else:
+                        ax.plot(
+                            t, p_true,
+                            color="gray", label=r"$p$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                        )
 
                     ax.plot(
                         t,
@@ -1497,15 +1557,18 @@ def main():
 
                     fig, ax = plt.subplots()
 
-                    ax.plot(
-                        q_true,
-                        p_true,
-                        color="gray",
-                        label=r"$(q,p)$ (KL8)",
-                        alpha=0.4,
-                        linewidth=2.0,
-                        zorder=0,
-                    )
+                    # True plot - use dense if available
+                    if dense_i is not None:
+                        _, q_d, p_d = dense_i
+                        ax.plot(
+                            q_d, p_d,
+                            color="gray", label=r"$(q,p)$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                        )
+                    else:
+                        ax.plot(
+                            q_true, p_true,
+                            color="gray", label=r"$(q,p)$ (KL8)", alpha=0.4, linewidth=2.0, zorder=0,
+                        )
 
                     ax.plot(
                         q_y4,
@@ -1580,6 +1643,36 @@ def main():
                     )
                     plt.close(fig)
 
+    elif test_option == "fair comparison":
+        fig_dir = f"figs/{project}/fair"
+        if not os.path.exists(fig_dir):
+            os.makedirs(fig_dir)
+
+        console.print("[bold green]Running fair comparison analysis...[/bold green]")
+        try:
+            run_fair_comparison(model, device, fig_dir=fig_dir, variational=variational)
+            console.print("[bold green]Fair comparison complete![/bold green]")
+        except FileNotFoundError as e:
+            console.print(f"[bold red]Error: {e}[/bold red]")
+            console.print(
+                "[bold yellow]Required data not found. Ensure KL8 dense data and test data exist.[/bold yellow]"
+            )
+
+    elif test_option == "longterm comparison":
+        fig_dir = f"figs/{project}/longterm"
+        if not os.path.exists(fig_dir):
+            os.makedirs(fig_dir)
+
+        console.print("[bold green]Running long-term autoregressive comparison...[/bold green]")
+        try:
+            longterm_comparison(model, device, variational=variational, fig_dir=fig_dir)
+            console.print("[bold green]Long-term comparison complete![/bold green]")
+        except FileNotFoundError as e:
+            console.print(f"[bold red]Error: {e}[/bold red]")
+            console.print(
+                "[bold yellow]Required data not found. Run 'julia scripts/true_trajectories.jl' to generate long-term KL8 data.[/bold yellow]"
+            )
+
 
 def autoregressive_predict(model, V, n_windows, window_size=100, dt=0.02, device="cpu", variational=False):
     """
@@ -1615,10 +1708,13 @@ def autoregressive_predict(model, V, n_windows, window_size=100, dt=0.02, device
 
     t_current = 0.0
 
+    # Match training data grid: linspace(0, 2.0, 100) where dt = 2/(N-1)
+    window_T = window_size * dt
+
     with torch.no_grad():
         for i in range(n_windows):
             # Generate time queries for this window
-            t_window = torch.linspace(0, (window_size - 1) * dt, window_size, device=device)
+            t_window = torch.linspace(0, window_T, window_size, device=device)
             t_window = t_window.unsqueeze(0)  # (1, window_size)
 
             # Predict trajectory for this window
@@ -1642,7 +1738,7 @@ def autoregressive_predict(model, V, n_windows, window_size=100, dt=0.02, device
             ic = torch.stack([q_pred[:, -1], p_pred[:, -1]], dim=-1)  # (1, 2)
 
             # Advance time
-            t_current += (window_size - 1) * dt
+            t_current += window_T
 
     q_full = torch.cat(q_full, dim=1).squeeze(0).numpy()
     p_full = torch.cat(p_full, dim=1).squeeze(0).numpy()
