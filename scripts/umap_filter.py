@@ -390,7 +390,7 @@ if __name__ == "__main__":
         "--data_file", type=str, help="Path to the data file (parquet format)"
     )
     parser.add_argument(
-        "--ndiffconfig", type=int, default=2, help="Number of different configurations per potential"
+        "--ndiffconfig", type=int, default=4, help="Number of different configurations per potential"
     )
     args = parser.parse_args()
     data_file = args.data_file

@@ -11,15 +11,15 @@ const L: f64 = 1f64;
 const NSENSORS: usize = 100;
 const BOUNDARY: f64 = 0f64;
 const TSTEP: f64 = 1e-3;
-const NDIFFCONFIG: usize = 2; // Number of different configurations of time per potential
+const NDIFFCONFIG: usize = 4; // Number of different configurations of time per potential
 const T_TOTAL: f64 = 4f64; // Total integration time for long trajectory
 const T_WINDOW: f64 = 2f64; // Time window size for each sample
 
 // Target data counts (exact output — diversity filter runs before trajectory simulation)
 // Normal: 8k train + 2k val = 10k total; More (×10): 80k + 20k = 100k total
-const TARGET_TRAIN: usize = 8_000;
-const TARGET_VAL: usize = 2_000;
-const TARGET_TEST: usize = 10_000;
+const TARGET_TRAIN: usize = 16_000;
+const TARGET_VAL: usize = 4_000;
+const TARGET_TEST: usize = 20_000;
 const SAFETY_FACTOR: f64 = 2.5;            // Generate 2.5x candidates to account for trajectory filtering
 const DIVERSITY_FACTOR: f64 = 2.5;         // GRF oversample for diversity selection before trajectories
 const N_BINS: usize = 8;                   // Bins per feature dimension for diversity hashing
@@ -41,6 +41,7 @@ const YOSHIDA_4TH_COEFF: [f64; 8] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Solver {
     Yoshida4th,
+    Yoshida8th,
     RK4,
     GL4,
 }
@@ -611,7 +612,7 @@ impl BoundedPotential {
                 let E_max = E.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
                 let E_min = E.iter().cloned().fold(f64::INFINITY, f64::min);
                 let E_delta = (E_max - E_min) / (E_max + E_min).max(1e-10);
-                if E_delta >= 0.001 {
+                if E_delta >= 0.0001 {
                     return None;
                 }
 
@@ -714,7 +715,7 @@ impl BoundedPotential {
                 let E_max = E.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
                 let E_min = E.iter().cloned().fold(f64::INFINITY, f64::min);
                 let E_delta = (E_max - E_min) / (E_max + E_min).max(1e-10);
-                if E_delta >= 0.001 {
+                if E_delta >= 0.0001 {
                     return None;
                 }
 
@@ -1227,6 +1228,85 @@ impl YoshidaSolver {
     }
 }
 
+pub struct Yoshida8thSolver {
+    problem: HamiltonEquation,
+}
+
+impl Yoshida8thSolver {
+    pub fn new(problem: HamiltonEquation) -> Self {
+        Yoshida8thSolver { problem }
+    }
+
+    /// Recursive Suzuki-Yoshida triple-jump composition.
+    ///
+    /// S_2(h): Leapfrog (Störmer-Verlet, 2nd order symplectic)
+    /// S_{2n}(h) = S_{2n-2}(z₁·h) ∘ S_{2n-2}(z₀·h) ∘ S_{2n-2}(z₁·h)
+    ///
+    /// where z₁ = 1/(2 - 2^{1/(2n-1)}), z₀ = 1 - 2·z₁
+    ///
+    /// For 8th order: 27 force evaluations per step (3^3 leapfrogs).
+    fn yoshida_step(&self, order: usize, q: &mut f64, p: &mut f64, dt: f64) {
+        if order == 2 {
+            // Leapfrog (Position Verlet): drift q, kick p, drift q
+            *q += 0.5 * *p * dt;
+            *p -= self.problem.eval_grad(*q) * dt;
+            *q += 0.5 * *p * dt;
+        } else {
+            let w = 2f64.powf(1.0 / (order as f64 - 1.0));
+            let z1 = 1.0 / (2.0 - w);
+            let z0 = -w / (2.0 - w);
+            self.yoshida_step(order - 2, q, p, z1 * dt);
+            self.yoshida_step(order - 2, q, p, z0 * dt);
+            self.yoshida_step(order - 2, q, p, z1 * dt);
+        }
+    }
+
+    #[allow(non_snake_case)]
+    pub fn solve(
+        &self,
+        t_span: (f64, f64),
+        dt: f64,
+        initial_condition: &[f64],
+        t_domain: Option<Vec<f64>>,
+    ) -> anyhow::Result<Data> {
+        let num_intervals = ((t_span.1 - t_span.0) / dt).round() as usize;
+        let num_points = num_intervals + 1;
+        let t_vec_sim = linspace(t_span.0, t_span.1, num_points);
+
+        let mut q_vec_sim = vec![0f64; num_points];
+        let mut p_vec_sim = vec![0f64; num_points];
+        q_vec_sim[0] = initial_condition[0];
+        p_vec_sim[0] = initial_condition[1];
+
+        for i in 1..num_points {
+            let mut q = q_vec_sim[i - 1];
+            let mut p = p_vec_sim[i - 1];
+            self.yoshida_step(8, &mut q, &mut p, dt);
+            q_vec_sim[i] = q;
+            p_vec_sim[i] = p;
+        }
+
+        let cs_q = cubic_hermite_spline(&t_vec_sim, &q_vec_sim, Quadratic)?;
+        let cs_p = cubic_hermite_spline(&t_vec_sim, &p_vec_sim, Quadratic)?;
+
+        let t_vec_out = match t_domain {
+            Some(t_domain) => t_domain,
+            None => linspace(t_span.0, t_span.1, NSENSORS),
+        };
+        let q_vec_out = cs_q.eval_vec(&t_vec_out);
+        let p_vec_out = cs_p.eval_vec(&t_vec_out);
+
+        let q_uniform_pot = linspace(0f64, L, NSENSORS);
+        let V_out = self.problem.eval_vec(&q_uniform_pot);
+        Ok(Data {
+            V: V_out,
+            t: t_vec_out,
+            q: q_vec_out,
+            p: p_vec_out,
+        })
+    }
+}
+
 #[allow(non_snake_case)]
 pub fn solve_hamilton_equation(
     potential_pair: (Vec<f64>, Vec<f64>),
@@ -1238,6 +1318,10 @@ pub fn solve_hamilton_equation(
     match method {
         Solver::Yoshida4th => {
             let solver = YoshidaSolver::new(hamilton_eq);
+            solver.solve((0f64, 2f64), TSTEP, &initial_condition, t_domain)
+        }
+        Solver::Yoshida8th => {
+            let solver = Yoshida8thSolver::new(hamilton_eq);
             solver.solve((0f64, 2f64), TSTEP, &initial_condition, t_domain)
         }
         Solver::RK4 => {
@@ -1308,19 +1392,26 @@ pub fn solve_hamilton_long(
 ) -> anyhow::Result<LongTrajectory> {
     let hamilton_eq = HamiltonEquation::new(potential_pair)?;
 
-    // Use GL4 for long trajectory (best energy conservation)
-    let integrator = GL4 {
-        solver: ImplicitSolver::Broyden,
-        tol: 1e-6,
-        max_step_iter: 100,
-    };
+    // Use Yoshida 8th order (explicit symplectic, O(h^8) accuracy)
+    let solver = Yoshida8thSolver::new(hamilton_eq);
     let initial_condition = vec![0f64, 0f64];
-    let solver = BasicODESolver::new(integrator);
-    let (t_vec, x_vec) = solver.solve(&hamilton_eq, (0f64, T_TOTAL), TSTEP, &initial_condition)?;
 
-    let x_mat = py_matrix(x_vec);
-    let q_vec = x_mat.col(0);
-    let p_vec = x_mat.col(1);
+    let num_intervals = (T_TOTAL / TSTEP).round() as usize;
+    let num_points = num_intervals + 1;
+    let t_vec = linspace(0f64, T_TOTAL, num_points);
+
+    let mut q_vec = vec![0f64; num_points];
+    let mut p_vec = vec![0f64; num_points];
+    q_vec[0] = initial_condition[0];
+    p_vec[0] = initial_condition[1];
+
+    for i in 1..num_points {
+        let mut q = q_vec[i - 1];
+        let mut p = p_vec[i - 1];
+        solver.yoshida_step(8, &mut q, &mut p, TSTEP);
+        q_vec[i] = q;
+        p_vec[i] = p;
+    }
 
     // Create splines for interpolation
     let cs_q = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
@@ -1328,7 +1419,7 @@ pub fn solve_hamilton_long(
 
     // Get V at uniform q grid
     let q_uniform = linspace(0f64, L, NSENSORS);
-    let V_out = hamilton_eq.eval_vec(&q_uniform);
+    let V_out = solver.problem.eval_vec(&q_uniform);
 
     Ok(LongTrajectory {
         V: V_out,
