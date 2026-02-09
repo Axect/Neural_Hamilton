@@ -66,24 +66,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match selection {
         0 => {
-            // Normal mode (Train/Val with exact target counts) - fits in memory
+            // Normal mode (Train/Val) - loop until target is reached
             let (target_train, target_val, folder, order) =
                 (TARGET_TRAIN, TARGET_VAL, "data_normal", Solver::Yoshida4th);
 
-            // Generate candidates with safety margin
-            let n_train_cand = (target_train as f64 * SAFETY_FACTOR).ceil() as usize;
-            let n_val_cand = (target_val as f64 * SAFETY_FACTOR).ceil() as usize;
-
-            println!("\nGenerate training data (Order: {:?})...", order);
-            println!("Target: {}, Generating candidates: {}", target_train, n_train_cand);
-            let ds_train_gen = Dataset::generate(n_train_cand, 123, order)?;
-            let ds_train = ds_train_gen.take(target_train);
-            assert!(
-                ds_train.data.len() == target_train,
-                "Not enough training data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
-                ds_train.data.len(),
-                target_train
-            );
+            println!("\n=== Generate training data (target: {}) ===", target_train);
+            let ds_train = Dataset::generate_loop(target_train, 123, order)?;
             println!("Training data: {} (exact)", ds_train.data.len());
             if !ds_train.data.is_empty() {
                 let (q_max, p_max) = ds_train.max();
@@ -91,16 +79,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             ds_train.write_parquet(&format!("{}/train.parquet", folder))?;
 
-            println!("\nGenerate validation data (Order: {:?})...", order);
-            println!("Target: {}, Generating candidates: {}", target_val, n_val_cand);
-            let ds_val_gen = Dataset::generate(n_val_cand, 456, order)?;
-            let ds_val = ds_val_gen.take(target_val);
-            assert!(
-                ds_val.data.len() == target_val,
-                "Not enough validation data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
-                ds_val.data.len(),
-                target_val
-            );
+            println!("\n=== Generate validation data (target: {}) ===", target_val);
+            let ds_val = Dataset::generate_loop(target_val, 456, order)?;
             println!("Validation data: {} (exact)", ds_val.data.len());
             if !ds_val.data.is_empty() {
                 let (q_max, p_max) = ds_val.max();
@@ -109,71 +89,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ds_val.write_parquet(&format!("{}/val.parquet", folder))?;
         }
         1 => {
-            // More mode (10x data) - use chunked generation to avoid OOM
+            // More mode (10x data) - chunked loop to avoid OOM
             let target_train = TARGET_TRAIN * 10;
             let target_val = TARGET_VAL * 10;
             let folder = "data_more";
             let order = Solver::Yoshida4th;
 
-            // Generate candidates with safety margin
-            let n_train_cand = (target_train as f64 * SAFETY_FACTOR).ceil() as usize;
-            let n_val_cand = (target_val as f64 * SAFETY_FACTOR).ceil() as usize;
-
-            println!("\n=== Using chunked generation for large dataset ===");
+            println!("\n=== Chunked generation for large dataset ===");
             println!("Chunk size: {} potentials per chunk", CHUNK_SIZE);
 
-            println!("\nGenerate training data (Order: {:?})...", order);
-            println!("Target: {}, Generating candidates: {}", target_train, n_train_cand);
-            let train_count = Dataset::generate_chunked(
-                n_train_cand,
+            println!("\n=== Generate training data (target: {}) ===", target_train);
+            let train_count = Dataset::generate_chunked_loop(
+                target_train,
                 123,
                 order,
                 &format!("{}/train.parquet", folder),
-                target_train,
             )?;
-            assert!(
-                train_count >= target_train,
-                "Not enough training data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
-                train_count,
-                target_train
-            );
             println!("Training data: {} (exact)", train_count);
 
-            println!("\nGenerate validation data (Order: {:?})...", order);
-            println!("Target: {}, Generating candidates: {}", target_val, n_val_cand);
-            let val_count = Dataset::generate_chunked(
-                n_val_cand,
+            println!("\n=== Generate validation data (target: {}) ===", target_val);
+            let val_count = Dataset::generate_chunked_loop(
+                target_val,
                 456,
                 order,
                 &format!("{}/val.parquet", folder),
-                target_val,
             )?;
-            assert!(
-                val_count >= target_val,
-                "Not enough validation data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
-                val_count,
-                target_val
-            );
             println!("Validation data: {} (exact)", val_count);
         }
         2 => {
-            // Test with exact target count
+            // Test - loop until target is reached
             let target_test = TARGET_TEST;
-            let n_test_cand = (target_test as f64 * SAFETY_FACTOR).ceil() as usize;
             let folder = "data_test";
             let order = Solver::Yoshida4th;
-            let seed = 8407;
 
-            println!("\nGenerate test data (Order: {:?})...", order);
-            println!("Target: {}, Generating candidates: {}", target_test, n_test_cand);
-            let ds_test_gen = Dataset::generate(n_test_cand, seed, order)?;
-            let ds_test = ds_test_gen.take(target_test);
-            assert!(
-                ds_test.data.len() == target_test,
-                "Not enough test data generated! Got {}, need {}. Increase SAFETY_FACTOR.",
-                ds_test.data.len(),
-                target_test
-            );
+            println!("\n=== Generate test data (target: {}) ===", target_test);
+            let ds_test = Dataset::generate_loop(target_test, 8407, order)?;
             println!("Test data: {} (exact)", ds_test.data.len());
             if !ds_test.data.is_empty() {
                 let (q_max, p_max) = ds_test.max();
@@ -221,75 +171,113 @@ impl Dataset {
         potential_generator.generate_data()
     }
 
-    /// Generate data in chunks and write directly to disk to avoid OOM
-    /// Returns the total number of generated samples
-    pub fn generate_chunked(
-        n: usize,
-        seed: u64,
+    /// Generate data in a loop until the target count is reached.
+    /// Automatically retries with new seeds if the energy/boundary filters
+    /// reject too many trajectories.
+    pub fn generate_loop(
+        target: usize,
+        initial_seed: u64,
+        order: Solver,
+    ) -> anyhow::Result<Self> {
+        let mut all_data: Vec<Data> = Vec::new();
+        let mut seed = initial_seed;
+        let mut attempt = 0;
+
+        while all_data.len() < target {
+            attempt += 1;
+            let remaining = target - all_data.len();
+            let n_cand = (remaining as f64 * SAFETY_FACTOR).ceil() as usize;
+
+            println!(
+                "\n[Attempt {}, seed: {}] Need {} more, generating {} candidates...",
+                attempt, seed, remaining, n_cand
+            );
+
+            let ds = Self::generate(n_cand, seed, order)?;
+            let generated = ds.data.len();
+            all_data.extend(ds.data);
+
+            println!(
+                "[Attempt {}] Got {} → total {}/{}",
+                attempt, generated, all_data.len(), target
+            );
+
+            seed += 100_000;
+        }
+
+        all_data.truncate(target);
+        Ok(Dataset::new(all_data))
+    }
+
+    /// Generate data in chunks with automatic retry until target is reached.
+    /// Writes chunks to disk to avoid OOM for large datasets.
+    /// Returns the total number of generated samples.
+    pub fn generate_chunked_loop(
+        target: usize,
+        initial_seed: u64,
         order: Solver,
         output_path: &str,
-        target: usize,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let parent = Path::new(output_path).parent().unwrap();
         if !parent.exists() {
             std::fs::create_dir_all(parent)?;
         }
 
-        // Generate all potentials first (this is relatively memory-efficient)
-        println!("Generating potential functions...");
-        let potential_generator = BoundedPotential::generate_potential(n, seed, order);
-        let total_potentials = potential_generator.potential_pair.len();
-        println!("Generated {} potential functions", total_potentials);
-
-        // Process in chunks
-        let num_chunks = (total_potentials + CHUNK_SIZE - 1) / CHUNK_SIZE;
         let mut total_generated: usize = 0;
         let mut chunk_files: Vec<String> = Vec::new();
+        let mut seed = initial_seed;
+        let mut attempt = 0;
 
-        println!(
-            "Processing {} potentials in {} chunks of up to {} each...",
-            total_potentials, num_chunks, CHUNK_SIZE
-        );
-
-        for chunk_idx in 0..num_chunks {
-            let start = chunk_idx * CHUNK_SIZE;
-            let end = std::cmp::min(start + CHUNK_SIZE, total_potentials);
-            let chunk_potentials: Vec<_> = potential_generator.potential_pair[start..end].to_vec();
+        while total_generated < target {
+            attempt += 1;
+            let remaining = target - total_generated;
+            let n_cand = (remaining as f64 * SAFETY_FACTOR).ceil() as usize;
 
             println!(
-                "\nChunk {}/{}: Processing potentials {} to {}",
-                chunk_idx + 1,
-                num_chunks,
-                start,
-                end
+                "\n[Attempt {}, seed: {}] Need {} more, generating {} candidates...",
+                attempt, seed, remaining, n_cand
             );
 
-            // Process this chunk
-            let chunk_data = BoundedPotential::generate_data_from_potentials(&chunk_potentials)
-                .map_err(|e| -> Box<dyn std::error::Error> { Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) })?;
-            let chunk_count = chunk_data.data.len();
-            total_generated += chunk_count;
+            let potential_generator = BoundedPotential::generate_potential(n_cand, seed, order);
+            let total_potentials = potential_generator.potential_pair.len();
+            let num_chunks = (total_potentials + CHUNK_SIZE - 1) / CHUNK_SIZE;
 
-            println!(
-                "Chunk {}: Generated {} samples (total so far: {})",
-                chunk_idx + 1,
-                chunk_count,
-                total_generated
-            );
+            for chunk_idx in 0..num_chunks {
+                let start = chunk_idx * CHUNK_SIZE;
+                let end = std::cmp::min(start + CHUNK_SIZE, total_potentials);
+                let chunk_potentials: Vec<_> =
+                    potential_generator.potential_pair[start..end].to_vec();
 
-            // Write chunk to temporary file
-            let chunk_path = format!("{}.chunk_{:04}.parquet", output_path, chunk_idx);
-            chunk_data.write_parquet(&chunk_path)?;
-            chunk_files.push(chunk_path);
+                let chunk_data =
+                    BoundedPotential::generate_data_from_potentials(&chunk_potentials)
+                        .map_err(|e| -> Box<dyn std::error::Error> {
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                e.to_string(),
+                            ))
+                        })?;
+                let chunk_count = chunk_data.data.len();
+                total_generated += chunk_count;
 
-            // Check if we have enough data
-            if total_generated >= target {
+                // Skip writing empty chunks (can happen with strict filters)
+                if chunk_count > 0 {
+                    let chunk_path =
+                        format!("{}.chunk_{:04}.parquet", output_path, chunk_files.len());
+                    chunk_data.write_parquet(&chunk_path)?;
+                    chunk_files.push(chunk_path);
+                }
+
                 println!(
-                    "Reached target {} (generated {}), stopping early",
-                    target, total_generated
+                    "Chunk: {} samples (total: {}/{})",
+                    chunk_count, total_generated, target
                 );
-                break;
+
+                if total_generated >= target {
+                    break;
+                }
             }
+
+            seed += 100_000;
         }
 
         // Concatenate all chunk files into final output
