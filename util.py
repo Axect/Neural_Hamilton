@@ -420,11 +420,15 @@ def run(
                     ckpt_manager.best_value = resumed_ckpt["best_value"]
                 callbacks_list.append(CheckpointCallback(ckpt_manager, config_hash))
 
-            callbacks_list.append(LatestModelCallback(
-                f"{run_path}/latest_model.pt",
-                config_hash=config_hash,
-                checkpoint_manager=ckpt_manager,
-            ))
+            # Full-state resume checkpoints are only useful for long final runs;
+            # during HPO they are dead weight (34 MB per seed-run with SPlus
+            # state, ~15 GB per 100-trial study) and can fill the disk.
+            if trial is None:
+                callbacks_list.append(LatestModelCallback(
+                    f"{run_path}/latest_model.pt",
+                    config_hash=config_hash,
+                    checkpoint_manager=ckpt_manager,
+                ))
 
             callback_runner = CallbackRunner(callbacks_list)
 
