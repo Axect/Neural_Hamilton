@@ -1,26 +1,38 @@
 import torch
+import torch.nn as nn
 from torch.utils.data import TensorDataset
-import torch.nn.functional as F
-import polars as pl
 import numpy as np
+import polars as pl
 import beaupy
-from rich.console import Console
 import wandb
 import optuna
-#from scipy.optimize import curve_fit, least_squares
-#from scipy.stats import linregress
-#import warnings
+from tqdm import tqdm
 
 from config import RunConfig
+from callbacks import (
+    CallbackRunner, OptimizerModeCallback, EarlyStoppingCallback,
+    WandbLoggingCallback, PrunerCallback, LossPredictionCallback,
+    NaNDetectionCallback, CheckpointCallback,
+    GradientMonitorCallback, OverfitDetectionCallback,
+    CSVLoggingCallback, TUILoggingCallback, LatestModelCallback,
+)
+from checkpoint import (
+    CheckpointManager, SeedManifest, find_resume_checkpoint, load_checkpoint,
+)
+from provenance import save_provenance, compute_config_hash
 
 import random
 import os
 import math
+import time
 
 
 def load_data(file_path: str):
     """
-    Load data from parquet file.
+    Load data from parquet file (flat format, 100 rows per sample).
+
+    Extra metadata columns (pid, b, l, depth, E0, u) are ignored here;
+    they are consumed by analysis scripts, not by training.
 
     Returns:
         TensorDataset with (V, t, q, p, ic) where ic = (q0, p0)
@@ -37,6 +49,29 @@ def load_data(file_path: str):
     return TensorDataset(V, t, q, p, ic)
 
 
+def load_normal():
+    """Data loader for RunConfig.data: 16k/4k samples (4k/1k potentials)."""
+    return (
+        load_data("data_normal/train.parquet"),
+        load_data("data_normal/val.parquet"),
+    )
+
+
+def load_more():
+    """Data loader for RunConfig.data: 160k/40k samples (40k/10k potentials)."""
+    return (
+        load_data("data_more/train.parquet"),
+        load_data("data_more/val.parquet"),
+    )
+
+
+def load_smoke():
+    """Tiny dataset for pipeline smoke tests (generated via `neural_hamilton 3`)."""
+    ds = load_data("data_smoke/smoke.parquet")
+    n_val = max(len(ds) // 5, 1)
+    return TensorDataset(*ds[: len(ds) - n_val]), TensorDataset(*ds[len(ds) - n_val :])
+
+
 def set_seed(seed: int):
     # random
     random.seed(seed)
@@ -49,245 +84,69 @@ def set_seed(seed: int):
     torch.backends.cudnn.benchmark = False
 
 
-class EarlyStopping:
-    def __init__(self, patience=10, mode="min", min_delta=0):
-        self.patience = patience
-        self.mode = mode
-        self.min_delta = min_delta
-        self.counter = 0
-        self.best_loss = None
-        self.early_stop = False
-
-    def __call__(self, val_loss):
-        if self.best_loss is None:
-            self.best_loss = val_loss
-            return False
-
-        if self.mode == "min":
-            if val_loss <= self.best_loss * (1 - self.min_delta):
-                self.best_loss = val_loss
-                self.counter = 0
-            else:
-                self.counter += 1
-        else:  # mode == "max"
-            if val_loss >= self.best_loss * (1 + self.min_delta):
-                self.best_loss = val_loss
-                self.counter = 0
-            else:
-                self.counter += 1
-
-        if self.counter >= self.patience:
-            self.early_stop = True
-            return True
-        return False
-
 
 def predict_final_loss(losses, max_epochs):
-    if len(losses) < 10:
-        return -np.log10(losses[-1])
-    try:
-        # Convert to numpy array
-        y = np.array(losses)
-        t = np.arange(len(y))
+    """Predict the final validation loss using shifted exponential decay.
 
-        # Decay fitting
-        y_transformed = np.log(y)
-        K, log_A = np.polyfit(t, y_transformed, 1)
-        A = np.exp(log_A)
+    Fits L(t) = a * exp(-b * t) + c to EMA-smoothed losses.
+    Returns the predicted raw loss value at max_epochs.
+    Works with positive and negative losses.
+    """
+    n = len(losses)
+    if n < 10:
+        return float(losses[-1])
 
-        # Predict final loss
-        predicted_loss = -np.log10(A * np.exp(K * max_epochs))
+    y = np.array(losses, dtype=np.float64)
 
-        if np.isfinite(predicted_loss):
-            return predicted_loss
+    # EMA smoothing — adaptive span
+    span = min(n // 3, 20)
+    alpha = 2.0 / (span + 1)
+    ema = np.empty(n)
+    ema[0] = y[0]
+    for i in range(1, n):
+        ema[i] = alpha * y[i] + (1 - alpha) * ema[i - 1]
 
-    except Exception as e:
-        print(f"Error in loss prediction: {e}")
+    # Three equally-spaced anchor points from smoothed curve
+    i1, i2, i3 = n // 3, 2 * n // 3, n - 1
+    y1, y2, y3 = ema[i1], ema[i2], ema[i3]
 
-    return -np.log10(losses[-1])
+    d12 = y1 - y2
+    d23 = y2 - y3
 
-#def predict_final_loss(losses, max_epochs):
-#    """
-#    Predict final loss using multiple curve fitting models.
-#    
-#    Args:
-#        losses: List of validation losses
-#        max_epochs: Target epoch to predict
-#        
-#    Returns:
-#        Predicted final loss (negative log scale)
-#    """
-#    if len(losses) < 5:
-#        return -np.log10(losses[-1])
-#    
-#    # Convert to numpy arrays
-#    y = np.array(losses)
-#    t = np.arange(len(y))
-#    
-#    # Handle edge cases
-#    if np.any(~np.isfinite(y)) or np.any(y <= 0):
-#        return -np.log10(losses[-1])
-#    
-#    # Check for plateau - if recent losses are not changing much
-#    if len(losses) >= 20:
-#        recent_std = np.std(losses[-10:])
-#        recent_mean = np.mean(losses[-10:])
-#        if recent_std / recent_mean < 0.001:  # Very small relative change
-#            return -np.log10(recent_mean)
-#    
-#    predictions = []
-#    
-#    # Model 1: Exponential decay - y = a * exp(b * t) + c
-#    try:
-#        def exp_decay(t, a, b, c):
-#            return a * np.exp(b * t) + c
-#        
-#        # Initial guess based on data
-#        a0 = y[0] - y[-1]
-#        b0 = np.log(y[-1] / y[0]) / len(y) if y[0] > 0 and y[-1] > 0 else -0.1
-#        c0 = min(y) * 0.9
-#        
-#        popt, _ = curve_fit(exp_decay, t, y, 
-#                           p0=[a0, b0, c0],
-#                           bounds=([0, -np.inf, 0], [np.inf, 0, min(y)]),
-#                           maxfev=5000)
-#        
-#        pred = exp_decay(max_epochs, *popt)
-#        if pred > 0 and pred < y[0]:  # Sanity check
-#            predictions.append(pred)
-#    except:
-#        pass
-#    
-#    # Model 2: Power law - y = a * t^b + c
-#    try:
-#        def power_law(t, a, b, c):
-#            return a * (t + 1) ** b + c
-#        
-#        # Transform to avoid t=0 issues
-#        popt, _ = curve_fit(power_law, t, y,
-#                           bounds=([0, -5, 0], [np.inf, 0, min(y)]),
-#                           maxfev=5000)
-#        
-#        pred = power_law(max_epochs, *popt)
-#        if pred > 0 and pred < y[0]:
-#            predictions.append(pred)
-#    except:
-#        pass
-#    
-#    # Model 3: Logarithmic - y = a * log(t + 1) + b
-#    try:
-#        def log_model(t, a, b):
-#            return a * np.log(t + 1) + b
-#        
-#        popt, _ = curve_fit(log_model, t, y, maxfev=5000)
-#        pred = log_model(max_epochs, *popt)
-#        
-#        if pred > 0 and pred < y[0]:
-#            predictions.append(pred)
-#    except:
-#        pass
-#    
-#    # Model 4: Inverse - y = a / (t + 1) + b
-#    try:
-#        def inverse_model(t, a, b):
-#            return a / (t + 1) + b
-#        
-#        popt, _ = curve_fit(inverse_model, t, y,
-#                           bounds=([0, 0], [np.inf, min(y)]),
-#                           maxfev=5000)
-#        
-#        pred = inverse_model(max_epochs, *popt)
-#        if pred > 0 and pred < y[0]:
-#            predictions.append(pred)
-#    except:
-#        pass
-#    
-#    # Model 5: Double exponential for more complex curves
-#    if len(losses) >= 10:
-#        try:
-#            def double_exp(t, a1, b1, a2, b2, c):
-#                return a1 * np.exp(b1 * t) + a2 * np.exp(b2 * t) + c
-#            
-#            # Initial guesses
-#            mid = len(y) // 2
-#            a1_0 = (y[0] - y[mid]) * 0.7
-#            a2_0 = (y[0] - y[mid]) * 0.3
-#            b1_0 = np.log(0.5) / mid
-#            b2_0 = np.log(0.1) / mid
-#            c_0 = min(y) * 0.9
-#            
-#            popt, _ = curve_fit(double_exp, t, y,
-#                               p0=[a1_0, b1_0, a2_0, b2_0, c_0],
-#                               bounds=([0, -np.inf, 0, -np.inf, 0], 
-#                                      [np.inf, 0, np.inf, 0, min(y)]),
-#                               maxfev=5000)
-#            
-#            pred = double_exp(max_epochs, *popt)
-#            if pred > 0 and pred < y[0]:
-#                predictions.append(pred)
-#        except:
-#            pass
-#    
-#    # Model 6: Polynomial with constraints (for smooth extrapolation)
-#    if len(losses) >= 10:
-#        try:
-#            # Use lower degree polynomial to avoid overfitting
-#            degree = min(3, len(losses) // 5)
-#            
-#            # Fit polynomial to recent data for better local behavior
-#            recent_points = min(20, len(losses))
-#            t_recent = t[-recent_points:]
-#            y_recent = y[-recent_points:]
-#            
-#            # Normalize for numerical stability
-#            t_norm = (t_recent - t_recent[0]) / (t_recent[-1] - t_recent[0])
-#            coeffs = np.polyfit(t_norm, y_recent, degree)
-#            
-#            # Extrapolate
-#            t_pred_norm = (max_epochs - t_recent[0]) / (t_recent[-1] - t_recent[0])
-#            pred = np.polyval(coeffs, t_pred_norm)
-#            
-#            # Only accept if decreasing and reasonable
-#            if pred > 0 and pred < y_recent[0]:
-#                predictions.append(pred)
-#        except:
-#            pass
-#    
-#    # If we have predictions, use robust averaging
-#    if predictions:
-#        # Remove outliers using IQR
-#        predictions = np.array(predictions)
-#        q1, q3 = np.percentile(predictions, [25, 75])
-#        iqr = q3 - q1
-#        lower_bound = q1 - 1.5 * iqr
-#        upper_bound = q3 + 1.5 * iqr
-#        
-#        # Filter predictions
-#        filtered = predictions[(predictions >= lower_bound) & 
-#                             (predictions <= upper_bound)]
-#        
-#        if len(filtered) > 0:
-#            # Weighted average favoring lower predictions (more conservative)
-#            weights = 1.0 / (filtered + 1e-10)
-#            final_pred = np.average(filtered, weights=weights)
-#        else:
-#            final_pred = np.median(predictions)
-#        
-#        return -np.log10(final_pred)
-#    
-#    # Fallback: linear extrapolation of recent trend
-#    if len(losses) >= 10:
-#        recent = losses[-10:]
-#        t_recent = np.arange(len(recent))
-#        slope, intercept, _, _, _ = linregress(t_recent, recent)
-#        
-#        if slope < 0:  # Only if decreasing
-#            pred = intercept + slope * (max_epochs - len(losses) + 10)
-#            if pred > 0:
-#                return -np.log10(pred)
-#    
-#    # Final fallback
-#    return -np.log10(losses[-1])
+    # Need both differences nonzero and same sign (monotonic decay or increase)
+    if abs(d12) < 1e-15 or abs(d23) < 1e-15:
+        return float(ema[-1])
+
+    r = d23 / d12
+
+    if r <= 0 or r >= 1:
+        # Non-convergent: loss increasing, oscillating, or accelerating
+        # Use damped linear extrapolation from recent trend
+        window = min(10, n - 1)
+        recent_rate = (ema[-1] - ema[-1 - window]) / window
+        remaining = max(max_epochs - n, 0)
+        predicted = ema[-1] + recent_rate * remaining * 0.5
+        return float(predicted) if np.isfinite(predicted) else float(ema[-1])
+
+    # Convergent decay: fit L(t) = a * exp(-b * t) + c
+    d = float(i2 - i1)
+    b = -np.log(r) / d
+    t1 = float(i1)
+    t2 = float(i2)
+
+    denom = np.exp(-b * t1) - np.exp(-b * t2)
+    if abs(denom) < 1e-30:
+        return float(ema[-1])
+
+    a = d12 / denom
+    c = y1 - a * np.exp(-b * t1)
+
+    predicted = a * np.exp(-b * max_epochs) + c
+
+    if np.isfinite(predicted):
+        return float(predicted)
+
+    return float(ema[-1])
 
 
 class Trainer:
@@ -297,31 +156,19 @@ class Trainer:
         optimizer,
         scheduler,
         criterion,
-        early_stopping_config=None,
+        callbacks=None,
         device="cpu",
-        variational=False,
-        trial=None,
-        seed=None,
-        pruner=None,
     ):
         self.model = model
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.criterion = criterion
         self.device = device
-        self.variational = variational
-        self.trial = trial
-        self.seed = seed
-        self.pruner = pruner
-
-        if early_stopping_config and early_stopping_config.enabled:
-            self.early_stopping = EarlyStopping(
-                patience=early_stopping_config.patience,
-                mode=early_stopping_config.mode,
-                min_delta=early_stopping_config.min_delta,
-            )
-        else:
-            self.early_stopping = None
+        self.callbacks = callbacks if callbacks is not None else CallbackRunner()
+        self._total_epochs = 0
+        self._loss_prediction = None
+        self._max_grad_norm: float | None = None
+        self._overfit_gap_ratio: float | None = None
 
     def step(self, V, t, ic):
         return self.model(V, t, ic)
@@ -330,131 +177,92 @@ class Trainer:
         q_pred, p_pred = self.step(V, t, ic)
         loss_q = self.criterion(q_pred, q)
         loss_p = self.criterion(p_pred, p)
-        loss = 0.5 * (loss_q + loss_p)
-        return loss
+        return 0.5 * (loss_q + loss_p)
 
-    def _obtain_vae_loss(self, V, t, q, p, ic):
-        q_pred, p_pred, mu, logvar = self.step(V, t, ic)
-
-        # Flatten
-        mu_vec = mu.view((mu.shape[0], -1))
-        logvar_vec = logvar.view((logvar.shape[0], -1))
-
-        # KL Divergence (mean over latent dimensions)
-        kl_loss = -0.5 * torch.mean(
-            1 + logvar_vec - mu_vec.pow(2) - logvar_vec.exp(), dim=1
-        )
-        beta = self.model.kl_weight
-        kl_loss = beta * torch.mean(kl_loss)
-
-        # Total loss
-        loss_q = self.criterion(q_pred, q)
-        loss_p = self.criterion(p_pred, p)
-        loss = 0.5 * (loss_q + loss_p) + kl_loss
-        return loss
-
-    def train_epoch(self, dl_train):
+    def train_epoch(self, dl_train, epoch=None, total_epochs=None):
         self.model.train()
-        # ScheduleFree Optimizer or SPlus
-        if any(keyword in self.optimizer.__class__.__name__ for keyword in ["ScheduleFree", "SPlus"]):
-            self.optimizer.train()
+        self.callbacks.fire("on_train_epoch_begin", trainer=self, epoch=epoch)
         train_loss = 0
-        for V, t, q, p, ic in dl_train:
+        total_size = 0
+
+        # Create progress bar description
+        desc = f"Epoch {epoch+1}/{total_epochs}" if epoch is not None and total_epochs is not None else "Training"
+
+        for batch_idx, (V, t, q, p, ic) in enumerate(tqdm(dl_train, desc=desc, leave=False)):
             V = V.to(self.device)
             t = t.to(self.device)
             q = q.to(self.device)
             p = p.to(self.device)
             ic = ic.to(self.device)
-            if not self.variational:
-                loss = self._obtain_loss(V, t, q, p, ic)
-            else:
-                loss = self._obtain_vae_loss(V, t, q, p, ic)
-            train_loss += loss.item()
+            loss = self._obtain_loss(V, t, q, p, ic)
+            train_loss += loss.item() * V.shape[0]
+            total_size += V.shape[0]
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             self.optimizer.step()
-        train_loss /= len(dl_train)
+            self.callbacks.fire("on_train_step_end", trainer=self, batch_idx=batch_idx, loss=loss.item())
+        train_loss /= total_size
         return train_loss
 
-    def val_epoch(self, dl_val):
+    def val_epoch(self, dl_val, epoch=None):
         self.model.eval()
-        # ScheduleFree Optimizer or SPlus
-        if any(keyword in self.optimizer.__class__.__name__ for keyword in ["ScheduleFree", "SPlus"]):
-            self.optimizer.eval()
+        self.callbacks.fire("on_val_begin", trainer=self, epoch=epoch)
         val_loss = 0
-        with torch.no_grad():
-            for V, t, q, p, ic in dl_val:
+        total_size = 0
+        with torch.inference_mode():
+            for V, t, q, p, ic in tqdm(dl_val, desc="Validation", leave=False):
                 V = V.to(self.device)
                 t = t.to(self.device)
                 q = q.to(self.device)
                 p = p.to(self.device)
                 ic = ic.to(self.device)
-                if not self.variational:
-                    loss = self._obtain_loss(V, t, q, p, ic)
-                else:
-                    loss = self._obtain_vae_loss(V, t, q, p, ic)
-                val_loss += loss.item()
-        val_loss /= len(dl_val)
+                loss = self._obtain_loss(V, t, q, p, ic)
+                val_loss += loss.item() * V.shape[0]
+                total_size += V.shape[0]
+        val_loss /= total_size
+        self.callbacks.fire("on_val_end", trainer=self, epoch=epoch, val_loss=val_loss, metrics={})
         return val_loss
 
-    def train(self, dl_train, dl_val, epochs):
+    def train(self, dl_train, dl_val, epochs, start_epoch: int = 0):
+        self._total_epochs = epochs
+        self.callbacks.fire(
+            "on_train_begin", trainer=self, epochs=epochs, start_epoch=start_epoch,
+        )
         val_loss = 0
-        train_losses = []
-        val_losses = []
 
-        for epoch in range(epochs):
-            train_loss = self.train_epoch(dl_train)
-            val_loss = self.val_epoch(dl_val)
-            train_losses.append(train_loss)
-            val_losses.append(val_loss)
+        if start_epoch >= epochs:
+            tqdm.write(
+                f"start_epoch={start_epoch} >= epochs={epochs}; nothing to do."
+            )
+            self.callbacks.fire("on_train_end", trainer=self)
+            return val_loss
 
-            # Early stopping if loss becomes NaN
-            if math.isnan(train_loss) or math.isnan(val_loss):
-                print("Early stopping due to NaN loss")
-                train_loss = math.inf
-                val_loss = math.inf
+        for epoch in tqdm(range(start_epoch, epochs), desc="Overall Progress"):
+            train_loss = self.train_epoch(dl_train, epoch=epoch, total_epochs=epochs)
+            val_loss = self.val_epoch(dl_val, epoch=epoch)
+
+            self.callbacks.fire(
+                "on_epoch_end", trainer=self, epoch=epoch,
+                train_loss=train_loss, val_loss=val_loss, metrics={},
+            )
+
+            # Check callback signals
+            break_flag = False
+            for cb in self.callbacks.callbacks:
+                if isinstance(cb, NaNDetectionCallback) and cb.nan_detected:
+                    val_loss = math.inf
+                    break_flag = True
+                    break
+                if isinstance(cb, EarlyStoppingCallback) and cb.should_stop:
+                    tqdm.write(f"Early stopping triggered at epoch {epoch}")
+                    break_flag = True
+                    break
+            if break_flag:
                 break
 
-            # Early stopping check
-            if self.early_stopping is not None:
-                if self.early_stopping(val_loss):
-                    print(f"Early stopping triggered at epoch {epoch}")
-                    break
-
-            log_dict = {
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-                "lr": self.optimizer.param_groups[0]["lr"],
-            }
-
-            if epoch >= 10:
-                log_dict["predicted_final_loss"] = predict_final_loss(
-                    train_losses, epochs
-                )
-
-            # Pruning check
-            if (
-                self.pruner is not None
-                and self.trial is not None
-                and self.seed is not None
-            ):
-                self.pruner.report(
-                    trial_id=self.trial.number,
-                    seed=self.seed,
-                    epoch=epoch,
-                    value=val_loss,
-                )
-                if self.pruner.should_prune():
-                    raise optuna.TrialPruned()
-
             self.scheduler.step()
-            wandb.log(log_dict)
-            if epoch % 10 == 0 or epoch == epochs - 1:
-                print_str = f"epoch: {epoch}"
-                for key, value in log_dict.items():
-                    print_str += f", {key}: {value:.4e}"
-                print(print_str)
 
+        self.callbacks.fire("on_train_end", trainer=self)
         return val_loss
 
 
@@ -466,7 +274,7 @@ def log_cosh_loss(y_pred, y_true, reduction="mean"):
     elif reduction == "sum":
         return loss.sum()
     else:
-        return loss # No reduction
+        return loss  # No reduction
 
 
 def np_log_cosh_loss(y_pred, y_true, reduction="mean"):
@@ -480,20 +288,26 @@ def np_log_cosh_loss(y_pred, y_true, reduction="mean"):
         return loss  # No reduction
 
 
+class LogCoshLoss(nn.Module):
+    """Criterion class for RunConfig (criterion: util.LogCoshLoss)."""
+
+    def __init__(self, reduction="mean"):
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, y_pred, y_true):
+        return log_cosh_loss(y_pred, y_true, reduction=self.reduction)
+
+
 def run(
-    run_config: RunConfig,
-    dl_train,
-    dl_val,
-    group_name=None,
-    data=None,
-    trial=None,
-    pruner=None,
+    run_config: RunConfig, dl_train, dl_val, group_name=None, trial=None, pruner=None,
+    resume: bool = False,
 ):
     project = run_config.project
     device = run_config.device
     seeds = run_config.seeds
     if not group_name:
-        group_name = run_config.gen_group_name(data)
+        group_name = run_config.gen_group_name()
     tags = run_config.gen_tags()
 
     group_path = f"runs/{run_config.project}/{group_name}"
@@ -505,10 +319,20 @@ def run(
     if pruner is not None and trial is not None and hasattr(pruner, "register_trial"):
         pruner.register_trial(trial.number)
 
-    total_loss = 0
-    complete_seeds = 0
+    # Create seed manifest for multi-seed resume support
+    manifest = SeedManifest(group_path)
+
+    # Create criterion from config
+    criterion = run_config.create_criterion()
+    use_wandb = run_config.wandb
+
     try:
         for seed in seeds:
+            # Skip already-completed seeds
+            if manifest.is_complete(seed):
+                tqdm.write(f"Seed {seed} already complete, skipping")
+                continue
+
             set_seed(seed)
 
             model = run_config.create_model().to(device)
@@ -516,53 +340,144 @@ def run(
             scheduler = run_config.create_scheduler(optimizer)
 
             run_name = f"{seed}"
-            wandb.init(
-                project=project,
-                name=run_name,
-                group=group_name,
-                tags=tags,
-                config=run_config.gen_config(),
-            )
+            run_path = f"{group_path}/{run_name}"
+            if not os.path.exists(run_path):
+                os.makedirs(run_path)
 
-            # Check if using VaRONet
-            variational = "VaRONet" in run_config.net
+            config_hash = compute_config_hash(run_config)
+
+            # Resume from latest_model.pt if requested and present
+            start_epoch = 0
+            resumed_ckpt = None
+            if resume:
+                ckpt_path = find_resume_checkpoint(run_path)
+                if ckpt_path is not None:
+                    resumed_ckpt = load_checkpoint(
+                        ckpt_path, model, optimizer, scheduler,
+                        device=device, config_hash=config_hash,
+                    )
+                    start_epoch = int(resumed_ckpt["epoch"]) + 1
+                    tqdm.write(
+                        f"Resuming seed {seed} from epoch {start_epoch} "
+                        f"(checkpoint val_loss={resumed_ckpt.get('val_loss', 'n/a')})"
+                    )
+                else:
+                    tqdm.write(
+                        f"--resume requested but no latest_model.pt at {run_path}; "
+                        f"starting from scratch."
+                    )
+
+            if use_wandb:
+                wandb.init(
+                    project=project,
+                    name=run_name,
+                    group=group_name,
+                    tags=tags,
+                    config=run_config.gen_config(),
+                )
+
+            # Build callbacks list
+            callbacks_list = [
+                OptimizerModeCallback(),
+                NaNDetectionCallback(),
+                GradientMonitorCallback(),
+                LossPredictionCallback(run_config.epochs),
+                OverfitDetectionCallback(),
+            ]
+            callbacks_list.append(TUILoggingCallback())
+            if use_wandb:
+                callbacks_list.append(WandbLoggingCallback())
+            # Always-on callbacks: CSV logging + latest full-state checkpoint
+            callbacks_list.append(CSVLoggingCallback(f"{run_path}/metrics.csv"))
+
+            early_stopping_cb = None
+            if run_config.early_stopping_config and run_config.early_stopping_config.enabled:
+                early_stopping_cb = EarlyStoppingCallback(
+                    patience=run_config.early_stopping_config.patience,
+                    mode=run_config.early_stopping_config.mode,
+                    min_delta=run_config.early_stopping_config.min_delta,
+                )
+                if resumed_ckpt is not None and "early_stopping_state" in resumed_ckpt:
+                    early_stopping_cb.load_state_dict(
+                        resumed_ckpt["early_stopping_state"]
+                    )
+                callbacks_list.append(early_stopping_cb)
+            if pruner is not None and trial is not None:
+                callbacks_list.append(PrunerCallback(pruner, trial, seed))
+
+            # CheckpointManager controls best.pt + periodic snapshots (opt-in).
+            ckpt_manager = None
+            if run_config.checkpoint_config.enabled:
+                ckpt_manager = CheckpointManager(
+                    run_dir=run_path,
+                    save_every_n=run_config.checkpoint_config.save_every_n_epochs,
+                    keep_last_k=run_config.checkpoint_config.keep_last_k,
+                    save_best=run_config.checkpoint_config.save_best,
+                    monitor=run_config.checkpoint_config.monitor,
+                    mode=run_config.checkpoint_config.mode,
+                )
+                if resumed_ckpt is not None and "best_value" in resumed_ckpt:
+                    ckpt_manager.best_value = resumed_ckpt["best_value"]
+                callbacks_list.append(CheckpointCallback(ckpt_manager, config_hash))
+
+            callbacks_list.append(LatestModelCallback(
+                f"{run_path}/latest_model.pt",
+                config_hash=config_hash,
+                checkpoint_manager=ckpt_manager,
+            ))
+
+            callback_runner = CallbackRunner(callbacks_list)
 
             trainer = Trainer(
                 model,
                 optimizer,
                 scheduler,
-                criterion=log_cosh_loss,    # v0.21, v0.24
-                #criterion=F.mse_loss,      # ~v0.20, v0.22, v0.23
-                early_stopping_config=run_config.early_stopping_config,
+                criterion=criterion,
+                callbacks=callback_runner,
                 device=device,
-                variational=variational,
-                trial=trial,
-                seed=seed,
-                pruner=pruner,
             )
 
-            val_loss = trainer.train(dl_train, dl_val, epochs=run_config.epochs)
-            total_loss += val_loss
-            complete_seeds += 1
+            start_time = time.time()
+            val_loss = trainer.train(
+                dl_train, dl_val,
+                epochs=run_config.epochs,
+                start_epoch=start_epoch,
+            )
+            end_time = time.time()
+
+            # No-op resume (start_epoch >= epochs): take val_loss from the
+            # restored checkpoint so the manifest entry is meaningful.
+            if (
+                start_epoch >= run_config.epochs
+                and resumed_ckpt is not None
+                and "val_loss" in resumed_ckpt
+            ):
+                val_loss = float(resumed_ckpt["val_loss"])
 
             # Save model & configs
-            run_path = f"{group_path}/{run_name}"
-            if not os.path.exists(run_path):
-                os.makedirs(run_path)
             torch.save(model.state_dict(), f"{run_path}/model.pt")
 
-            wandb.finish()
+            # Save provenance
+            save_provenance(run_path, run_config, model, device, start_time, end_time)
+
+            # Mark seed as complete
+            manifest.mark_complete(seed, val_loss)
+
+            if use_wandb:
+                wandb.finish()
 
             # Early stopping if loss becomes inf
             if math.isinf(val_loss):
                 break
 
     except optuna.TrialPruned:
-        wandb.finish()
+        if use_wandb:
+            wandb.finish()
         raise
     except Exception as e:
-        print(f"Runtime error during training: {e}")
-        wandb.finish()
+        tqdm.write(f"Runtime error during training: {e}")
+        if use_wandb:
+            wandb.finish()
         raise optuna.TrialPruned()
     finally:
         # Call trial_finished only once after all seeds are done
@@ -573,7 +488,8 @@ def run(
         ):
             pruner.complete_trial(trial.number)
 
-    return total_loss / (complete_seeds if complete_seeds > 0 else 1)
+    complete_count = manifest.get_complete_count()
+    return manifest.get_total_loss() / (complete_count if complete_count > 0 else 1)
 
 
 # ┌──────────────────────────────────────────────────────────┐
@@ -584,7 +500,6 @@ def select_project():
     projects = [
         d for d in os.listdir(runs_path) if os.path.isdir(os.path.join(runs_path, d))
     ]
-    # Sort the project names
     projects.sort()
     if not projects:
         raise ValueError(f"No projects found in {runs_path}")
@@ -603,7 +518,7 @@ def select_group(project):
         raise ValueError(f"No run groups found in {runs_path}")
 
     selected_group = beaupy.select(groups)
-    return selected_group  # pyright: ignore
+    return selected_group
 
 
 def select_seed(project, group_name):
@@ -697,7 +612,7 @@ def load_best_model(project, study_name, weights_only=True):
     """
     study = load_study(project, study_name)
     best_trial = study.best_trial
-    project_name = f"{project}_Opt"
+    project_name = project
     group_name = best_trial.user_attrs["group_name"]
 
     # Select Seed

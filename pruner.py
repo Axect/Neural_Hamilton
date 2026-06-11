@@ -101,7 +101,7 @@ class PFLPruner(BasePruner):
         self.top_k = top_k
         self.target_epoch = target_epoch
 
-        self.top_pairs: List[Tuple[float, float]] = []  # List of (val_loss, pfl) pairs
+        self.top_pairs: List[Tuple[float, float]] = []  # List of (loss, pfl) pairs
         self.completed_trials = 0
 
     def complete_trial(self, trial_id: int) -> None:
@@ -113,52 +113,51 @@ class PFLPruner(BasePruner):
 
     def _check_and_insert(self, trial: Trial) -> None:
         """Check if a trial should be inserted into top k and insert if needed."""
-        val_loss, pfl = self._compute_trial_metrics(trial)
-        if self._should_insert_pair(val_loss):
-            self._insert_pair(val_loss, pfl)
+        train_loss, pfl = self._compute_trial_metrics(trial)
+        if self._should_insert_pair(train_loss):
+            self._insert_pair(train_loss, pfl)
 
     def _compute_trial_metrics(self, trial: Trial) -> Tuple[float, float]:
-        """Compute average val_loss and PFL for a trial across all seeds."""
+        """Compute average train_loss and PFL for a trial across all seeds."""
         if not trial.seed_values:
             return float("inf"), -float("inf")
 
-        # Average the last val_loss and PFL across seeds
-        avg_val_loss = 0.0
+        # Average the last train_loss and PFL across seeds
+        avg_train_loss = 0.0
         avg_pfl = 0.0
         n_seeds = len(trial.seed_values)
 
         for loss_vec in trial.seed_values.values():
             if loss_vec:  # Check if there are any losses for this seed
-                avg_val_loss += loss_vec[-1]  # Last validation loss
+                avg_train_loss += loss_vec[-1]  # Last validation loss
                 avg_pfl += self._predict_final_loss(loss_vec)
 
-        avg_val_loss /= n_seeds
+        avg_train_loss /= n_seeds
         avg_pfl /= n_seeds
-        return avg_val_loss, avg_pfl
+        return avg_train_loss, avg_pfl
 
     def _predict_final_loss(self, losses: List[float]) -> float:
-        """Predict final loss value using the loss history."""
+        """Predict final loss value using the loss history.
+
+        Returns raw predicted loss (lower is better for minimization).
+        """
         if len(losses) < 2:
-            return -float("inf")
+            return float("inf")
 
         try:
-            return (
-                -np.log10(losses[-1])
-                if len(losses) < 10
-                else predict_final_loss(losses, self.target_epoch)
-            )
-        except:
-            return -float("inf")
+            return predict_final_loss(losses, self.target_epoch)
+        except Exception:
+            return float("inf")
 
-    def _should_insert_pair(self, val_loss: float) -> bool:
+    def _should_insert_pair(self, train_loss: float) -> bool:
         """Check if a new pair should be inserted based on validation loss."""
         if len(self.top_pairs) < self.top_k:
             return True
-        return val_loss < self.top_pairs[-1][0]
+        return train_loss < self.top_pairs[-1][0]
 
-    def _insert_pair(self, val_loss: float, pfl: float) -> None:
-        """Insert a new (val_loss, pfl) pair maintaining sorted order."""
-        pair = (val_loss, pfl)
+    def _insert_pair(self, train_loss: float, pfl: float) -> None:
+        """Insert a new (train_loss, pfl) pair maintaining sorted order."""
+        pair = (train_loss, pfl)
 
         # Find insertion point using binary search
         idx = bisect.bisect_left(self.top_pairs, pair)
@@ -187,9 +186,9 @@ class PFLPruner(BasePruner):
         # Compute current metrics
         _, curr_pfl = self._compute_trial_metrics(trial)
 
-        # Prune if PFL is worse than all saved PFLs
+        # Prune if predicted loss is worse (higher) than worst saved prediction
         if self.top_pairs:  # Only if we have recorded pairs
-            worst_pfl = min(pair[1] for pair in self.top_pairs)
-            return curr_pfl < worst_pfl
+            worst_pred = max(pair[1] for pair in self.top_pairs)
+            return curr_pfl > worst_pred
 
         return False
