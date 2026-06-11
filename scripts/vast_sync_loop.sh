@@ -18,7 +18,7 @@ healthy=0
 while [ "$healthy" -lt 3 ]; do
   util=$(rssh "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits" 2>/dev/null | tr -d ' \r')
   alive=$(rssh "tmux has-session -t hpo 2>/dev/null && echo yes || echo no" 2>/dev/null | tr -d '\r')
-  bad=$(rssh "grep -cE 'Traceback|CUDA error|RuntimeError' /workspace/provision.log 2>/dev/null" 2>/dev/null | tr -d '\r')
+  bad=$(rssh "grep -cE 'Traceback|CUDA error|RuntimeError' ${VAST_LOG:-/workspace/provision.log} 2>/dev/null" 2>/dev/null | tr -d '\r')
   echo "[check $(date +%H:%M)] util=${util:-?}% tmux=${alive:-?} errors=${bad:-?}"
   if [ "${alive:-no}" = "yes" ] && [ "${util:-0}" -ge 30 ] 2>/dev/null && [ "${bad:-1}" -eq 0 ] 2>/dev/null; then
     healthy=$((healthy + 1))
@@ -35,7 +35,7 @@ while true; do
   # rsync -a for runs/ (model.pt written at seed end; latest_model.pt may be torn
   # in the snapshot but is only a resume convenience, never a result artifact).
   rssh "mkdir -p $SNAP && rsync -a --delete $REMOTE/runs/ $SNAP/runs/ 2>/dev/null;
-        cp /workspace/provision.log $SNAP/ 2>/dev/null;
+        cp ${VAST_LOG:-/workspace/provision.log} $SNAP/ 2>/dev/null;
         cd $REMOTE && python3 - <<'PY'
 import sqlite3, glob, os
 for f in glob.glob('*.db'):
@@ -53,7 +53,7 @@ PY" || { echo "[sync] remote snapshot failed, retrying next tick"; sleep 1800; c
     "root@$HOST:$SNAP/provision.log" ./vast_provision.log || true
   echo "[sync] done $(date +%H:%M)"
 
-  if rssh "grep -q 'ALL DONE' /workspace/provision.log" 2>/dev/null; then
+  if rssh "grep -q 'ALL DONE' ${VAST_LOG:-/workspace/provision.log}" 2>/dev/null; then
     echo "[sync] CAMPAIGN COMPLETE, final sync finished"
     break
   fi
