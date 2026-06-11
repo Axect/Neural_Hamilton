@@ -1,9 +1,12 @@
 from torch.utils.data import DataLoader
 
+import optuna
+
 from util import run
 from config import RunConfig, OptimizeConfig
 
 import argparse
+import math
 
 
 def main():
@@ -58,16 +61,27 @@ def main():
 
             trial.set_user_attr("group_name", group_name)
 
-            return run(
+            result = run(
                 run_config, dl_train, dl_val, group_name, trial=trial, pruner=pruner
             )
+            # A NaN/None objective kills study.optimize with optuna's internal
+            # "Should not reach" assertion; discard the trial instead.
+            if result is None or not math.isfinite(result):
+                raise optuna.TrialPruned(f"non-finite objective: {result}")
+            return result
 
         study = optimize_config.create_study(project=f"{base_config.project}_Opt")
+        # On resume (load_if_exists), only run the remaining budget so every
+        # study ends at exactly `trials` total trials.
+        n_done = len([t for t in study.trials if t.state.is_finished()])
+        n_remaining = max(optimize_config.trials - n_done, 0)
+        if n_done > 0:
+            print(f"Resuming study with {n_done} finished trials; running {n_remaining} more.")
         study.optimize(
             lambda trial: objective(
                 trial, base_config, optimize_config, dl_train, dl_val
             ),
-            n_trials=optimize_config.trials,
+            n_trials=n_remaining,
         )
 
         print("Best trial:")
