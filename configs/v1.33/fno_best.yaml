@@ -1,0 +1,31 @@
+project: NeuralHamilton_v1.33_FNO
+device: cuda:0
+net: model.FNO
+optimizer: splus.SPlus
+scheduler: hyperbolic_lr.ExpHyperbolicLR
+epochs: 250
+batch_size: 256
+seeds: [89, 231, 928, 1411, 2025]
+data: util.load_more
+criterion: util.LogCoshLoss
+wandb: false
+checkpoint_config:
+  enabled: true
+  save_every_n_epochs: 50
+  keep_last_k: 2
+  save_best: true
+net_config:
+  d_model: 128
+  num_layers1: 3
+  modes: 16
+  n_head: 16
+  num_layers2: 2
+  d_ff: 128
+  dropout: 0.0
+optimizer_config:
+  lr: 0.13311411979393056
+  eps: 1.e-10
+scheduler_config:
+  upper_bound: 300
+  max_iter: 250
+  infimum_lr: 3.0159150064241003e-06
