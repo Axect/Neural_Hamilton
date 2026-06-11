@@ -17,7 +17,7 @@ echo "[sync] phase 1: stability check every 5 min (need 3 consecutive healthy)"
 healthy=0
 while [ "$healthy" -lt 3 ]; do
   util=$(rssh "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits" 2>/dev/null | tr -d ' \r')
-  alive=$(rssh "tmux has-session -t hpo 2>/dev/null && echo yes || echo no" 2>/dev/null | tr -d '\r')
+  alive=$(rssh "tmux has-session -t ${VAST_TMUX:-hpo} 2>/dev/null && echo yes || echo no" 2>/dev/null | tr -d '\r')
   bad=$(rssh "grep -cE 'Traceback|CUDA error|RuntimeError' ${VAST_LOG:-/workspace/provision.log} 2>/dev/null" 2>/dev/null | tr -d '\r')
   echo "[check $(date +%H:%M)] util=${util:-?}% tmux=${alive:-?} errors=${bad:-?}"
   if [ "${alive:-no}" = "yes" ] && [ "${util:-0}" -ge 30 ] 2>/dev/null && [ "${bad:-1}" -eq 0 ] 2>/dev/null; then
