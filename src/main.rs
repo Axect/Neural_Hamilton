@@ -4,6 +4,7 @@ use rayon::prelude::*;
 use rugfield::{grf_with_rng, Kernel};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const V0: f64 = 2f64;
 const CHUNK_SIZE: usize = 10_000; // Process 10k potentials at a time to limit memory
@@ -11,67 +12,57 @@ const L: f64 = 1f64;
 const NSENSORS: usize = 100;
 const BOUNDARY: f64 = 0f64;
 const TSTEP: f64 = 1e-3;
-const NDIFFCONFIG: usize = 4; // Number of different configurations of time per potential
-const T_TOTAL: f64 = 4f64; // Total integration time for long trajectory
 const T_WINDOW: f64 = 2f64; // Time window size for each sample
 
-// Target data counts (exact output — diversity filter runs before trajectory simulation)
-// Normal: 8k train + 2k val = 10k total; More (×10): 80k + 20k = 100k total
+// --- Phase-space IC sampling (v1.33) ---
+// Each potential yields NDIFFCONFIG samples, one per energy stratum.
+// The stratum variable is u = (E - V(q0)) / (V0 - V(q0)) in (0, 1):
+// low-u orbits librate near the local minimum containing q0 (sub-well motion
+// for multi-well potentials), high-u orbits approach the full-traversal
+// regime of the legacy dataset (E ~= V0, turning points near the walls).
+const NDIFFCONFIG: usize = 4; // Number of energy strata (= samples) per potential
+const ENERGY_STRATA: [(f64, f64); NDIFFCONFIG] = [
+    (0.05, 0.35),
+    (0.35, 0.65),
+    (0.65, 0.95),
+    (0.95, 0.99),
+];
+
+// Per-sample depth scaling: interior control values are mapped to
+// [V0 - depth, V0 - HEADROOM] with depth ~ U(DEPTH_MIN, DEPTH_MAX).
+// HEADROOM keeps the walls strictly highest, so any orbit with E < V0 is
+// confined to [0, L] by construction (no boundary rejection bias).
+const DEPTH_MIN: f64 = 0.5;
+const DEPTH_MAX: f64 = 3.5;
+const HEADROOM: f64 = 0.1;
+
+// Energy drift tolerance, relative to the per-potential energy scale (~depth)
+const E_DRIFT_TOL: f64 = 1e-4;
+
+// Target data counts (samples = potentials x NDIFFCONFIG)
 const TARGET_TRAIN: usize = 16_000;
 const TARGET_VAL: usize = 4_000;
 const TARGET_TEST: usize = 20_000;
-const SAFETY_FACTOR: f64 = 2.5;            // Generate 2.5x candidates to account for trajectory filtering
-const DIVERSITY_FACTOR: f64 = 2.5;         // GRF oversample for diversity selection before trajectories
-const N_BINS: usize = 8;                   // Bins per feature dimension for diversity hashing
-
-// --- Yoshida 4th Order Coefficients ---
-const W0_4TH: f64 = -1.7024143839193153;
-const W1_4TH: f64 = 1.3512071919596578;
-const YOSHIDA_4TH_COEFF: [f64; 8] = [
-    W1_4TH / 2f64,            // c1
-    (W0_4TH + W1_4TH) / 2f64, // c2
-    (W0_4TH + W1_4TH) / 2f64, // c3
-    W1_4TH / 2f64,            // c4
-    W1_4TH,                   // d1
-    W0_4TH,                   // d2
-    W1_4TH,                   // d3
-    0f64,                     // d4
-];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Solver {
-    Yoshida4th,
-    Yoshida8th,
-    RK4,
-    GL4,
-}
+const SAFETY_FACTOR: f64 = 2.5; // Generate 2.5x candidates to account for trajectory filtering
+const DIVERSITY_FACTOR: f64 = 2.5; // GRF oversample for diversity selection before trajectories
+const N_BINS: usize = 8; // Bins per feature dimension for diversity hashing
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Interactive selection of data generation mode
-    //let items = &["Normal", "More", "Much", "Precise", "Test"];
-    //let selection = Select::with_theme(&ColorfulTheme::default())
-    //    .with_prompt("Select data generation mode:")
-    //    .items(items)
-    //    .default(0)
-    //    .interact()?;
-
-    // Non-interactive selection for testing
     let args: Vec<String> = std::env::args().collect();
     let selection = if args.len() > 1 {
         args[1].parse::<usize>().unwrap_or(0)
     } else {
         println!("No selection provided, defaulting to Normal mode.");
-        0 // Default to Normal if no argument is provided
+        0
     };
 
     match selection {
         0 => {
             // Normal mode (Train/Val) - loop until target is reached
-            let (target_train, target_val, folder, order) =
-                (TARGET_TRAIN, TARGET_VAL, "data_normal", Solver::Yoshida4th);
+            let (target_train, target_val, folder) = (TARGET_TRAIN, TARGET_VAL, "data_normal");
 
             println!("\n=== Generate training data (target: {}) ===", target_train);
-            let ds_train = Dataset::generate_loop(target_train, 123, order)?;
+            let ds_train = Dataset::generate_loop(target_train, 123)?;
             println!("Training data: {} (exact)", ds_train.data.len());
             if !ds_train.data.is_empty() {
                 let (q_max, p_max) = ds_train.max();
@@ -80,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ds_train.write_parquet(&format!("{}/train.parquet", folder))?;
 
             println!("\n=== Generate validation data (target: {}) ===", target_val);
-            let ds_val = Dataset::generate_loop(target_val, 456, order)?;
+            let ds_val = Dataset::generate_loop(target_val, 456)?;
             println!("Validation data: {} (exact)", ds_val.data.len());
             if !ds_val.data.is_empty() {
                 let (q_max, p_max) = ds_val.max();
@@ -93,7 +84,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let target_train = TARGET_TRAIN * 10;
             let target_val = TARGET_VAL * 10;
             let folder = "data_more";
-            let order = Solver::Yoshida4th;
 
             println!("\n=== Chunked generation for large dataset ===");
             println!("Chunk size: {} potentials per chunk", CHUNK_SIZE);
@@ -102,7 +92,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let train_count = Dataset::generate_chunked_loop(
                 target_train,
                 123,
-                order,
                 &format!("{}/train.parquet", folder),
             )?;
             println!("Training data: {} (exact)", train_count);
@@ -111,7 +100,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let val_count = Dataset::generate_chunked_loop(
                 target_val,
                 456,
-                order,
                 &format!("{}/val.parquet", folder),
             )?;
             println!("Validation data: {} (exact)", val_count);
@@ -120,10 +108,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Test - loop until target is reached
             let target_test = TARGET_TEST;
             let folder = "data_test";
-            let order = Solver::Yoshida4th;
 
             println!("\n=== Generate test data (target: {}) ===", target_test);
-            let ds_test = Dataset::generate_loop(target_test, 8407, order)?;
+            let ds_test = Dataset::generate_loop(target_test, 8407)?;
             println!("Test data: {} (exact)", ds_test.data.len());
             if !ds_test.data.is_empty() {
                 let (q_max, p_max) = ds_test.max();
@@ -131,10 +118,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             ds_test.write_parquet(&format!("{}/test.parquet", folder))?;
         }
+        3 => {
+            // Smoke test - small dataset for pipeline validation
+            let target = if args.len() > 2 {
+                args[2].parse::<usize>().unwrap_or(400)
+            } else {
+                400
+            };
+            let folder = "data_smoke";
+
+            println!("\n=== Generate smoke-test data (target: {}) ===", target);
+            let ds = Dataset::generate_loop(target, 777)?;
+            println!("Smoke data: {} (exact)", ds.data.len());
+            if !ds.data.is_empty() {
+                let (q_max, p_max) = ds.max();
+                println!("Max of q: {:.4}, p: {:.4}", q_max, p_max);
+            }
+            ds.write_parquet(&format!("{}/smoke.parquet", folder))?;
+        }
         _ => unreachable!(),
     }
     Ok(())
 }
+
+/// Parquet column layout (flat format, NSENSORS rows per sample):
+/// V, t, q, p are per-row values; the remaining columns are per-sample
+/// metadata repeated NSENSORS times.
+const COLUMNS: [&str; 10] = ["V", "t", "q", "p", "pid", "b", "l", "depth", "E0", "u"];
 
 #[derive(Debug, Clone)]
 pub struct Dataset {
@@ -166,22 +176,17 @@ impl Dataset {
         (q_max, p_max)
     }
 
-    pub fn generate(n: usize, seed: u64, order: Solver) -> anyhow::Result<Self> {
-        let potential_generator = BoundedPotential::generate_potential(n, seed, order);
-        potential_generator.generate_data()
-    }
-
     /// Generate data in a loop until the target count is reached.
-    /// Automatically retries with new seeds if the energy/boundary filters
-    /// reject too many trajectories.
-    pub fn generate_loop(
-        target: usize,
-        initial_seed: u64,
-        order: Solver,
-    ) -> anyhow::Result<Self> {
+    /// Automatically retries with new seeds if the trajectory filters
+    /// reject too many candidates.
+    pub fn generate_loop(target: usize, initial_seed: u64) -> anyhow::Result<Self> {
         let mut all_data: Vec<Data> = Vec::new();
         let mut seed = initial_seed;
         let mut attempt = 0;
+        // pid space advances by the number of candidates handed to the
+        // trajectory stage (including rejected ones), so pids never collide
+        // across attempts even when filters drop candidates.
+        let mut pid_offset: usize = 0;
 
         while all_data.len() < target {
             attempt += 1;
@@ -193,13 +198,22 @@ impl Dataset {
                 attempt, seed, remaining, n_cand
             );
 
-            let ds = Self::generate(n_cand, seed, order)?;
+            let potential_generator = BoundedPotential::generate_potential(n_cand, seed);
+            let n_candidates = potential_generator.candidates.len();
+            let ds = BoundedPotential::generate_data_from_potentials(
+                &potential_generator.candidates,
+                pid_offset,
+            )?;
+            pid_offset += n_candidates;
             let generated = ds.data.len();
             all_data.extend(ds.data);
 
             println!(
                 "[Attempt {}] Got {} → total {}/{}",
-                attempt, generated, all_data.len(), target
+                attempt,
+                generated,
+                all_data.len(),
+                target
             );
 
             seed += 100_000;
@@ -215,7 +229,6 @@ impl Dataset {
     pub fn generate_chunked_loop(
         target: usize,
         initial_seed: u64,
-        order: Solver,
         output_path: &str,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let parent = Path::new(output_path).parent().unwrap();
@@ -227,6 +240,8 @@ impl Dataset {
         let mut chunk_files: Vec<String> = Vec::new();
         let mut seed = initial_seed;
         let mut attempt = 0;
+        // See generate_loop: advance by candidates processed, not samples kept
+        let mut pid_offset: usize = 0;
 
         while total_generated < target {
             attempt += 1;
@@ -238,24 +253,27 @@ impl Dataset {
                 attempt, seed, remaining, n_cand
             );
 
-            let potential_generator = BoundedPotential::generate_potential(n_cand, seed, order);
-            let total_potentials = potential_generator.potential_pair.len();
+            let potential_generator = BoundedPotential::generate_potential(n_cand, seed);
+            let total_potentials = potential_generator.candidates.len();
             let num_chunks = (total_potentials + CHUNK_SIZE - 1) / CHUNK_SIZE;
 
             for chunk_idx in 0..num_chunks {
                 let start = chunk_idx * CHUNK_SIZE;
                 let end = std::cmp::min(start + CHUNK_SIZE, total_potentials);
-                let chunk_potentials: Vec<_> =
-                    potential_generator.potential_pair[start..end].to_vec();
+                let chunk_candidates: Vec<_> =
+                    potential_generator.candidates[start..end].to_vec();
 
-                let chunk_data =
-                    BoundedPotential::generate_data_from_potentials(&chunk_potentials)
-                        .map_err(|e| -> Box<dyn std::error::Error> {
-                            Box::new(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                e.to_string(),
-                            ))
-                        })?;
+                let chunk_data = BoundedPotential::generate_data_from_potentials(
+                    &chunk_candidates,
+                    pid_offset,
+                )
+                .map_err(|e| -> Box<dyn std::error::Error> {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        e.to_string(),
+                    ))
+                })?;
+                pid_offset += chunk_candidates.len();
                 let chunk_count = chunk_data.data.len();
                 total_generated += chunk_count;
 
@@ -296,19 +314,16 @@ impl Dataset {
         Ok(std::cmp::min(total_generated, target))
     }
 
-    /// Concatenate multiple parquet files into one, taking only up to `target` rows
+    /// Concatenate multiple parquet files into one, taking only up to `target` samples
     fn concatenate_parquet_files(
         chunk_files: &[String],
         output_path: &str,
         target: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut all_v: Vec<f64> = Vec::new();
-        let mut all_t: Vec<f64> = Vec::new();
-        let mut all_q: Vec<f64> = Vec::new();
-        let mut all_p: Vec<f64> = Vec::new();
+        let mut all_cols: Vec<Vec<f64>> = vec![Vec::new(); COLUMNS.len()];
 
         let mut rows_collected = 0;
-        let rows_per_sample = NSENSORS; // Each sample has NSENSORS rows in the flat format
+        let rows_per_sample = NSENSORS;
 
         for chunk_file in chunk_files {
             if rows_collected >= target {
@@ -316,30 +331,24 @@ impl Dataset {
             }
 
             let df = DataFrame::read_parquet(chunk_file)?;
-            let v_col: Vec<f64> = df["V"].to_vec();
-            let t_col: Vec<f64> = df["t"].to_vec();
-            let q_col: Vec<f64> = df["q"].to_vec();
-            let p_col: Vec<f64> = df["p"].to_vec();
+            let cols: Vec<Vec<f64>> = COLUMNS.iter().map(|&c| df[c].to_vec()).collect();
 
-            let samples_in_chunk = v_col.len() / rows_per_sample;
+            let samples_in_chunk = cols[0].len() / rows_per_sample;
             let samples_needed = target - rows_collected;
             let samples_to_take = std::cmp::min(samples_in_chunk, samples_needed);
             let rows_to_take = samples_to_take * rows_per_sample;
 
-            all_v.extend_from_slice(&v_col[..rows_to_take]);
-            all_t.extend_from_slice(&t_col[..rows_to_take]);
-            all_q.extend_from_slice(&q_col[..rows_to_take]);
-            all_p.extend_from_slice(&p_col[..rows_to_take]);
+            for (acc, col) in all_cols.iter_mut().zip(cols.iter()) {
+                acc.extend_from_slice(&col[..rows_to_take]);
+            }
 
             rows_collected += samples_to_take;
         }
 
-        // Write final concatenated file
         let mut df = DataFrame::new(vec![]);
-        df.push("V", Series::new(all_v));
-        df.push("t", Series::new(all_t));
-        df.push("q", Series::new(all_q));
-        df.push("p", Series::new(all_p));
+        for (&name, col) in COLUMNS.iter().zip(all_cols.into_iter()) {
+            df.push(name, Series::new(col));
+        }
 
         println!(
             "Final dataset: {} samples ({} rows)",
@@ -352,42 +361,31 @@ impl Dataset {
     }
 
     #[allow(non_snake_case)]
-    pub fn unzip(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
-        let V = self
-            .data
-            .iter()
-            .flat_map(|d| d.V.clone())
-            .collect::<Vec<_>>();
-        let t = self
-            .data
-            .iter()
-            .flat_map(|d| d.t.clone())
-            .collect::<Vec<_>>();
-        let q = self
-            .data
-            .iter()
-            .flat_map(|d| d.q.clone())
-            .collect::<Vec<_>>();
-        let p = self
-            .data
-            .iter()
-            .flat_map(|d| d.p.clone())
-            .collect::<Vec<_>>();
-        (V, t, q, p)
-    }
-
-    #[allow(non_snake_case)]
     pub fn write_parquet(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let parent = std::path::Path::new(path).parent().unwrap();
         if !parent.exists() {
             std::fs::create_dir_all(parent)?;
         }
-        let (V, t, q, p) = self.unzip();
+
+        let n_rows = self.data.len() * NSENSORS;
+        let mut cols: Vec<Vec<f64>> = (0..COLUMNS.len())
+            .map(|_| Vec::with_capacity(n_rows))
+            .collect();
+
+        for d in &self.data {
+            cols[0].extend_from_slice(&d.V);
+            cols[1].extend_from_slice(&d.t);
+            cols[2].extend_from_slice(&d.q);
+            cols[3].extend_from_slice(&d.p);
+            for (i, &v) in [d.pid, d.b, d.l, d.depth, d.e0, d.u].iter().enumerate() {
+                cols[4 + i].extend(std::iter::repeat(v).take(NSENSORS));
+            }
+        }
+
         let mut df = DataFrame::new(vec![]);
-        df.push("V", Series::new(V));
-        df.push("t", Series::new(t));
-        df.push("q", Series::new(q));
-        df.push("p", Series::new(p));
+        for (&name, col) in COLUMNS.iter().zip(cols.into_iter()) {
+            df.push(name, Series::new(col));
+        }
         df.print();
         df.write_parquet(path, SNAPPY)?;
         Ok(())
@@ -401,49 +399,34 @@ pub struct Data {
     pub t: Vec<f64>,
     pub q: Vec<f64>,
     pub p: Vec<f64>,
+    // Per-sample metadata (repeated per row in the flat parquet format)
+    pub pid: f64,   // unique potential id within the output file
+    pub b: f64,     // number of GRF control points
+    pub l: f64,     // GRF length scale
+    pub depth: f64, // potential depth D: interior values lie in [V0 - D, V0 - HEADROOM]
+    pub e0: f64,    // orbit energy H(q0, p0)
+    pub u: f64,     // energy fraction (E0 - V(q0)) / (V0 - V(q0))
 }
 
-/// Long trajectory with spline interpolation for window extraction
-#[allow(non_snake_case)]
-pub struct LongTrajectory {
-    pub V: Vec<f64>,           // Potential values at uniform q grid
-    pub cs_q: CubicHermiteSpline,  // Spline for q(t)
-    pub cs_p: CubicHermiteSpline,  // Spline for p(t)
-    pub t_max: f64,            // Maximum time of trajectory
-}
-
-impl LongTrajectory {
-    /// Extract a window from the long trajectory
-    /// t_start: start time of window (in original time)
-    /// t_domain: desired output time points (relative to window, i.e., [0, T_WINDOW])
-    #[allow(non_snake_case)]
-    pub fn extract_window(&self, t_start: f64, t_domain: &[f64]) -> Data {
-        // t_domain is in [0, T_WINDOW], shift to [t_start, t_start + T_WINDOW]
-        let t_shifted: Vec<f64> = t_domain.iter().map(|&t| t + t_start).collect();
-
-        let q_vec = self.cs_q.eval_vec(&t_shifted);
-        let p_vec = self.cs_p.eval_vec(&t_shifted);
-
-        Data {
-            V: self.V.clone(),
-            t: t_domain.to_vec(),  // Output normalized time [0, T_WINDOW]
-            q: q_vec,
-            p: p_vec,
-        }
-    }
+/// A generated potential candidate with its GRF parameters.
+#[derive(Debug, Clone)]
+pub struct PotentialCandidate {
+    pub q: Vec<f64>,
+    pub v: Vec<f64>,
+    pub b: usize,
+    pub l: f64,
+    pub depth: f64,
 }
 
 #[derive(Debug, Clone)]
 pub struct BoundedPotential {
-    pub potential_pair: Vec<(Vec<f64>, Vec<f64>)>,
-    pub solver: Solver,
-    pub t_domain_vec: Option<Vec<Vec<f64>>>,
+    pub candidates: Vec<PotentialCandidate>,
 }
 
 impl BoundedPotential {
     #[allow(non_snake_case)]
-    pub fn generate_potential(n: usize, seed: u64, solver: Solver) -> Self {
-        let n = n / NDIFFCONFIG; // Divide by number of different configurations
+    pub fn generate_potential(n: usize, seed: u64) -> Self {
+        let n = n / NDIFFCONFIG; // Unique potentials needed for n samples
 
         // Generate more GRFs than needed so the diversity filter has candidates to choose from
         let n_grf = (n as f64 * DIVERSITY_FACTOR * 1.1).round() as usize;
@@ -468,13 +451,21 @@ impl BoundedPotential {
             .map(|(&b, &l)| grf_with_rng(&mut rng, b, Kernel::SquaredExponential(l)))
             .collect::<Vec<_>>();
 
-        let grf_max_vec = grf_vec.iter().map(|grf| grf.max()).collect::<Vec<_>>();
-        let grf_min_vec = grf_vec.iter().map(|grf| grf.min()).collect::<Vec<_>>();
-        let grf_max = grf_max_vec.max();
-        let grf_min = grf_min_vec.min();
+        // Per-sample depth: interior control values mapped to [V0 - depth, V0 - HEADROOM].
+        // Explicit depth sampling replaces the former batch-global min-max scaling,
+        // which made the depth distribution depend on batch composition.
+        let depth_uniform = Uniform(DEPTH_MIN, DEPTH_MAX);
+        let depth_vec: Vec<f64> = depth_uniform.sample_with_rng(&mut rng, n_grf);
+
         let mut grf_scaled_vec = grf_vec
             .par_iter()
-            .map(|grf| grf.fmap(|x| V0 * (1f64 - 2f64 * (x - grf_min) / (grf_max - grf_min))))
+            .zip(depth_vec.par_iter())
+            .map(|(grf, &depth)| {
+                let gmin = grf.min();
+                let gmax = grf.max();
+                let range = (gmax - gmin).max(1e-12);
+                grf.fmap(|x| (V0 - depth) + (depth - HEADROOM) * (x - gmin) / range)
+            })
             .collect::<Vec<_>>();
 
         let q_vec = b
@@ -501,11 +492,12 @@ impl BoundedPotential {
             grf.push(V0);
         });
 
-        let all_potential_pairs: Vec<(Vec<f64>, Vec<f64>)> = q_vec
-            .par_iter()
-            .zip(grf_scaled_vec.par_iter())
+        let all_candidates: Vec<PotentialCandidate> = (0..q_vec.len())
+            .into_par_iter()
             .progress_with(ProgressBar::new(n_grf as u64))
-            .filter_map(|(q_coords, V_coords)| {
+            .filter_map(|i| {
+                let q_coords = &q_vec[i];
+                let V_coords = &grf_scaled_vec[i];
                 let control_points = q_coords
                     .iter()
                     .zip(V_coords.iter())
@@ -517,7 +509,13 @@ impl BoundedPotential {
                         let t_eval = linspace(0, 1, NSENSORS);
                         let (q_new, potential_new): (Vec<f64>, Vec<f64>) =
                             b_spline.eval_vec(&t_eval).into_iter().unzip();
-                        Some((q_new, potential_new))
+                        Some(PotentialCandidate {
+                            q: q_new,
+                            v: potential_new,
+                            b: b[i],
+                            l: l[i],
+                            depth: depth_vec[i],
+                        })
                     }
                     Err(_) => None,
                 }
@@ -526,231 +524,262 @@ impl BoundedPotential {
 
         println!(
             "B-spline creation: {} succeeded out of {} GRFs",
-            all_potential_pairs.len(),
+            all_candidates.len(),
             n_grf
         );
 
         // Apply diversity filter to select n potentials from the candidates
-        let selected_indices = diversity_filter(&all_potential_pairs, n, seed + 1000);
-        let bounded_potential_pairs: Vec<(Vec<f64>, Vec<f64>)> = selected_indices
+        let selected_indices = diversity_filter(&all_candidates, n, seed + 1000);
+        let candidates: Vec<PotentialCandidate> = selected_indices
             .into_iter()
-            .map(|i| all_potential_pairs[i].clone())
+            .map(|i| all_candidates[i].clone())
             .collect();
 
-        println!(
-            "After diversity filter: {} potentials selected",
-            bounded_potential_pairs.len()
-        );
+        println!("After diversity filter: {} potentials selected", candidates.len());
 
-        BoundedPotential {
-            potential_pair: bounded_potential_pairs,
-            solver,
-            t_domain_vec: None, // Will be generated during window extraction
-        }
+        BoundedPotential { candidates }
     }
 
-    #[allow(non_snake_case)]
-    pub fn generate_data(&self) -> anyhow::Result<Dataset> {
-        println!(
-            "Generate data with time shift. Unique potentials: {}, Windows per potential: {}",
-            self.potential_pair.len(),
-            NDIFFCONFIG
-        );
-
-        let q_domain = linspace(0f64, L, NSENSORS);
-
-        // Process each potential: solve long trajectory, extract NDIFFCONFIG windows
-        let data_vec: Vec<Data> = self
-            .potential_pair
-            .par_iter()
-            .progress_with(ProgressBar::new(self.potential_pair.len() as u64))
-            .filter_map(|potential_pair_item| {
-                // Solve long trajectory (0 to T_TOTAL)
-                let long_traj = match solve_hamilton_long(potential_pair_item.clone()) {
-                    Ok(traj) => traj,
-                    Err(_) => return None,
-                };
-
-                // Check if trajectory stays bounded over entire T_TOTAL
-                let check_points = linspace(0f64, T_TOTAL, (T_TOTAL / TSTEP) as usize);
-                let q_check = long_traj.cs_q.eval_vec(&check_points);
-                if q_check
-                    .iter()
-                    .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
-                {
-                    return None;
-                }
-
-                // Check V values
-                if long_traj.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64) {
-                    return None;
-                }
-
-                // Check energy conservation over entire trajectory
-                let V_spline = match cubic_hermite_spline(&q_domain, &long_traj.V, Quadratic) {
-                    Ok(s) => s,
-                    Err(_) => return None,
-                };
-                let p_check = long_traj.cs_p.eval_vec(&check_points);
-                let E: Vec<f64> = q_check
-                    .iter()
-                    .zip(p_check.iter())
-                    .map(|(&q, &p)| V_spline.eval(q) + p * p / 2f64)
-                    .collect();
-                let E_max = E.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                let E_min = E.iter().cloned().fold(f64::INFINITY, f64::min);
-                let E_delta = (E_max - E_min) / (E_max + E_min).max(1e-10);
-                if E_delta >= 0.0001 {
-                    return None;
-                }
-
-                // Generate NDIFFCONFIG windows with different start times
-                // Use deterministic RNG seeded from potential data for reproducibility
-                use std::hash::{Hash, Hasher};
-                use std::collections::hash_map::DefaultHasher;
-
-                let mut hasher = DefaultHasher::new();
-                for &v in &long_traj.V {
-                    v.to_bits().hash(&mut hasher);
-                }
-                let seed = hasher.finish();
-                let mut rng = stdrng_from_seed(seed);
-
-                let uniform_t_start = Uniform(0f64, T_TOTAL - T_WINDOW);
-                let uniform_t_sample = Uniform(0f64, T_WINDOW);
-
-                let windows: Vec<Data> = (0..NDIFFCONFIG)
-                    .filter_map(|_| {
-                        // Random start time for this window
-                        let t_start = uniform_t_start.sample_with_rng(&mut rng, 1)[0];
-
-                        // Generate random time points within window [0, T_WINDOW]
-                        let mut t_domain = uniform_t_sample.sample_with_rng(&mut rng, NSENSORS - 2);
-                        t_domain.insert(0, 0f64);
-                        t_domain.push(T_WINDOW);
-                        t_domain.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-                        // Extract window
-                        let data = long_traj.extract_window(t_start, &t_domain);
-
-                        // Verify window data is valid
-                        if data.q.iter().any(|&x| !x.is_finite())
-                            || data.p.iter().any(|&x| !x.is_finite())
-                        {
-                            return None;
-                        }
-
-                        Some(data)
-                    })
-                    .collect();
-
-                if windows.len() == NDIFFCONFIG {
-                    Some(windows)
-                } else {
-                    None
-                }
-            })
-            .flatten()
-            .collect();
-
-        println!("Generated data: {} (from {} unique potentials)", data_vec.len(), data_vec.len() / NDIFFCONFIG);
-        Ok(Dataset::new(data_vec))
-    }
-
-    /// Generate data from a given slice of potential pairs (used for chunked processing)
+    /// Generate data from a slice of potential candidates.
+    /// For each potential, sample NDIFFCONFIG initial conditions (one per
+    /// energy stratum) and integrate each orbit over [0, T_WINDOW].
     #[allow(non_snake_case)]
     pub fn generate_data_from_potentials(
-        potential_pairs: &[(Vec<f64>, Vec<f64>)],
+        candidates: &[PotentialCandidate],
+        pid_offset: usize,
     ) -> anyhow::Result<Dataset> {
         let q_domain = linspace(0f64, L, NSENSORS);
 
-        let data_vec: Vec<Data> = potential_pairs
+        // Rejection counters for pipeline transparency
+        let n_spline_fail = AtomicUsize::new(0);
+        let n_vgrid_bad = AtomicUsize::new(0);
+        let n_ic_fail = AtomicUsize::new(0);
+        let n_integ_fail = AtomicUsize::new(0);
+        let n_bound_fail = AtomicUsize::new(0);
+        let n_edrift_fail = AtomicUsize::new(0);
+
+        let data_vec: Vec<Data> = candidates
             .par_iter()
-            .progress_with(ProgressBar::new(potential_pairs.len() as u64))
-            .filter_map(|potential_pair_item| {
-                // Solve long trajectory (0 to T_TOTAL)
-                let long_traj = match solve_hamilton_long(potential_pair_item.clone()) {
-                    Ok(traj) => traj,
-                    Err(_) => return None,
-                };
+            .enumerate()
+            .progress_with(ProgressBar::new(candidates.len() as u64))
+            .filter_map(|(idx, cand)| {
+                let hamilton_eq =
+                    match HamiltonEquation::new((cand.q.clone(), cand.v.clone())) {
+                        Ok(eq) => eq,
+                        Err(_) => {
+                            n_spline_fail.fetch_add(1, Ordering::Relaxed);
+                            return None;
+                        }
+                    };
 
-                // Check if trajectory stays bounded over entire T_TOTAL
-                let check_points = linspace(0f64, T_TOTAL, (T_TOTAL / TSTEP) as usize);
-                let q_check = long_traj.cs_q.eval_vec(&check_points);
-                if q_check
-                    .iter()
-                    .any(|&x| x < -BOUNDARY || x > L + BOUNDARY || !x.is_finite())
-                {
+                // Potential values at the uniform sensor grid (model input)
+                let V_grid = hamilton_eq.eval_vec(&q_domain);
+                if V_grid.iter().any(|&x| !x.is_finite() || x.abs() > 10f64) {
+                    n_vgrid_bad.fetch_add(1, Ordering::Relaxed);
                     return None;
                 }
+                let v_min = V_grid.iter().cloned().fold(f64::INFINITY, f64::min);
+                let energy_scale = (V0 - v_min).max(DEPTH_MIN);
 
-                // Check V values
-                if long_traj.V.iter().any(|&x| !x.is_finite() || x.abs() > 10f64) {
-                    return None;
-                }
-
-                // Check energy conservation over entire trajectory
-                let V_spline = match cubic_hermite_spline(&q_domain, &long_traj.V, Quadratic) {
-                    Ok(s) => s,
-                    Err(_) => return None,
-                };
-                let p_check = long_traj.cs_p.eval_vec(&check_points);
-                let E: Vec<f64> = q_check
-                    .iter()
-                    .zip(p_check.iter())
-                    .map(|(&q, &p)| V_spline.eval(q) + p * p / 2f64)
-                    .collect();
-                let E_max = E.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                let E_min = E.iter().cloned().fold(f64::INFINITY, f64::min);
-                let E_delta = (E_max - E_min) / (E_max + E_min).max(1e-10);
-                if E_delta >= 0.0001 {
-                    return None;
-                }
-
-                // Generate NDIFFCONFIG windows with different start times
+                // Deterministic RNG seeded from potential data for reproducibility
                 use std::collections::hash_map::DefaultHasher;
                 use std::hash::{Hash, Hasher};
 
                 let mut hasher = DefaultHasher::new();
-                for &v in &long_traj.V {
+                for &v in &V_grid {
                     v.to_bits().hash(&mut hasher);
                 }
                 let seed = hasher.finish();
                 let mut rng = stdrng_from_seed(seed);
 
-                let uniform_t_start = Uniform(0f64, T_TOTAL - T_WINDOW);
-                let uniform_t_sample = Uniform(0f64, T_WINDOW);
-
-                let windows: Vec<Data> = (0..NDIFFCONFIG)
-                    .filter_map(|_| {
-                        let t_start = uniform_t_start.sample_with_rng(&mut rng, 1)[0];
-                        let mut t_domain = uniform_t_sample.sample_with_rng(&mut rng, NSENSORS - 2);
-                        t_domain.insert(0, 0f64);
-                        t_domain.push(T_WINDOW);
-                        t_domain.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-                        let data = long_traj.extract_window(t_start, &t_domain);
-
-                        if data.q.iter().any(|&x| !x.is_finite())
-                            || data.p.iter().any(|&x| !x.is_finite())
-                        {
+                let mut windows: Vec<Data> = Vec::with_capacity(NDIFFCONFIG);
+                for k in 0..NDIFFCONFIG {
+                    // Sample IC on energy stratum k
+                    let (q0, p0, e0, u) = match sample_ic(&hamilton_eq, k, &mut rng) {
+                        Some(ic) => ic,
+                        None => {
+                            n_ic_fail.fetch_add(1, Ordering::Relaxed);
                             return None;
                         }
+                    };
 
-                        Some(data)
-                    })
-                    .collect();
+                    // Integrate orbit with Yoshida 8th order
+                    let (t_dense, q_dense, p_dense) =
+                        match integrate_window(&hamilton_eq, q0, p0) {
+                            Some(sol) => sol,
+                            None => {
+                                n_integ_fail.fetch_add(1, Ordering::Relaxed);
+                                return None;
+                            }
+                        };
 
-                if windows.len() == NDIFFCONFIG {
-                    Some(windows)
-                } else {
-                    None
+                    // Confinement check: E0 < V0 guarantees q in [0, L] analytically;
+                    // this catches numerical violations only.
+                    if q_dense
+                        .iter()
+                        .any(|&x| x < -BOUNDARY || x > L + BOUNDARY)
+                    {
+                        n_bound_fail.fetch_add(1, Ordering::Relaxed);
+                        return None;
+                    }
+
+                    // Energy conservation check on dense solver points
+                    let e_iter = q_dense
+                        .iter()
+                        .zip(p_dense.iter())
+                        .map(|(&q, &p)| hamilton_eq.eval(q) + p * p / 2f64);
+                    let (e_min, e_max) = e_iter.fold(
+                        (f64::INFINITY, f64::NEG_INFINITY),
+                        |(lo, hi), e| (lo.min(e), hi.max(e)),
+                    );
+                    if (e_max - e_min) >= E_DRIFT_TOL * energy_scale {
+                        n_edrift_fail.fetch_add(1, Ordering::Relaxed);
+                        return None;
+                    }
+
+                    // Interpolate and sample at random time points
+                    let cs_q = match cubic_hermite_spline(&t_dense, &q_dense, Quadratic) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            n_spline_fail.fetch_add(1, Ordering::Relaxed);
+                            return None;
+                        }
+                    };
+                    let cs_p = match cubic_hermite_spline(&t_dense, &p_dense, Quadratic) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            n_spline_fail.fetch_add(1, Ordering::Relaxed);
+                            return None;
+                        }
+                    };
+
+                    let mut t_domain =
+                        Uniform(0f64, T_WINDOW).sample_with_rng(&mut rng, NSENSORS - 2);
+                    t_domain.insert(0, 0f64);
+                    t_domain.push(T_WINDOW);
+                    t_domain.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+                    let q_out = cs_q.eval_vec(&t_domain);
+                    let p_out = cs_p.eval_vec(&t_domain);
+                    if q_out.iter().any(|&x| !x.is_finite())
+                        || p_out.iter().any(|&x| !x.is_finite())
+                    {
+                        n_integ_fail.fetch_add(1, Ordering::Relaxed);
+                        return None;
+                    }
+
+                    windows.push(Data {
+                        V: V_grid.clone(),
+                        t: t_domain,
+                        q: q_out,
+                        p: p_out,
+                        pid: (pid_offset + idx) as f64,
+                        b: cand.b as f64,
+                        l: cand.l,
+                        depth: cand.depth,
+                        e0,
+                        u,
+                    });
                 }
+
+                Some(windows)
             })
             .flatten()
             .collect();
 
+        println!(
+            "Generated data: {} samples (from {} potentials); rejects: spline {}, V-grid {}, IC {}, integration {}, bound {}, E-drift {}",
+            data_vec.len(),
+            data_vec.len() / NDIFFCONFIG,
+            n_spline_fail.load(Ordering::Relaxed),
+            n_vgrid_bad.load(Ordering::Relaxed),
+            n_ic_fail.load(Ordering::Relaxed),
+            n_integ_fail.load(Ordering::Relaxed),
+            n_bound_fail.load(Ordering::Relaxed),
+            n_edrift_fail.load(Ordering::Relaxed),
+        );
         Ok(Dataset::new(data_vec))
+    }
+}
+
+/// Sample an initial condition (q0, p0) on energy stratum `k`.
+/// Returns (q0, p0, E0, u) with E0 = V(q0) + u * (V0 - V(q0)).
+fn sample_ic(
+    hamilton_eq: &HamiltonEquation,
+    k: usize,
+    rng: &mut StdRng,
+) -> Option<(f64, f64, f64, f64)> {
+    let (u_lo, u_hi) = ENERGY_STRATA[k];
+    for _ in 0..100 {
+        let q0 = Uniform(0f64, L).sample_with_rng(rng, 1)[0];
+        let vq0 = hamilton_eq.eval(q0);
+        let gap = V0 - vq0;
+        // Reject points too close to wall energy (degenerate, near-zero p orbits
+        // pinned at the wall) — interior headroom makes this rare.
+        if gap < 1e-3 {
+            continue;
+        }
+        let u = Uniform(u_lo, u_hi).sample_with_rng(rng, 1)[0];
+        let e0 = vq0 + u * gap;
+        let p_mag = (2f64 * (e0 - vq0)).sqrt();
+        let sign = if Uniform(0f64, 1f64).sample_with_rng(rng, 1)[0] < 0.5 {
+            -1f64
+        } else {
+            1f64
+        };
+        return Some((q0, sign * p_mag, e0, u));
+    }
+    None
+}
+
+/// Integrate Hamilton's equations from (q0, p0) over [0, T_WINDOW] with
+/// the Yoshida 8th-order symplectic integrator at step TSTEP.
+fn integrate_window(
+    hamilton_eq: &HamiltonEquation,
+    q0: f64,
+    p0: f64,
+) -> Option<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+    let num_points = (T_WINDOW / TSTEP).round() as usize + 1;
+    let t_vec = linspace(0f64, T_WINDOW, num_points);
+    let mut q_vec = vec![0f64; num_points];
+    let mut p_vec = vec![0f64; num_points];
+    q_vec[0] = q0;
+    p_vec[0] = p0;
+
+    for i in 1..num_points {
+        let mut q = q_vec[i - 1];
+        let mut p = p_vec[i - 1];
+        yoshida_step(hamilton_eq, 8, &mut q, &mut p, TSTEP);
+        if !q.is_finite() || !p.is_finite() || q < -0.5 || q > L + 0.5 {
+            return None;
+        }
+        q_vec[i] = q;
+        p_vec[i] = p;
+    }
+
+    Some((t_vec, q_vec, p_vec))
+}
+
+/// Recursive Suzuki-Yoshida triple-jump composition.
+///
+/// S_2(h): Leapfrog (Störmer-Verlet, 2nd order symplectic)
+/// S_{2n}(h) = S_{2n-2}(z1*h) ∘ S_{2n-2}(z0*h) ∘ S_{2n-2}(z1*h)
+/// where z1 = 1/(2 - 2^{1/(2n-1)}), z0 = 1 - 2*z1
+///
+/// For 8th order: 27 force evaluations per step (3^3 leapfrogs).
+fn yoshida_step(hamilton_eq: &HamiltonEquation, order: usize, q: &mut f64, p: &mut f64, dt: f64) {
+    if order == 2 {
+        // Leapfrog (Position Verlet): drift q, kick p, drift q
+        *q += 0.5 * *p * dt;
+        *p -= hamilton_eq.eval_grad(*q) * dt;
+        *q += 0.5 * *p * dt;
+    } else {
+        let w = 2f64.powf(1.0 / (order as f64 - 1.0));
+        let z1 = 1.0 / (2.0 - w);
+        let z0 = -w / (2.0 - w);
+        yoshida_step(hamilton_eq, order - 2, q, p, z1 * dt);
+        yoshida_step(hamilton_eq, order - 2, q, p, z0 * dt);
+        yoshida_step(hamilton_eq, order - 2, q, p, z1 * dt);
     }
 }
 
@@ -883,19 +912,15 @@ fn lhs_sample_bl(n: usize, rng: &mut StdRng) -> Vec<(usize, f64)> {
 /// 5. Deterministic sampling within each bin to hit exact target count
 ///
 /// Returns indices of selected potentials.
-fn diversity_filter(
-    potentials: &[(Vec<f64>, Vec<f64>)],
-    target: usize,
-    seed: u64,
-) -> Vec<usize> {
-    if potentials.len() <= target {
-        return (0..potentials.len()).collect();
+fn diversity_filter(candidates: &[PotentialCandidate], target: usize, seed: u64) -> Vec<usize> {
+    if candidates.len() <= target {
+        return (0..candidates.len()).collect();
     }
 
-    // 1. Extract features in parallel (only need V values, second element of pair)
-    let features: Vec<[f64; 7]> = potentials
+    // 1. Extract features in parallel
+    let features: Vec<[f64; 7]> = candidates
         .par_iter()
-        .map(|(_q, v)| PotentialFeatures::extract(v).as_array())
+        .map(|c| PotentialFeatures::extract(&c.v).as_array())
         .collect();
 
     // 2. Compute min/max per feature for normalization
@@ -940,7 +965,7 @@ fn diversity_filter(
     }
 
     let n_occupied = bins.len();
-    let total = potentials.len();
+    let total = candidates.len();
 
     println!(
         "Diversity filter: {} potentials → {} target, {} occupied bins",
@@ -979,8 +1004,7 @@ fn diversity_filter(
             .collect();
         bin_density.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
-        let mut alloc_map: HashMap<u64, usize> =
-            allocations.iter().cloned().collect();
+        let mut alloc_map: HashMap<u64, usize> = allocations.iter().cloned().collect();
 
         for (key, _density, _) in &bin_density {
             if current_total >= target {
@@ -1048,14 +1072,14 @@ fn diversity_filter(
             selected.extend(members);
         } else {
             // Reservoir sampling with deterministic RNG
-            let mut candidates = members.clone();
+            let mut candidates_in_bin = members.clone();
             // Partial Fisher-Yates to select `alloc` elements
             for i in 0..*alloc {
-                let j = i + (Uniform(0.0, (candidates.len() - i) as f64)
+                let j = i + (Uniform(0.0, (candidates_in_bin.len() - i) as f64)
                     .sample_with_rng(&mut rng, 1)[0] as usize);
-                candidates.swap(i, j);
+                candidates_in_bin.swap(i, j);
             }
-            selected.extend_from_slice(&candidates[..*alloc]);
+            selected.extend_from_slice(&candidates_in_bin[..*alloc]);
         }
     }
 
@@ -1128,291 +1152,4 @@ impl HamiltonEquation {
             self.V_prime.eval(q)
         }
     }
-}
-
-impl ODEProblem for HamiltonEquation {
-    fn rhs(&self, _t: f64, y: &[f64], dy: &mut [f64]) -> anyhow::Result<()> {
-        dy[0] = y[1];
-        dy[1] = -self.eval_grad(y[0]);
-        Ok(())
-    }
-}
-
-pub struct YoshidaSolver {
-    problem: HamiltonEquation,
-}
-
-impl YoshidaSolver {
-    pub fn new(problem: HamiltonEquation) -> Self {
-        YoshidaSolver { problem }
-    }
-
-    #[allow(non_snake_case)]
-    fn integration_step_y4(
-        &self,
-        q_in: f64,
-        p_in: f64,
-        dt: f64,
-        hamilton_eq: &HamiltonEquation,
-    ) -> (f64, f64) {
-        let mut q = q_in;
-        let mut p = p_in;
-        for j in 0..4 {
-            q = q + YOSHIDA_4TH_COEFF[j] * p * dt;
-            p = p + YOSHIDA_4TH_COEFF[j + 4] * (-hamilton_eq.eval_grad(q)) * dt;
-        }
-        (q, p)
-    }
-
-    #[allow(non_snake_case)]
-    pub fn solve(
-        &self,
-        t_span: (f64, f64),
-        dt: f64,
-        initial_condition: &[f64],
-        t_domain: Option<Vec<f64>>,
-    ) -> anyhow::Result<Data> {
-        let hamilton_eq = &self.problem;
-        let num_intervals = ((t_span.1 - t_span.0) / dt).round() as usize;
-        let num_points = num_intervals + 1;
-        let t_vec_sim = linspace(t_span.0, t_span.1, num_points);
-
-        let mut q_vec_sim = vec![0f64; t_vec_sim.len()];
-        let mut p_vec_sim = vec![0f64; t_vec_sim.len()];
-        q_vec_sim[0] = initial_condition[0];
-        p_vec_sim[0] = initial_condition[1];
-
-        let integration_dt = dt;
-
-        for i in 1..t_vec_sim.len() {
-            let (next_q, next_p) = self.integration_step_y4(
-                q_vec_sim[i - 1],
-                p_vec_sim[i - 1],
-                integration_dt,
-                hamilton_eq,
-            );
-            q_vec_sim[i] = next_q;
-            p_vec_sim[i] = next_p;
-        }
-
-        let cs_q = cubic_hermite_spline(&t_vec_sim, &q_vec_sim, Quadratic)?;
-        let cs_p = cubic_hermite_spline(&t_vec_sim, &p_vec_sim, Quadratic)?;
-
-        let t_vec_out = match t_domain {
-            Some(t_domain) => t_domain,
-            None => linspace(t_span.0, t_span.1, NSENSORS),
-        };
-        let q_vec_out = cs_q.eval_vec(&t_vec_out);
-        let p_vec_out = cs_p.eval_vec(&t_vec_out);
-
-        let q_uniform_pot = linspace(0, L, NSENSORS);
-        let V_out = hamilton_eq.eval_vec(&q_uniform_pot);
-        Ok(Data {
-            V: V_out,
-            t: t_vec_out,
-            q: q_vec_out,
-            p: p_vec_out,
-        })
-    }
-}
-
-pub struct Yoshida8thSolver {
-    problem: HamiltonEquation,
-}
-
-impl Yoshida8thSolver {
-    pub fn new(problem: HamiltonEquation) -> Self {
-        Yoshida8thSolver { problem }
-    }
-
-    /// Recursive Suzuki-Yoshida triple-jump composition.
-    ///
-    /// S_2(h): Leapfrog (Störmer-Verlet, 2nd order symplectic)
-    /// S_{2n}(h) = S_{2n-2}(z₁·h) ∘ S_{2n-2}(z₀·h) ∘ S_{2n-2}(z₁·h)
-    ///
-    /// where z₁ = 1/(2 - 2^{1/(2n-1)}), z₀ = 1 - 2·z₁
-    ///
-    /// For 8th order: 27 force evaluations per step (3^3 leapfrogs).
-    fn yoshida_step(&self, order: usize, q: &mut f64, p: &mut f64, dt: f64) {
-        if order == 2 {
-            // Leapfrog (Position Verlet): drift q, kick p, drift q
-            *q += 0.5 * *p * dt;
-            *p -= self.problem.eval_grad(*q) * dt;
-            *q += 0.5 * *p * dt;
-        } else {
-            let w = 2f64.powf(1.0 / (order as f64 - 1.0));
-            let z1 = 1.0 / (2.0 - w);
-            let z0 = -w / (2.0 - w);
-            self.yoshida_step(order - 2, q, p, z1 * dt);
-            self.yoshida_step(order - 2, q, p, z0 * dt);
-            self.yoshida_step(order - 2, q, p, z1 * dt);
-        }
-    }
-
-    #[allow(non_snake_case)]
-    pub fn solve(
-        &self,
-        t_span: (f64, f64),
-        dt: f64,
-        initial_condition: &[f64],
-        t_domain: Option<Vec<f64>>,
-    ) -> anyhow::Result<Data> {
-        let num_intervals = ((t_span.1 - t_span.0) / dt).round() as usize;
-        let num_points = num_intervals + 1;
-        let t_vec_sim = linspace(t_span.0, t_span.1, num_points);
-
-        let mut q_vec_sim = vec![0f64; num_points];
-        let mut p_vec_sim = vec![0f64; num_points];
-        q_vec_sim[0] = initial_condition[0];
-        p_vec_sim[0] = initial_condition[1];
-
-        for i in 1..num_points {
-            let mut q = q_vec_sim[i - 1];
-            let mut p = p_vec_sim[i - 1];
-            self.yoshida_step(8, &mut q, &mut p, dt);
-            q_vec_sim[i] = q;
-            p_vec_sim[i] = p;
-        }
-
-        let cs_q = cubic_hermite_spline(&t_vec_sim, &q_vec_sim, Quadratic)?;
-        let cs_p = cubic_hermite_spline(&t_vec_sim, &p_vec_sim, Quadratic)?;
-
-        let t_vec_out = match t_domain {
-            Some(t_domain) => t_domain,
-            None => linspace(t_span.0, t_span.1, NSENSORS),
-        };
-        let q_vec_out = cs_q.eval_vec(&t_vec_out);
-        let p_vec_out = cs_p.eval_vec(&t_vec_out);
-
-        let q_uniform_pot = linspace(0f64, L, NSENSORS);
-        let V_out = self.problem.eval_vec(&q_uniform_pot);
-        Ok(Data {
-            V: V_out,
-            t: t_vec_out,
-            q: q_vec_out,
-            p: p_vec_out,
-        })
-    }
-}
-
-#[allow(non_snake_case)]
-pub fn solve_hamilton_equation(
-    potential_pair: (Vec<f64>, Vec<f64>),
-    method: Solver, // Added order parameter
-    t_domain: Option<Vec<f64>>,
-) -> anyhow::Result<Data> {
-    let initial_condition = vec![0f64, 0f64];
-    let hamilton_eq = HamiltonEquation::new(potential_pair.clone())?;
-    match method {
-        Solver::Yoshida4th => {
-            let solver = YoshidaSolver::new(hamilton_eq);
-            solver.solve((0f64, 2f64), TSTEP, &initial_condition, t_domain)
-        }
-        Solver::Yoshida8th => {
-            let solver = Yoshida8thSolver::new(hamilton_eq);
-            solver.solve((0f64, 2f64), TSTEP, &initial_condition, t_domain)
-        }
-        Solver::RK4 => {
-            let solver = RK4;
-            let ode_solver = BasicODESolver::new(solver);
-            let initial_condition = vec![0f64, 0f64];
-            let (t_vec, x_vec) =
-                ode_solver.solve(&hamilton_eq, (0f64, 2f64), TSTEP, &initial_condition)?;
-            let x_mat = py_matrix(x_vec);
-            let q_vec = x_mat.col(0);
-            let p_vec = x_mat.col(1);
-
-            let cs_q = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
-            let cs_p = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
-            let t_vec_out = match t_domain {
-                Some(t_domain) => t_domain,
-                None => linspace(0f64, 2f64, NSENSORS),
-            };
-            let q_vec_out = cs_q.eval_vec(&t_vec_out);
-            let p_vec_out = cs_p.eval_vec(&t_vec_out);
-
-            let q_uniform_pot = linspace(0f64, L, NSENSORS);
-            let V_out = hamilton_eq.eval_vec(&q_uniform_pot);
-            Ok(Data {
-                V: V_out,
-                t: t_vec_out,
-                q: q_vec_out,
-                p: p_vec_out,
-            })
-        }
-        Solver::GL4 => {
-            let integrator = GL4 {
-                solver: ImplicitSolver::Broyden,
-                tol: 1e-6,
-                max_step_iter: 100,
-            };
-            let initial_condition = vec![0f64, 0f64];
-            let solver = BasicODESolver::new(integrator);
-            let (t_vec, x_vec) =
-                solver.solve(&hamilton_eq, (0f64, 2f64), TSTEP, &initial_condition)?;
-            let x_mat = py_matrix(x_vec);
-            let q_vec = x_mat.col(0);
-            let p_vec = x_mat.col(1);
-            let cs_q = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
-            let cs_p = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
-            let t_vec_out = match t_domain {
-                Some(t_domain) => t_domain,
-                None => linspace(0f64, 2f64, NSENSORS),
-            };
-            let q_vec_out = cs_q.eval_vec(&t_vec_out);
-            let p_vec_out = cs_p.eval_vec(&t_vec_out);
-            let q_uniform_pot = linspace(0f64, L, NSENSORS);
-            let V_out = hamilton_eq.eval_vec(&q_uniform_pot);
-            Ok(Data {
-                V: V_out,
-                t: t_vec_out,
-                q: q_vec_out,
-                p: p_vec_out,
-            })
-        }
-    }
-}
-
-/// Solve Hamilton equation and return LongTrajectory with splines for window extraction
-#[allow(non_snake_case)]
-pub fn solve_hamilton_long(
-    potential_pair: (Vec<f64>, Vec<f64>),
-) -> anyhow::Result<LongTrajectory> {
-    let hamilton_eq = HamiltonEquation::new(potential_pair)?;
-
-    // Use Yoshida 8th order (explicit symplectic, O(h^8) accuracy)
-    let solver = Yoshida8thSolver::new(hamilton_eq);
-    let initial_condition = vec![0f64, 0f64];
-
-    let num_intervals = (T_TOTAL / TSTEP).round() as usize;
-    let num_points = num_intervals + 1;
-    let t_vec = linspace(0f64, T_TOTAL, num_points);
-
-    let mut q_vec = vec![0f64; num_points];
-    let mut p_vec = vec![0f64; num_points];
-    q_vec[0] = initial_condition[0];
-    p_vec[0] = initial_condition[1];
-
-    for i in 1..num_points {
-        let mut q = q_vec[i - 1];
-        let mut p = p_vec[i - 1];
-        solver.yoshida_step(8, &mut q, &mut p, TSTEP);
-        q_vec[i] = q;
-        p_vec[i] = p;
-    }
-
-    // Create splines for interpolation
-    let cs_q = cubic_hermite_spline(&t_vec, &q_vec, Quadratic)?;
-    let cs_p = cubic_hermite_spline(&t_vec, &p_vec, Quadratic)?;
-
-    // Get V at uniform q grid
-    let q_uniform = linspace(0f64, L, NSENSORS);
-    let V_out = solver.problem.eval_vec(&q_uniform);
-
-    Ok(LongTrajectory {
-        V: V_out,
-        cs_q,
-        cs_p,
-        t_max: T_TOTAL,
-    })
 }
