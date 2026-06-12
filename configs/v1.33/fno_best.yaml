@@ -5,7 +5,7 @@ optimizer: splus.SPlus
 scheduler: hyperbolic_lr.ExpHyperbolicLR
 epochs: 250
 batch_size: 256
-seeds: [89, 231, 928, 1411, 2025]
+seeds: [89, 231, 928]
 data: util.load_more
 criterion: util.LogCoshLoss
 wandb: false
